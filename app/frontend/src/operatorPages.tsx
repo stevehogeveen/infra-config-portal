@@ -1243,15 +1243,15 @@ export function OperatorNetworkPage({ health, labProfileState, onReloadLabProfil
       <div className="operator-surface-heading network-workspace-heading">
         <p className="operator-kicker">Setup</p>
         <h1>Cisco Switch</h1>
-        <p>One Cisco setup workspace, whether you arrive from the sidebar or the topology map.</p>
+        <p>Set the switch path once, then run a read-only Cisco check from the device workspace.</p>
       </div>
       <Feedback loading={false} error={error} />
       <section className="network-cisco-workspace-shell" aria-label="Cisco switch setup launcher">
         <div className="network-cisco-workspace-summary" aria-label="Cisco switch launcher summary">
           <div>
-            <p className="operator-kicker">One setup surface</p>
+            <p className="operator-kicker">Switch setup</p>
             <h2>Cisco switch workspace</h2>
-            <span>Sidebar and topology map now use the same device workspace pattern.</span>
+            <span>Set the management path and run one safe check. Reachable from here or from the map.</span>
           </div>
           <div className="network-cisco-workspace-facts">
             <span><strong>Management IP</strong>{displayAddress(address.cisco_management)}</span>
@@ -5318,7 +5318,7 @@ function validationReadinessCardModel(validation: LabValidationSummary | null) {
         : "",
     badgeStatus: validationReadinessBadgeStatus(state),
     changeDetail: warnings[0] || (blockerText ? `First fix: ${blockerText}` : "No blockers are currently reported."),
-    changeSummary: warnings.length ? `${warnings.length} warning${warnings.length === 1 ? "" : "s"} need review` : exceptions.length ? "One fix is blocking handoff" : "No changes need attention",
+    changeSummary: warnings.length ? `${warnings.length} warning${warnings.length === 1 ? " needs" : "s need"} review` : exceptions.length ? "One fix is blocking handoff" : "No changes need attention",
     checkedSummary: totalCount ? `${readyCount} of ${totalCount} checks are ready` : "No checks have run yet",
     exceptions,
     handoffDetail: handoffReady
@@ -5435,7 +5435,7 @@ function ValidationSetupShapePanel({
               status: statusBadgeStatus(scenarioScope.status)
             },
             {
-              detail: totalItems ? `${issues} item${issues === 1 ? "" : "s"} need attention` : "No validation items loaded",
+              detail: totalItems ? `${issues} item${issues === 1 ? " needs" : "s need"} attention` : "No validation items loaded",
               label: "Golden-state validation",
               nextAction: humanize(validation?.next_action || "Run validation."),
               status: statusBadgeStatus(overallStatus)

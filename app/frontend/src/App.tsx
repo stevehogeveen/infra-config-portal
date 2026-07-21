@@ -410,9 +410,12 @@ type LabGlobalSettingsFormState = {
   enableDns: boolean;
 };
 
+type LabDeploymentMode = "shared" | "local";
+
 type LabProfileFormState = {
   name: string;
   description: string;
+  deploymentMode: LabDeploymentMode;
   profileTopology: string;
   addresses: Record<LabAddressScalarKey, string>;
   globalSettings: LabGlobalSettingsFormState;
@@ -462,7 +465,7 @@ type ControlProfileEditField =
       label: string;
     };
 
-const labSubnetField: { key: "subnet"; label: string } = { key: "subnet", label: "Subnet CIDR" };
+const labSubnetField: { key: "subnet"; label: string } = { key: "subnet", label: "Subnet network" };
 
 const labCoreAddressFields: Array<{ key: LabAddressInputKey; label: string }> = [
   { key: "ilo", label: "Permanent iLO IP" },
@@ -491,6 +494,8 @@ const labAddressFields: Array<{ key: LabAddressScalarKey; label: string }> = [
 const defaultLabSubnet = "192.168.1.0/24";
 const netappDisabledForSubnetReason =
   "NetApp and vCenter are outside the normal scope for compact lab setups. Use a /24 high-address setup, or manually enable them with custom in-subnet addresses.";
+const netappDisabledForLocalStorageReason =
+  "Single-server kits use local server disks, so NetApp and vCenter are not included.";
 const labBuilderCoreOffsets: Partial<Record<LabAddressInputKey, number>> = {
   ilo: 201,
   server_embedded_nic: 202,
@@ -2598,7 +2603,7 @@ function LegacyWorkflowRunCenter() {
         <>
           <div className="calm-section-grid">
             <StatusSummaryCard
-              message={`${selectedChoices.length} build step${selectedChoices.length === 1 ? "" : "s"} selected. ${totalActiveWork} queue item${totalActiveWork === 1 ? "" : "s"} need attention.`}
+              message={`${selectedChoices.length} build step${selectedChoices.length === 1 ? "" : "s"} selected. ${totalActiveWork} queue item${totalActiveWork === 1 ? " needs" : "s need"} attention.`}
               status={selectedBlockers.length ? "blocked" : totalActiveWork ? "ready" : "not_run"}
               title="Guided build"
               items={[
@@ -6839,7 +6844,7 @@ function MediaInventoryPage() {
   const presentLabel = inventory ? `${items.length} ${items.length === 1 ? "file" : "files"}` : "Not checked";
   const attentionLabel = inventory
     ? warnings.length
-      ? `${warnings.length} ${warnings.length === 1 ? "item" : "items"} need attention`
+      ? `${warnings.length} ${warnings.length === 1 ? "item needs" : "items need"} attention`
       : items.length
         ? "None"
         : "No files found"
@@ -7078,14 +7083,18 @@ function LabProfileManager({
   const subnetOptions = state?.subnet_options.length
     ? state.subnet_options
     : defaultLabSubnetOptions();
+  const createMode = deploymentModeForForm(form);
+  const createSubnetOptions = subnetOptions.filter(
+    (option) => createMode === "local" || option.netapp_supported
+  );
   const selectedSubnetPrefix = parseSubnetPrefix(form.globalSettings.subnetPrefix);
   const selectedSubnetOption =
     subnetOptions.find((option) => option.prefix === selectedSubnetPrefix) ?? null;
-  const netappSupported = labNetAppSupported(selectedSubnetPrefix);
+  const netappInScope = createMode === "shared" && labNetAppSupported(selectedSubnetPrefix);
   const netappDisabledReason =
-    selectedSubnetOption?.netapp_disabled_reason ??
-    "Single-server kits use local server disks, so NetApp and vCenter are not included for this address range.";
-  const createMode = deploymentModeForForm(form);
+    createMode === "local"
+      ? netappDisabledForLocalStorageReason
+      : selectedSubnetOption?.netapp_disabled_reason ?? netappDisabledForSubnetReason;
   const detailProfile = selectedProfile ?? activeProfile;
   const draftPayload = labProfilePayload({
     ...form,
@@ -7124,25 +7133,36 @@ function LabProfileManager({
   }
 
   function updateSubnetPrefix(prefix: string) {
-    setForm((current) => applyLabSubnetChoice(current, current.addresses.subnet, prefix));
+    setForm((current) =>
+      withLabDeploymentMode(
+        applyLabSubnetChoice(current, current.addresses.subnet, prefix),
+        current.deploymentMode
+      )
+    );
   }
 
   function updateSubnetNetwork(subnet: string) {
-    setForm((current) => applyLabSubnetChoice(current, subnet, current.globalSettings.subnetPrefix));
+    setForm((current) =>
+      withLabDeploymentMode(
+        applyLabSubnetChoice(current, subnet, current.globalSettings.subnetPrefix, {
+          preserveSubnetInput: true
+        }),
+        current.deploymentMode
+      )
+    );
   }
 
-  function updateDeploymentMode(mode: "shared" | "local") {
-    setForm((current) => {
-      const next = applyLabSubnetChoice(current, current.addresses.subnet, mode === "local" ? "29" : "24");
-      return {
-        ...next,
-        globalSettings: {
-          ...next.globalSettings,
-          storageProtocol: mode === "local" ? "none" : "nfs",
-          vcenterEnabled: mode === "shared"
-        }
-      };
-    });
+  function normalizeSubnetNetwork() {
+    setForm((current) =>
+      withLabDeploymentMode(
+        applyLabSubnetChoice(current, current.addresses.subnet, current.globalSettings.subnetPrefix),
+        current.deploymentMode
+      )
+    );
+  }
+
+  function updateDeploymentMode(mode: LabDeploymentMode) {
+    setForm((current) => applyLabDeploymentMode(current, mode));
   }
 
   async function createKit(event: FormEvent) {
@@ -7291,8 +7311,9 @@ function LabProfileManager({
                   <Field label={labSubnetField.label}>
                     <input
                       inputMode="decimal"
+                      onBlur={normalizeSubnetNetwork}
                       onChange={(event) => updateSubnetNetwork(event.target.value)}
-                      value={form.addresses.subnet}
+                      value={subnetNetworkInputValue(form.addresses.subnet)}
                     />
                   </Field>
                   <Field label="Address range">
@@ -7300,7 +7321,7 @@ function LabProfileManager({
                       onChange={(event) => updateSubnetPrefix(event.target.value)}
                       value={form.globalSettings.subnetPrefix}
                     >
-                      {subnetOptions.map((option) => (
+                      {createSubnetOptions.map((option) => (
                         <option key={option.prefix} value={option.prefix}>
                           {option.label}
                         </option>
@@ -7323,11 +7344,11 @@ function LabProfileManager({
                     <b>{displayAddress(draftPlan.esxi_management)}</b>
                   </div>
                   <div>
-                    <span>{netappSupported ? "NetApp" : "Local storage"}</span>
-                    <b>{netappSupported ? displayAddress(draftPlan.netapp_cluster_mgmt) : "Server disks"}</b>
+                    <span>{netappInScope ? "NetApp" : "Local storage"}</span>
+                    <b>{netappInScope ? displayAddress(draftPlan.netapp_cluster_mgmt) : "Server disks"}</b>
                   </div>
                 </div>
-                {!netappSupported && <p className="saved-kits-note">{netappDisabledReason}</p>}
+                {!netappInScope && <p className="saved-kits-note">{netappDisabledReason}</p>}
                 <Feedback error={saveError} />
                 <div className="form-actions">
                   <button onClick={startNewProfile} type="button">
@@ -7426,7 +7447,7 @@ function LabProfileManager({
 
           <AdvancedDetails
             className="section-details saved-kits-advanced"
-            summary="Advanced kit metadata"
+            summary="Internal ID, version, storage path, and save counts"
             title="Advanced kit metadata"
           >
             <div className="provider-fact-grid compact">
@@ -7461,10 +7482,8 @@ function KitAddressPreview({ profile }: { profile: LabProfile }) {
   );
 }
 
-function deploymentModeForForm(form: LabProfileFormState): "shared" | "local" {
-  return labNetAppSupported(parseSubnetPrefix(form.globalSettings.subnetPrefix)) && form.globalSettings.storageProtocol !== "none"
-    ? "shared"
-    : "local";
+function deploymentModeForForm(form: LabProfileFormState): LabDeploymentMode {
+  return form.deploymentMode;
 }
 
 function deploymentModeForProfile(profile: LabProfile): string {
@@ -8443,7 +8462,11 @@ function SectionProfileConfigEditor({
 
   function updateAddress(key: LabAddressScalarKey, value: string) {
     if (key === "subnet") {
-      setForm((current) => applyLabSubnetChoice(current, value, current.globalSettings.subnetPrefix));
+      setForm((current) =>
+        applyLabSubnetChoice(current, value, current.globalSettings.subnetPrefix, {
+          preserveSubnetInput: true
+        })
+      );
       return;
     }
     setForm((current) => ({
@@ -20711,9 +20734,10 @@ function blankLabProfileForm(): LabProfileFormState {
   labAddressFields.forEach((field) => {
     addresses[field.key] = "";
   });
-  const form = {
+  const form: LabProfileFormState = {
     name: "",
     description: "",
+    deploymentMode: "shared",
     profileTopology: "high_address_lab",
     addresses,
     globalSettings: blankLabGlobalSettings(24),
@@ -20742,6 +20766,10 @@ function labProfileFormFrom(profile: {
   return {
     name: profile.name,
     description: profile.description ?? "",
+    deploymentMode:
+      profile.features?.netapp_enabled === false || profile.features?.storage_protocol === "none"
+        ? "local"
+        : "shared",
     profileTopology: profile.profile_topology ?? topologyForPrefix(prefix),
     addresses,
     globalSettings: labGlobalSettingsFormFrom(profile.global_settings, profile.address_plan, prefix, profile.features),
@@ -20765,11 +20793,17 @@ function controlProfileFormForSave(
 function labProfilePayload(form: LabProfileFormState): LabProfileWrite {
   const addressPlan = blankLabAddressPlan();
   const subnetPrefix = parseSubnetPrefix(form.globalSettings.subnetPrefix);
-  const netappEnabled = labNetAppSupported(subnetPrefix);
+  const netappEnabled = form.deploymentMode === "shared" && labNetAppSupported(subnetPrefix);
+  const normalizedSubnet = normalizeIpv4Subnet(form.addresses.subnet, subnetPrefix);
+  const netappDisabledReason =
+    form.deploymentMode === "local"
+      ? netappDisabledForLocalStorageReason
+      : netappDisabledForSubnetReason;
   labAddressFields.forEach((field) => {
     const isNetAppField = field.key.startsWith("netapp_");
+    const value = field.key === "subnet" ? normalizedSubnet ?? form.addresses.subnet : form.addresses[field.key];
     addressPlan[field.key] =
-      isNetAppField && !netappEnabled ? null : cleanNullable(form.addresses[field.key]);
+      isNetAppField && !netappEnabled ? null : cleanNullable(value);
   });
   addressPlan.netapp_nfs_lifs = netappEnabled ? splitCsv(form.netappNfsLifs) : [];
   addressPlan.netapp_iscsi_lifs = netappEnabled ? splitCsv(form.netappIscsiLifs) : [];
@@ -20816,7 +20850,7 @@ function labProfilePayload(form: LabProfileFormState): LabProfileWrite {
       enable_snmp: form.globalSettings.enableSnmp,
       enable_ntp: form.globalSettings.enableNtp,
       enable_dns: form.globalSettings.enableDns,
-      netapp_disabled_reason: netappEnabled ? null : netappDisabledForSubnetReason,
+      netapp_disabled_reason: netappEnabled ? null : netappDisabledReason,
       vcenter_disabled_reason:
         form.globalSettings.vcenterEnabled && netappEnabled
           ? null
@@ -20830,7 +20864,7 @@ function labProfilePayload(form: LabProfileFormState): LabProfileWrite {
       ntp_servers: splitCsv(form.globalSettings.ntpServers),
       timezone: cleanNullable(form.globalSettings.timezone),
       netapp_enabled: netappEnabled,
-      netapp_disabled_reason: netappEnabled ? null : netappDisabledForSubnetReason,
+      netapp_disabled_reason: netappEnabled ? null : netappDisabledReason,
       vcenter_enabled: form.globalSettings.vcenterEnabled && netappEnabled,
       vlan_id: cleanNullable(form.globalSettings.vlanId),
       mtu: form.globalSettings.mtu.trim() ? Number(form.globalSettings.mtu) : null
@@ -20920,13 +20954,14 @@ function labGlobalSettingsFormFrom(
 function applyLabSubnetChoice(
   form: LabProfileFormState,
   subnetValue: string,
-  prefixValue: string
+  prefixValue: string,
+  options: { preserveSubnetInput?: boolean } = {}
 ): LabProfileFormState {
   const prefix = parseSubnetPrefix(prefixValue);
-  const normalizedSubnet = normalizeIpv4Subnet(subnetValue || defaultLabSubnet, prefix);
+  const normalizedSubnet = normalizeIpv4Subnet(subnetValue, prefix);
   const addresses = {
     ...form.addresses,
-    subnet: normalizedSubnet ?? subnetValue
+    subnet: options.preserveSubnetInput ? subnetValue : normalizedSubnet ?? subnetValue
   };
   const nextForm = {
     ...form,
@@ -20967,6 +21002,42 @@ function applyLabSubnetChoice(
   return nextForm;
 }
 
+function withLabDeploymentMode(
+  form: LabProfileFormState,
+  mode: LabDeploymentMode
+): LabProfileFormState {
+  const nextForm = {
+    ...form,
+    deploymentMode: mode,
+    globalSettings: {
+      ...form.globalSettings,
+      storageProtocol:
+        mode === "local"
+          ? "none"
+          : form.globalSettings.storageProtocol === "none"
+            ? "nfs"
+            : form.globalSettings.storageProtocol,
+      vcenterEnabled: mode === "shared"
+    }
+  };
+  return mode === "local" ? clearNetAppAddresses(nextForm) : nextForm;
+}
+
+function applyLabDeploymentMode(
+  form: LabProfileFormState,
+  mode: LabDeploymentMode
+): LabProfileFormState {
+  if (mode === "local") {
+    return withLabDeploymentMode(form, mode);
+  }
+  const currentPrefix = parseSubnetPrefix(form.globalSettings.subnetPrefix);
+  const sharedPrefix = labNetAppSupported(currentPrefix) ? String(currentPrefix) : "24";
+  return withLabDeploymentMode(
+    applyLabSubnetChoice(form, form.addresses.subnet, sharedPrefix),
+    mode
+  );
+}
+
 function clearNetAppAddresses(form: LabProfileFormState): LabProfileFormState {
   const addresses = { ...form.addresses };
   labNetAppAddressFields.forEach((field) => {
@@ -20978,6 +21049,10 @@ function clearNetAppAddresses(form: LabProfileFormState): LabProfileFormState {
     netappNfsLifs: "",
     netappIscsiLifs: ""
   };
+}
+
+function subnetNetworkInputValue(value: string): string {
+  return value.split("/", 1)[0];
 }
 
 function generateLabAddressPlan(subnet: string, prefix: number) {
