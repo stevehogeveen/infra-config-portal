@@ -33,7 +33,7 @@ export type OperatorHomeAttentionItem = {
 export type OperatorHomeNextAction = {
   Enabled: boolean;
   Label: string;
-  Target: "build" | "details" | "kit";
+  Target: "build" | "kit";
 };
 
 export type OperatorHomeProgress = {
@@ -291,7 +291,7 @@ function buildAttentionItems({
 function attentionFromValidationItem(item: LabValidationItem): OperatorHomeAttentionItem {
   const severity: OperatorHomeAttentionItem["Severity"] = item.status === "blocked" ? "blocking" : "warning";
   return {
-    Action: cleanOperatorAction(item.next_action || "Open Details and inspect this device."),
+    Action: cleanOperatorAction(item.next_action || "Select this device on the map."),
     Device: cleanOperatorText(item.label || item.category || "Lab"),
     Explanation: cleanOperatorText(item.setup_summary || item.current_state || "This item needs attention."),
     Id: item.id,
@@ -508,10 +508,10 @@ function cleanOperatorAction(value: unknown): string {
   const text = cleanOperatorText(stringValue(value));
   if (!text || /^no action required\.?$/i.test(text)) return "";
   return text
-    .replace(/\bOpen Storage\b/gi, "Open Details, then choose NetApp")
-    .replace(/\bOpen Network\b/gi, "Open Details, then choose Cisco switch")
-    .replace(/\bOpen Server\b/gi, "Open Details, then choose HPE server")
-    .replace(/\bOpen Virtualization\b/gi, "Open Details, then choose vCenter");
+    .replace(/\bOpen Storage\b/gi, "Select NetApp on the map")
+    .replace(/\bOpen Network\b/gi, "Select Cisco switch on the map")
+    .replace(/\bOpen Server\b/gi, "Select HPE server on the map")
+    .replace(/\bOpen Virtualization\b/gi, "Select vCenter on the map");
 }
 
 function cleanOperatorText(value: unknown): string {

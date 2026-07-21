@@ -635,22 +635,13 @@ export function OperatorOverviewPage({
   const navigate = useNavigate();
   const activeProfile = activeLabProfile(labProfileState);
   const address = activeAddressPlan(activeProfile);
-  const global = activeProfile?.global_settings ?? null;
   const features = activeProfile?.features ?? null;
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [validation, setValidation] = useState<LabValidationSummary | null>(null);
   const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
   const [vcenterNetapp, setVcenterNetapp] = useState<ProviderProbeResult | null>(null);
   const [buildVerification, setBuildVerification] = useState<ProviderProbeResult | null>(null);
-  const [ciscoReadiness, setCiscoReadiness] = useState<ProviderProbeResult | null>(null);
-  const [netappConsole, setNetappConsole] = useState<ProviderProbeResult | null>(null);
-  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
-  const [labSafety, setLabSafety] = useState<LabSafetySettings | null>(null);
-  const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
   const [error, setError] = useState("");
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [detailsLoaded, setDetailsLoaded] = useState(false);
-  const [detailsLoading, setDetailsLoading] = useState(false);
 
   async function load() {
     setError("");
@@ -684,52 +675,10 @@ export function OperatorOverviewPage({
   useEffect(() => {
     void load();
   }, []);
-
-  async function loadDetails() {
-    setDetailsLoading(true);
-    setError("");
-    try {
-      const [nextCiscoReadiness, nextNetappConsole, nextLabSafety, nextAuditEvents, nextWorkflowActions] = await Promise.all([
-        safeApi(api.ciscoSetupReadiness, null),
-        safeApi(api.netappConsoleReadiness, null),
-        safeApi(api.labSafetySettings, null),
-        safeApi(() => api.auditEvents(8000), [] as AuditEvent[]),
-        safeApi(api.workflowActions, [] as WorkflowAction[])
-      ]);
-      setCiscoReadiness(nextCiscoReadiness as ProviderProbeResult | null);
-      setNetappConsole(nextNetappConsole as ProviderProbeResult | null);
-      setLabSafety(nextLabSafety as LabSafetySettings | null);
-      setAuditEvents(Array.isArray(nextAuditEvents) ? nextAuditEvents : []);
-      setWorkflowActions(Array.isArray(nextWorkflowActions) ? nextWorkflowActions : []);
-      setDetailsLoaded(true);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setDetailsLoading(false);
-    }
-  }
-
-  function toggleDetails() {
-    const opening = !detailsOpen;
-    setDetailsOpen(opening);
-    if (opening && !detailsLoaded && !detailsLoading) {
-      void loadDetails();
-    }
-  }
-
-  const inventoryRows = useMemo(
-    () => buildInventoryRows({ address, firmwareSummaries, providers, validation, vcenterNetapp }),
-    [address, firmwareSummaries, providers, validation, vcenterNetapp]
-  );
-  const labValues = useMemo(
-    () => overviewLabValues({ address, ciscoReadiness, features, global, netappConsole, profile: activeProfile, vcenterNetapp }),
-    [address, activeProfile, ciscoReadiness, features, global, netappConsole, vcenterNetapp]
-  );
   const accessRows = useMemo(
-    () => overviewAccessRows({ address, ciscoReadiness, providers, validation, vcenterNetapp }),
-    [address, ciscoReadiness, providers, validation, vcenterNetapp]
+    () => overviewAccessRows({ address, providers, validation, vcenterNetapp }),
+    [address, providers, validation, vcenterNetapp]
   );
-  const currentView = overviewCurrentView({ buildVerification, providers, validation });
   const operatorHome = useMemo(
     () => buildOperatorHomeModel({
       address,
@@ -743,65 +692,11 @@ export function OperatorOverviewPage({
     }),
     [activeProfile, address, buildVerification, features, firmwareSummaries, providers, validation, vcenterNetapp]
   );
-  const workspaceRows = useMemo<OperatorObjectRow[]>(
-    () => [
-      {
-        checkedAt: activeProfile?.updated_at ? formatDateTime(activeProfile.updated_at) : currentView.checkedAt,
-        details: labValues,
-        freshness: "Operator config",
-        id: "active-setup",
-        nextAction: "Open the relevant device workspace if any saved lab value is wrong.",
-        source: activeProfile ? "Saved setup" : "Not checked",
-        status: activeProfile ? "ready" : "not_configured_yet",
-        summary: `${activeProfile?.name ?? "No active setup"} / ${displayAddress(address.subnet)}`,
-        target: displayAddress(address.subnet),
-        title: "Active Lab Setup",
-        type: "Context"
-      },
-      ...accessRows.map((row) => ({
-        checkedAt: currentView.checkedAt,
-        details: [
-          { label: "App can see", value: row.appSees },
-          { label: "Needs", value: row.needs },
-          { label: "Target", value: row.target }
-        ],
-        freshness: currentView.freshness,
-        id: `access-${row.item.toLowerCase().replace(/\s+/g, "-")}`,
-        nextAction: row.needs === "Nothing right now" ? "No action required." : row.needs,
-        source: currentView.source,
-        status: row.status,
-        summary: `${row.item} is ${displayStatus(row.status).toLowerCase()}.`,
-        target: row.target,
-        title: row.item,
-        type: "Reachability"
-      }))
-    ],
-    [accessRows, activeProfile, address.subnet, currentView.checkedAt, currentView.freshness, currentView.source, labValues]
-  );
-  const advancedProof = (
-    <AdvancedDrawer title="Advanced proof" summary={noProofText}>
-      <OperatorWorkspace currentView={currentView} rows={workspaceRows} compact />
-      <InventoryTable rows={inventoryRows} />
-      <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
-      <ConfigValueList
-        values={[
-          { label: "Lab mode", value: displayStatus(runtimeStatus(health ?? null)) },
-          { label: "Build verification", value: displayStatus(buildVerification?.status ?? "not_checked") },
-          { label: "Validation rows", value: String(validation?.validation_items.length ?? 0) }
-        ]}
-      />
-      <LabSafetySettingsSection
-        auditEvents={auditEvents}
-        labSafety={labSafety}
-      />
-    </AdvancedDrawer>
-  );
 
   return (
     <OperatorPage title="Overview">
       <div className="operator-home-layout">
         <div className="operator-home-map-column">
-          {detailsLoading && <p className="operator-home-feedback">Refreshing device status...</p>}
           <OverviewLabMap
             accessRows={accessRows}
             activeProfile={activeProfile}
@@ -818,18 +713,11 @@ export function OperatorOverviewPage({
         </div>
         <aside className="operator-home-rail" aria-label="Operator Home status and next action">
           <OperatorHomeView
-            detailsOpen={detailsOpen}
             error={error || labProfileError}
             loading={labProfileLoading}
             model={operatorHome}
             onPrimaryAction={() => navigate(operatorHome.NextAction.Target === "kit" ? "/lab-profiles#new" : "/run-center")}
-            onViewDetails={toggleDetails}
           />
-          {detailsOpen && (
-            <section className="operator-home-details" aria-label="Operator Details">
-              {advancedProof}
-            </section>
-          )}
         </aside>
       </div>
     </OperatorPage>
@@ -17759,13 +17647,11 @@ function overviewLabValues({
 
 function overviewAccessRows({
   address,
-  ciscoReadiness,
   providers,
   validation,
   vcenterNetapp
 }: {
   address: LabAddressPlan;
-  ciscoReadiness: ProviderProbeResult | null;
   providers: ProviderStatus[];
   validation: LabValidationSummary | null;
   vcenterNetapp: ProviderProbeResult | null;
@@ -17794,7 +17680,7 @@ function overviewAccessRows({
     accessRow({
       appSees: sourceLabelFromStatus(ciscoStatus),
       item: "Cisco",
-      need: consolePathFromCisco(ciscoReadiness) === "Not set up yet" ? "Need console connection" : "Need credentials",
+      need: "Need successful Cisco access check",
       status: ciscoStatus,
       target: displayAddress(address.cisco_management)
     }),

@@ -13533,3 +13533,54 @@ reachability action when the operator presses its first-contact button.
 Claude/CXO/Steve: please verify the iLO map and drawer now make proof ownership obvious. A green iLO
 path should require a successful `Check this iLO IP` result for the same current iLO address, not an
 old cached success from another target or a legacy cache without a target fingerprint.
+---
+
+## 2026-07-21T13:21:39-04:00 - CODEX (Overview status consolidation ready)
+
+Steve's latest Overview simplification is implemented.
+
+### Result
+
+- Removed the `View all device details` button and the Overview-only legacy Advanced proof drawer it
+  opened. Device details remain available where they belong: by selecting a device directly on the
+  topology map.
+- Merged `Needs your attention` into the `Current state` card with a quiet divider, so readiness,
+  the current headline, and its concrete blockers read as one status story.
+- The attention model is already capped at four items, so the merged card now shows every bounded
+  item instead of hiding items behind the retired details control.
+- Kept `Next action` as the one separate action card and primary button.
+- Replaced stale `Open Details` remediation copy with direct map language such as
+  `Select Cisco switch on the map`.
+- Removed the retired drawer's lazy Overview data plumbing and stale Playwright helper/calls.
+
+### Visual QA
+
+- Browser DOM and screenshot review passed at 1280 x 900 and 390 x 844.
+- No horizontal overflow at either width.
+- The merged status/attention card stays readable on mobile, the next action remains separate, and
+  the retired details button count is zero.
+- Browser console errors: zero.
+
+### Verification
+
+- `npm run build` - passed (existing large-chunk warning only).
+- `npm run test:component` - 2 component test files passed.
+- Focused current Overview Playwright set - 5 passed:
+  status/attention consolidation, no legacy details surface, explicit red/green map links,
+  no false reachable state without live evidence, plain-language blockers, and superseded-surface
+  removal.
+- Broader `overview|operator home` Playwright audit - 17 passed and 11 failed. The failures are the
+  already-known dormant tests that still look for the retired `Living lab topology` / `Zoned lab map`
+  and its old workspace buttons. I am not claiming that broader group or the full E2E suite as green.
+
+### Safety boundary
+
+Frontend structure, wording, styles, and tests only. Browser QA read the local app; no workflow button
+was pressed and no hardware probe or write was run. No RAID apply/reset, factory reset, firmware
+update, ESXi rebuild, NetApp write, iSCSI write, or destructive confirmation gate changed.
+
+### Review request
+
+Claude/CXO/Steve: please verify that the right rail now reads as one concise status story and that
+removing the legacy device-details control makes the topology map feel like the clear device entry
+point.

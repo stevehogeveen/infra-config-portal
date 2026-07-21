@@ -1,21 +1,17 @@
-import { AlertTriangle, CheckCircle2, ChevronRight, Eye, Pencil } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Pencil } from "lucide-react";
 
 import type { OperatorHomeModel } from "../../operatorHomeModel";
 
 export function OperatorHomeView({
-  detailsOpen,
   error,
   loading,
   model,
-  onPrimaryAction,
-  onViewDetails
+  onPrimaryAction
 }: {
-  detailsOpen: boolean;
   error?: string;
   loading?: boolean;
   model: OperatorHomeModel;
   onPrimaryAction: () => void;
-  onViewDetails: () => void;
 }) {
   const total = model.Progress.Total;
   const ready = model.Progress.Ready;
@@ -24,8 +20,6 @@ export function OperatorHomeView({
   const pct = (n: number) => (total > 0 ? `${(n / total) * 100}%` : "0%");
   const stateTone = model.DisplayState === "needs_attention" || model.DisplayState === "not_checked" ? "attention" : model.DisplayState;
   const primaryBusy = loading && model.NextAction.Target === "build";
-  const visibleAttentionItems = detailsOpen ? model.AttentionItems : model.AttentionItems.slice(0, 1);
-  const hiddenAttentionCount = Math.max(model.AttentionItems.length - visibleAttentionItems.length, 0);
 
   return (
     <section
@@ -35,7 +29,7 @@ export function OperatorHomeView({
     >
       <h1 className="operator-rail-eyebrow">Overview</h1>
 
-      <div className="operator-rail-card operator-rail-state">
+      <div className="operator-rail-card operator-rail-state" aria-label="Current state summary">
         <div className="operator-rail-state-row">
           <span className="operator-rail-state-ic" aria-hidden="true">
             {stateTone === "ready" ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
@@ -61,6 +55,28 @@ export function OperatorHomeView({
             <i className="unchecked" style={{ width: pct(unchecked) }} />
           </div>
         </div>
+
+        <div className="operator-rail-blockers operator-rail-state-attention" aria-label="Needs your attention">
+          <h3>Needs your attention</h3>
+          {model.AttentionItems.length === 0 ? (
+            <p className="operator-rail-clear">Nothing needs operator action right now.</p>
+          ) : (
+            model.AttentionItems.map((item) => {
+              const explanation = uniqueOperatorAttentionText(item.Explanation, [item.Label]);
+              const action = uniqueOperatorAttentionText(item.Action, [item.Label, item.Explanation]);
+              return (
+                <div className="operator-rail-blocker" key={item.Id}>
+                  <span className={`operator-rail-bic ${item.Severity === "blocking" ? "blocked" : "unchecked"}`} />
+                  <div>
+                    <b>{item.Label}</b>
+                    {explanation && <div className="operator-rail-why">{explanation}</div>}
+                    {action && <div className="operator-rail-fix">{action}</div>}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
 
       <div className="operator-rail-card operator-rail-next">
@@ -75,45 +91,6 @@ export function OperatorHomeView({
           <Pencil size={16} />
           <span>{primaryBusy ? "Opening..." : model.NextAction.Label}</span>
         </button>
-        <button
-          className="operator-rail-ghost"
-          data-testid="operator-home-view-details"
-          onClick={onViewDetails}
-          type="button"
-        >
-          <Eye size={15} />
-          <span>{detailsOpen ? "Hide device details" : "View all device details"}</span>
-          <ChevronRight size={15} />
-        </button>
-      </div>
-
-      <div className="operator-rail-card operator-rail-blockers" aria-label="Needs your attention">
-        <h3>Needs your attention</h3>
-        {model.AttentionItems.length === 0 ? (
-          <p className="operator-rail-clear">Nothing needs operator action right now.</p>
-        ) : (
-          <>
-            {visibleAttentionItems.map((item) => {
-              const explanation = uniqueOperatorAttentionText(item.Explanation, [item.Label]);
-              const action = uniqueOperatorAttentionText(item.Action, [item.Label, item.Explanation]);
-              return (
-                <div className="operator-rail-blocker" key={item.Id}>
-                  <span className={`operator-rail-bic ${item.Severity === "blocking" ? "blocked" : "unchecked"}`} />
-                  <div>
-                    <b>{item.Label}</b>
-                    {explanation && <div className="operator-rail-why">{explanation}</div>}
-                    {action && <div className="operator-rail-fix">{action}</div>}
-                  </div>
-                </div>
-              );
-            })}
-            {hiddenAttentionCount > 0 && (
-              <p className="operator-rail-more">
-                {hiddenAttentionCount} more {hiddenAttentionCount === 1 ? "item is" : "items are"} in device details.
-              </p>
-            )}
-          </>
-        )}
       </div>
 
       {(loading || error) && (
