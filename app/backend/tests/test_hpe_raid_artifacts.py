@@ -4,9 +4,59 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
+
 from app.providers.probe_cache import clear_probe_results, record_probe_result
 from app.services import hpe_raid
 from app.schemas import HpeRaidVolumeIntent
+
+
+def test_get_smartstorage_resource_does_not_raise_on_unreachable_device(monkeypatch) -> None:
+    # Regression: an unreachable device made _get_redfish_resource raise
+    # httpx.ConnectTimeout, which _get_smartstorage_resource passed straight
+    # through uncaught. That turned /esxi-install-readiness and
+    # /hpe-raid-pending into unhandled 500s instead of a normal
+    # failed/blocked read-only status, even though every caller already
+    # tolerates a missing/None status_code in the response shape.
+    def raise_timeout(path: str):
+        raise httpx.ConnectTimeout("timed out")
+
+    monkeypatch.setattr(hpe_raid, "_get_redfish_resource", raise_timeout)
+
+    result = hpe_raid._get_smartstorage_resource("/redfish/v1/Systems/1/SmartStorage/")
+
+    assert result["status_code"] is None
+    assert result["error_class"] == "ConnectTimeout"
+    assert result["path"] == "/redfish/v1/Systems/1/SmartStorage/"
+
+
+def test_write_pending_report_completes_when_device_is_unreachable(monkeypatch, tmp_path: Path) -> None:
+    _redirect_artifacts(monkeypatch, tmp_path)
+
+    def raise_timeout(path: str):
+        raise httpx.ConnectTimeout("timed out")
+
+    monkeypatch.setattr(hpe_raid, "_get_redfish_resource", raise_timeout)
+    monkeypatch.setattr(hpe_raid, "_last_apply_full_state", lambda: {"status": "never"})
+    monkeypatch.setattr(
+        hpe_raid,
+        "get_hpe_raid_intent",
+        lambda _session: type("Intent", (), {"data_guard": "Disabled", "logical_drives": []})(),
+    )
+    monkeypatch.setattr(
+        hpe_raid,
+        "_redfish_settings_payload",
+        lambda _intent: {"DataGuard": "Disabled", "LogicalDrives": []},
+    )
+
+    # Must complete without raising - this is what turned into a 500 at the
+    # API layer before the fix. (Whether "unreachable" should itself count
+    # as blocked/failed in the pending-report status is a separate business
+    # question this test isn't making a claim about.)
+    report = hpe_raid.write_hpe_raid_pending_report(object())
+
+    assert report["current_get"]["status_code"] is None
+    assert report["settings_get"]["status_code"] is None
 
 
 def test_last_apply_state_self_heals_corrupt_cache(monkeypatch, tmp_path: Path) -> None:

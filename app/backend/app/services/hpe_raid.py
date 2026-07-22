@@ -870,7 +870,26 @@ def _patch_smartstorage_settings(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _get_smartstorage_resource(path: str) -> dict[str, Any]:
-    return _get_redfish_resource(path)
+    # Every caller of this wrapper (write_hpe_raid_pending_report and others)
+    # feeds the result straight into _resource_body_or_error/_response_summary,
+    # which already tolerate a missing/None status_code - they were written
+    # assuming a failed read comes back as data, not an exception. But
+    # _get_redfish_resource raises on a real connection failure (e.g. the
+    # target device is unreachable), so an unreachable device turned every
+    # one of these endpoints into an unhandled 500 instead of a normal
+    # failed-status response. Catch here, matching the same fallback shape
+    # esxi_install_readiness.py's _safe_get already uses for the same class
+    # of call.
+    try:
+        return _get_redfish_resource(path)
+    except Exception as exc:
+        return {
+            "method": "GET",
+            "path": path,
+            "status_code": None,
+            "error_class": type(exc).__name__,
+            "error": str(exc),
+        }
 
 
 def _get_redfish_resource(path: str) -> dict[str, Any]:
