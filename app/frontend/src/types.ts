@@ -321,8 +321,10 @@ export type LabCredentials = {
 };
 
 export type LabCredentialsWrite = Partial<{
+  ilo_host: string;
   ilo_username: string;
   ilo_password: string;
+  esxi_host: string;
   esxi_username: string;
   esxi_password: string;
   cisco_username: string;

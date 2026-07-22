@@ -1444,8 +1444,10 @@ class LabCredentialsRead(BaseModel):
 class LabCredentialsWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    ilo_host: str | None = None
     ilo_username: str | None = None
     ilo_password: str | None = None
+    esxi_host: str | None = None
     esxi_username: str | None = None
     esxi_password: str | None = None
     cisco_username: str | None = None

@@ -11,13 +11,22 @@ from app.core.config import settings
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 BACKEND_ROOT = REPO_ROOT / "app" / "backend"
-REAL_LAB_ENV_FILE = BACKEND_ROOT / ".env.local.real-lab"
+# This must be the repo-root file, not a backend-local one. config.py's
+# _load_local_real_lab_env() searches cwd (= app/backend when uvicorn is
+# launched from there) *before* repo root, and stops at the first file
+# whose LAB_ENVIRONMENT=isolated-real-lab. Since every file this service
+# writes sets that same marker, a backend-local file would have been found
+# first and permanently shadowed the real ~60-key authoritative file at
+# repo root instead of merging into it.
+REAL_LAB_ENV_FILE = REPO_ROOT / ".env.local.real-lab"
 RELOAD_TRIGGER_FILE = BACKEND_ROOT / "app" / "main.py"
 
 # Each entry: (field name accepted from the API) -> (env var name, is_secret, "configured" check)
 CREDENTIAL_FIELDS: dict[str, str] = {
+    "ilo_host": "ILO_TEST_HOST",
     "ilo_username": "ILO_TEST_USERNAME",
     "ilo_password": "ILO_TEST_PASSWORD",
+    "esxi_host": "ESXI_TEST_HOST",
     "esxi_username": "ESXI_TEST_USERNAME",
     "esxi_password": "ESXI_TEST_PASSWORD",
     "cisco_username": "CISCO_TEST_USERNAME",
@@ -52,14 +61,14 @@ CREDENTIAL_GROUPS: list[dict[str, Any]] = [
     {
         "id": "ilo",
         "label": "HPE iLO",
-        "hint": "iLO 5 / iLO 6 out-of-band management sign-in.",
-        "fields": ["ilo_username", "ilo_password"],
+        "hint": "iLO 5 / iLO 6 out-of-band management sign-in. Host overrides the address used for real probes if it differs from the saved lab profile.",
+        "fields": ["ilo_host", "ilo_username", "ilo_password"],
     },
     {
         "id": "esxi",
         "label": "ESXi",
-        "hint": "ESXi 7 / ESXi 8 host sign-in.",
-        "fields": ["esxi_username", "esxi_password"],
+        "hint": "ESXi 7 / ESXi 8 host sign-in. Host overrides the address used for real probes if it differs from the saved lab profile.",
+        "fields": ["esxi_host", "esxi_username", "esxi_password"],
     },
     {
         "id": "cisco",
@@ -95,8 +104,10 @@ CREDENTIAL_GROUPS: list[dict[str, Any]] = [
 ]
 
 _SETTINGS_ATTR_BY_FIELD: dict[str, str] = {
+    "ilo_host": "ilo_test_host",
     "ilo_username": "ilo_test_username",
     "ilo_password": "ilo_test_password",
+    "esxi_host": "esxi_test_host",
     "esxi_username": "esxi_test_username",
     "esxi_password": "esxi_test_password",
     "cisco_username": "cisco_test_username",
@@ -163,7 +174,15 @@ def update_lab_credentials(payload: dict[str, Any]) -> dict[str, Any]:
 def _field_status(field: str) -> dict[str, Any]:
     env_name = CREDENTIAL_FIELDS[field]
     settings_attr = _SETTINGS_ATTR_BY_FIELD.get(field)
-    value = getattr(settings, settings_attr, None) if settings_attr else os.getenv(env_name)
+    # Prefer the live environment over the frozen Settings snapshot: a save
+    # earlier in this same process already updated os.environ, but Settings
+    # is a frozen dataclass computed once at import time and won't reflect
+    # it until the process actually restarts. Reading os.environ first means
+    # a save shows its own new value immediately instead of only after the
+    # reload finishes.
+    value = os.getenv(env_name)
+    if value is None and settings_attr:
+        value = getattr(settings, settings_attr, None)
     is_secret = field in SECRET_FIELDS
     return {
         "field": field,
@@ -181,7 +200,14 @@ def _write_env_file(values: dict[str, str]) -> None:
     REAL_LAB_ENV_FILE.parent.mkdir(parents=True, exist_ok=True)
     lines = ["LAB_ENVIRONMENT=isolated-real-lab"]
     for key, value in sorted(values.items()):
-        if key == "LAB_ENVIRONMENT":
+        if key == "LAB_ENVIRONMENT" or value is None:
+            # dotenv_values() can hand back a None value for a stray/blank
+            # line, or a bogus "key" for a leading UTF-8 BOM byte on a file
+            # some other tool/editor saved with one. Neither is a real
+            # setting; carrying it forward would either crash (None has no
+            # .replace) or write junk back into the authoritative file.
+            continue
+        if not key.isidentifier():
             continue
         safe_value = value.replace("\\", "\\\\").replace('"', '\\"')
         lines.append(f'{key}="{safe_value}"')

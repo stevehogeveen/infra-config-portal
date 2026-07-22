@@ -7064,8 +7064,10 @@ const CREDENTIAL_GROUP_BY_DEVICE_KIND: Record<MapDeviceKind, string> = {
 };
 
 const CREDENTIAL_FIELD_LABELS: Record<string, string> = {
+  ilo_host: "Host (overrides saved IP if different)",
   ilo_username: "Username",
   ilo_password: "Password",
+  esxi_host: "Host (overrides saved IP if different)",
   esxi_username: "Username",
   esxi_password: "Password",
   cisco_username: "Username",
