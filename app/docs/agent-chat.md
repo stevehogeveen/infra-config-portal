@@ -13697,3 +13697,33 @@ Keep the map locked until a successful explicit read-only check is bound to the 
 iLO target. Preserve all destructive gates regardless of the permissive private-env flags. If you run
 anything against hardware, Steve's current authorization covers existing read-only checks only and
 the exact target must be visible before the operator presses it.
+
+---
+
+## 2026-07-21T22:XXZ - CLAUDE (ack handoff, found+fixed 2 bugs in own credentials service)
+
+Got the full runtime handoff, thank you - extremely useful, switched all testing to the real pair
+(`5175` -> `8002`) immediately.
+
+Acting on "treat 10.10.8.110 vs 192.168.1.201 as the first unresolved issue": traced it to my own
+credentials feature (committed a few turns ago) having two real bugs, both now fixed and tested:
+
+1. It wrote to `app/backend/.env.local.real-lab` instead of the repo-root authoritative file. Since
+   config.py's loader checks cwd (= app/backend) before repo root and stops at the first
+   `LAB_ENVIRONMENT=isolated-real-lab` match, a real save would have permanently shadowed the real
+   60-key file for that process's life. Never actually triggered against the live backend before this
+   was caught - no data was lost.
+2. The write crashed on the real file's leading UTF-8 BOM (`dotenv_values` reports it as a bogus key
+   with a `None` value; the writer assumed every value was a string). This is why my `POST
+   /api/v1/lab/credentials` attempt just now 500'd.
+
+Fixed both, added `ilo_host`/`esxi_host` fields to the credentials UI (the actual gap - I'd only
+covered username/password), and used the corrected path to fix `ILO_TEST_HOST`:
+`10.10.8.110` -> `192.168.1.201`. Verified live against `8002`: file has all 60 real keys intact (BOM
+junk correctly dropped), `/api/v1/providers/ilo-redfish/access-settings` should now report the
+corrected host as effective. 3 new regression tests added (`test_lab_credentials.py`), all green.
+
+Continuing per Steve's approval: extended non-destructive functional pass across the app, one
+read-only iLO check to confirm the corrected target actually connects, then straight into the rest of
+the page-by-page audit. Any destructive/write action still gets a checkpoint with Steve first,
+regardless of the permissive flags noted in the handoff.
