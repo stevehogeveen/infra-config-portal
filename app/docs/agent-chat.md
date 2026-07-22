@@ -13584,3 +13584,116 @@ update, ESXi rebuild, NetApp write, iSCSI write, or destructive confirmation gat
 Claude/CXO/Steve: please verify that the right rail now reads as one concise status story and that
 removing the legacy device-details control makes the topology map feel like the clear device entry
 point.
+
+---
+
+## 2026-07-21T22:01:23-04:00 - CODEX (full live backend runtime handoff)
+
+Claude: this is the exact running state Steve asked you to inherit. All inspection below was local
+and read-only. No provider/workflow action was run and no hardware write was attempted.
+
+### Exact process topology
+
+- Repository: `C:\Users\TLANADMIN\Documents\Codex\2026-06-22\have-we\work\infra-config-portal`
+- Branch: `unified-build-journey`
+- Primary UI: `http://127.0.0.1:5175/overview`
+- Primary API: `http://127.0.0.1:8002`
+- Health: `http://127.0.0.1:8002/health`
+- Frontend `5175` was launched by:
+  `powershell -NoProfile -ExecutionPolicy Bypass -File app/scripts/start-frontend.ps1 -HostName 127.0.0.1 -Port 5175 -ProxyTarget http://127.0.0.1:8002`
+- Vite has `VITE_API_BASE_URL=""` and proxies `/api` plus `/health` to `8002`. A GET to
+  `http://127.0.0.1:5175/health` returns the same live backend health payload.
+- Backend `8002` was launched by:
+  `powershell -NoProfile -ExecutionPolicy Bypass -File app/scripts/start-backend.ps1 -HostName 127.0.0.1 -Port 8002 -Mode local-lab-readwrite`
+- Effective backend command from `app/backend`:
+  `.venv/Scripts/python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8002`
+- Owned wrapper PIDs recorded in `.local/windows-runtime/lab-builder-processes.json`:
+  backend `18976`, frontend `14180`. Current backend chain is venv launcher `9100`, Uvicorn
+  reloader/listener `15140`, worker `18244`. Current Vite listener PID is `5832`.
+- Runtime logs:
+  `.local/windows-runtime/backend.log`, `backend-error.log`, `frontend.log`, and
+  `frontend-error.log`.
+- Do not use the other listeners: `5174` is a separate Vite process and `8001` is the old phantom
+  listener whose owner cannot be resolved. The real pair for this session is `5175 -> 8002`.
+
+### Exact runtime mode and gates
+
+- `/health`: `status=ok`, `provider_mode=local-lab-readwrite`,
+  `operator_runtime_mode=real_lab`, `dev_test_banner=null`.
+- `/api/v1/settings/provider-mode`: current and desired are both `local-lab-readwrite`,
+  `pending_restart=false`.
+- Mode owner: `.local/app-mode.env` contains `PROVIDER_MODE=local-lab-readwrite`.
+- Authoritative private environment file:
+  repo-root `.env.local.real-lab` (60 configured keys, last changed 2026-07-21 17:46:59-04:00).
+  There is no `app/.env.local.real-lab` or `app/backend/.env.local.real-lab`.
+- `app/backend/app/core/config.py` loads the authoritative repo-root file because
+  `LAB_ENVIRONMENT=isolated-real-lab`; it deliberately ignores `PROVIDER_MODE` from that file. The
+  start script's explicit `-Mode local-lab-readwrite` owns the effective mode.
+- Runtime acknowledgements currently enabled: real hardware, device reconfiguration, data-loss
+  risk, lab-only, and read-only acknowledgement.
+- Important: the private env also currently has `LAB_ALLOW_POWER_ACTIONS=true`,
+  `LAB_ALLOW_FIRMWARE_UPDATES=true`, and `LAB_ALLOW_FACTORY_RESET=true`. These flags are NOT
+  authorization for this handoff. Steve's standing guardrail remains: no RAID/reset/rebuild,
+  firmware update, factory reset, NetApp/iSCSI write, or other destructive/live write. Individual
+  action allowlists and exact confirmations still exist, but do not approach those actions.
+
+### Exact address/profile state (source-of-truth conflict)
+
+- Backend health currently reports lab subnet `192.168.1.0/24`; this laptop reports
+  `192.168.1.23`.
+- `/api/v1/lab/profiles` returns active saved profile `lab-c8f9242d4dda`, name
+  `Local lab setup`, version `21`, subnet `192.168.1.0/24`, planned iLO `192.168.1.201`, ESXi
+  `192.168.1.203`, Cisco `192.168.1.204`, and NetApp cluster management `192.168.1.220`.
+  Oddity: the response has `selected_profile_id=null` while that profile is marked `active=true`.
+- The authoritative private env does NOT agree on iLO: `ILO_TEST_HOST=10.10.8.110`.
+- `/api/v1/providers/ilo-redfish/access-settings` confirms the effective iLO access host is
+  `10.10.8.110` from `runtime_env`, with fallback `192.168.1.201`; username/password are configured
+  and TLS verification is false. No credential value is copied into this mailbox.
+- Last iLO proof is `failed` at `2026-07-21T21:47:54Z`, says the target is unreachable, has
+  `last_probe_target_source=active_lab_profile`, and
+  `last_probe_target_matches_access_host=false`. In plain English: the failed proof belongs to the
+  profile/fallback target, not the operator's current `10.10.8.110` access target. Do not merge or
+  display these as one fact.
+
+### Current provider evidence (status read only; no probe run here)
+
+- `ilo-redfish`: `failed`, `live_cached/current`, current evidence, unreachable message.
+- `cisco-console`: backend label says `ready`, but evidence is `not_checked/unknown`,
+  `is_current=false`.
+- `cisco-ansible`: backend label says `ready`, but evidence is `not_checked/unknown`,
+  `is_current=false`.
+- `esxi-readonly`: backend label says `ready`, but evidence is `not_checked/unknown`,
+  `is_current=false`.
+- `netapp-ontap`: `blocked`, `not_checked/unknown`, `is_current=false`.
+- Therefore `ready` must never be painted green without current target-bound proof. The frontend's
+  strict evidence rule is still required.
+
+### Known live backend errors visible now
+
+- `backend.log` repeatedly shows GET
+  `/api/v1/providers/ilo-redfish/esxi-install-readiness` returning HTTP 500.
+- `backend-error.log` shows the underlying exception is `httpx.ConnectTimeout`.
+- GET `/api/v1/providers/ilo-redfish/hpe-raid-pending` has also returned HTTP 500.
+- These GETs are being requested while UI workspaces load, so do not assume every page-load GET is
+  inert or that returned firmware/storage/install content is real. Fix/error-bound the read path
+  before trusting it; do not convert this into a write test.
+
+### Exact owned restart sequence (only if a restart is actually needed)
+
+From the repo root:
+
+```powershell
+.\app\scripts\stop-lab-builder.ps1
+.\app\scripts\start-lab-builder.ps1 -HostName 127.0.0.1 -BackendPort 8002 -FrontendPort 5175 -Mode local-lab-readwrite -NoBrowser
+```
+
+Uvicorn is running with `--reload`, so backend source edits normally reload without a manual restart.
+Do not start another server on `8001`, and do not point the primary UI at `5174`.
+
+### Immediate continuation rule
+
+Treat `10.10.8.110` versus `192.168.1.201` as the first unresolved backend/source-of-truth issue.
+Keep the map locked until a successful explicit read-only check is bound to the same currently chosen
+iLO target. Preserve all destructive gates regardless of the permissive private-env flags. If you run
+anything against hardware, Steve's current authorization covers existing read-only checks only and
+the exact target must be visible before the operator presses it.
