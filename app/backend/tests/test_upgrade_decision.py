@@ -1106,6 +1106,105 @@ def test_ilo_setup_compare_unknown_discovery_is_not_mismatch(client: TestClient)
     assert "discovered_unknown" in statuses
 
 
+def test_ilo_setup_compare_network_identity_reports_match_and_mismatch(
+    client: TestClient,
+) -> None:
+    clear_probe_results()
+    client.put(
+        "/api/v1/providers/ilo-redfish/setup-intent",
+        json={
+            "network": {
+                "dhcp_enabled": False,
+                "hostname": "ilo-lab-target",
+                "management_ip": "192.168.1.201",
+                "subnet_mask_or_prefix": "255.255.255.0",
+                "gateway": "192.168.1.1",
+                "vlan": "10",
+            },
+        },
+    )
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "network_identity": {
+                "status": "ok",
+                "dns_name": "ilo-lab-target",
+                "ip_address": "192.168.1.11",
+                "subnet_mask": "255.255.255.0",
+                "gateway": "192.168.1.1",
+                "dhcp_enabled": False,
+                "vlan_enabled": True,
+                "vlan_id": 20,
+            },
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/setup-compare")
+
+    assert response.status_code == 200
+    network = {section["id"]: section for section in response.json()["sections"]}["network"]
+    rows = {row["field"]: row for row in network["rows"]}
+
+    assert rows["dhcp_enabled"]["status"] == "match"
+    assert rows["dhcp_enabled"]["discovered"] == "disabled"
+
+    assert rows["hostname"]["status"] == "match"
+    assert rows["hostname"]["desired"] == "configured"
+    assert rows["hostname"]["discovered"] == "matches saved intent"
+
+    assert rows["management_ip"]["status"] == "mismatch"
+    assert rows["management_ip"]["desired"] == "configured"
+    assert rows["management_ip"]["discovered"] == "differs from saved intent"
+    assert "192.168.1.11" not in response.text
+    assert "192.168.1.201" not in response.text
+
+    assert rows["subnet_mask_or_prefix"]["status"] == "match"
+    assert rows["gateway"]["status"] == "match"
+
+    assert rows["vlan"]["status"] == "mismatch"
+    assert rows["vlan"]["discovered"] == "20"
+
+    assert network["status"] == "mismatch"
+    clear_probe_results()
+
+
+def test_ilo_setup_compare_license_status_reports_match(client: TestClient) -> None:
+    clear_probe_results()
+    client.put(
+        "/api/v1/providers/ilo-redfish/setup-intent",
+        json={"license": {"expected_status": "Enabled"}},
+    )
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "licenses": [
+                {"name": "iLO Advanced", "product_type": "Perpetual", "status_state": "Enabled"}
+            ],
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/setup-compare")
+
+    assert response.status_code == 200
+    license_section = {
+        section["id"]: section for section in response.json()["sections"]
+    }["license"]
+    status_row = next(
+        row for row in license_section["rows"] if row["field"] == "expected_status"
+    )
+    assert status_row["status"] == "match"
+    assert status_row["discovered"] == "Enabled"
+    clear_probe_results()
+
+
 def test_ilo_report_preview_empty_intent(client: TestClient) -> None:
     clear_probe_results()
 

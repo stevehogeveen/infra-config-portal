@@ -528,46 +528,61 @@ def _real_change_lane(
 def get_ilo_setup_compare(session: Session) -> IloSetupCompareReportRead:
     summary = get_ilo_readiness_summary()
     intent = get_ilo_setup_intent(session)
+    network_identity = _discovered_network_identity()
+    discovered_license_status = _discovered_license_status()
     sections = [
         _compare_section(
             "network",
             "Network",
             [
-                _compare_unknown(
+                _compare_discovered_row(
                     "network",
                     "dhcp_enabled",
                     "DHCP Enabled",
                     _optional_bool_label(intent.network.dhcp_enabled),
+                    _optional_bool_label(network_identity.get("dhcp_enabled"))
+                    if network_identity
+                    else None,
                 ),
-                _compare_unknown(
+                _compare_discovered_row(
                     "network",
                     "hostname",
                     "DNS Name / Hostname",
                     intent.network.hostname,
+                    network_identity.get("dns_name") if network_identity else None,
                     sensitive=True,
                 ),
-                _compare_unknown(
+                _compare_discovered_row(
                     "network",
                     "management_ip",
                     "Management IP",
                     intent.network.management_ip,
+                    network_identity.get("ip_address") if network_identity else None,
                     sensitive=True,
                 ),
-                _compare_unknown(
+                _compare_discovered_row(
                     "network",
                     "subnet_mask_or_prefix",
                     "Subnet Mask / Prefix",
                     intent.network.subnet_mask_or_prefix,
+                    network_identity.get("subnet_mask") if network_identity else None,
                     sensitive=True,
                 ),
-                _compare_unknown(
+                _compare_discovered_row(
                     "network",
                     "gateway",
                     "Gateway",
                     intent.network.gateway,
+                    network_identity.get("gateway") if network_identity else None,
                     sensitive=True,
                 ),
-                _compare_unknown("network", "vlan", "VLAN", intent.network.vlan),
+                _compare_discovered_row(
+                    "network",
+                    "vlan",
+                    "VLAN",
+                    intent.network.vlan,
+                    _discovered_vlan_label(network_identity),
+                ),
             ],
         ),
         _compare_section(
@@ -608,11 +623,12 @@ def get_ilo_setup_compare(session: Session) -> IloSetupCompareReportRead:
                     intent.license.advanced_license_key_ref,
                     sensitive=True,
                 ),
-                _compare_unknown(
+                _compare_discovered_row(
                     "license",
                     "expected_status",
                     "Expected License Status",
                     intent.license.expected_status,
+                    discovered_license_status,
                 ),
             ],
         ),
@@ -1459,6 +1475,91 @@ def _compare_unknown(
     )
 
 
+def _discovered_network_identity() -> dict[str, Any] | None:
+    probe_result, _ = get_probe_result(PROVIDER_ID)
+    if not isinstance(probe_result, dict):
+        return None
+    network_identity = probe_result.get("network_identity")
+    if not isinstance(network_identity, dict) or network_identity.get("status") != "ok":
+        return None
+    return network_identity
+
+
+def _discovered_vlan_label(network_identity: dict[str, Any] | None) -> str | None:
+    if not network_identity:
+        return None
+    if not network_identity.get("vlan_enabled"):
+        return "disabled"
+    vlan_id = network_identity.get("vlan_id")
+    return str(vlan_id) if vlan_id is not None else "enabled"
+
+
+def _discovered_license_status() -> str | None:
+    probe_result, _ = get_probe_result(PROVIDER_ID)
+    if not isinstance(probe_result, dict):
+        return None
+    licenses = probe_result.get("licenses")
+    if not isinstance(licenses, list) or not licenses:
+        return None
+    first = licenses[0]
+    if not isinstance(first, dict):
+        return None
+    status_state = first.get("status_state")
+    return str(status_state) if status_state else None
+
+
+def _compare_discovered_row(
+    section: str,
+    field: str,
+    label: str,
+    desired: str | None,
+    discovered: str | None,
+    *,
+    sensitive: bool = False,
+) -> IloSetupCompareRowRead:
+    if _missing(desired):
+        return _compare_row(
+            section,
+            field,
+            label,
+            desired="missing",
+            discovered="unknown" if _missing(discovered) else ("configured" if sensitive else str(discovered)),
+            status="desired_missing",
+            next_safe_action="Save desired intent locally before comparing this field.",
+        )
+    if _missing(discovered):
+        return _compare_row(
+            section,
+            field,
+            label,
+            desired="configured" if sensitive else str(desired),
+            discovered="unknown",
+            status="discovered_unknown",
+            next_safe_action=(
+                "Run an explicit read-only discovery path when available; do not treat unknown "
+                "discovery as a mismatch."
+            ),
+        )
+    matches = str(desired).strip().casefold() == str(discovered).strip().casefold()
+    return _compare_row(
+        section,
+        field,
+        label,
+        desired="configured" if sensitive else str(desired),
+        discovered=(
+            ("matches saved intent" if matches else "differs from saved intent")
+            if sensitive
+            else str(discovered)
+        ),
+        status="match" if matches else "mismatch",
+        next_safe_action=(
+            "No action needed; discovered value matches saved intent."
+            if matches
+            else "Review the mismatch before any guarded iLO apply workflow is designed."
+        ),
+    )
+
+
 def _compare_firmware_row(
     field: str,
     label: str,
@@ -1524,6 +1625,8 @@ def _section_next_safe_action(status: str) -> str:
         return "Review the read-only report; no apply action is available."
     if status == "match":
         return "No action is needed for this read-only comparison."
+    if status == "mismatch":
+        return "Review the mismatch before any guarded iLO apply workflow is designed."
     return "Review the report; no apply action is available."
 
 

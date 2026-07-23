@@ -328,6 +328,8 @@ class IloRedfishAdapter:
             "thermal": [],
             "firmware": [],
             "network_adapters": [],
+            "network_identity": {"status": "not_checked"},
+            "licenses": [],
             "storage": {
                 "status": "not_checked",
                 "controllers": [],
@@ -1300,6 +1302,104 @@ def _populate_inventory_result(
         result["systems"],
         requests,
     )
+    result["network_identity"] = _manager_network_identity(client, base_url, root, requests)
+    result["licenses"] = _manager_license_summaries(client, base_url, root, requests)
+
+
+def _manager_network_identity(
+    client: httpx.Client,
+    base_url: str,
+    root: dict[str, Any],
+    requests: list[dict[str, Any]],
+) -> dict[str, Any]:
+    managers_path = _odata_id(root.get("Managers"))
+    if not managers_path:
+        return {"status": "not_supported", "message": "Service root does not expose Managers."}
+    try:
+        collection = _get_json(client, base_url, managers_path, requests)
+        members = collection.get("Members", [])
+        manager_path = _odata_id(members[0]) if isinstance(members, list) and members else None
+        if not manager_path:
+            return {"status": "not_available", "message": "No manager resource was found."}
+        manager = _get_json(client, base_url, manager_path, requests)
+        eth_path = _odata_id(manager.get("EthernetInterfaces"))
+        if not eth_path:
+            return {
+                "status": "not_supported",
+                "message": "Manager resource does not expose EthernetInterfaces.",
+            }
+        eth_collection = _get_json(client, base_url, eth_path, requests)
+        eth_members = eth_collection.get("Members", [])
+        iface_path = (
+            _odata_id(eth_members[0]) if isinstance(eth_members, list) and eth_members else None
+        )
+        if not iface_path:
+            return {
+                "status": "not_available",
+                "message": "Manager EthernetInterfaces collection has no members.",
+            }
+        iface = _get_json(client, base_url, iface_path, requests)
+    except (RedfishJsonDecodeError, httpx.HTTPError) as exc:
+        return {"status": "unavailable", "message": f"Network identity read failed: {exc}"}
+
+    ipv4_addresses = iface.get("IPv4Addresses")
+    first_ipv4 = (
+        ipv4_addresses[0] if isinstance(ipv4_addresses, list) and ipv4_addresses else {}
+    )
+    dhcpv4 = iface.get("DHCPv4") if isinstance(iface.get("DHCPv4"), dict) else {}
+    vlan = iface.get("VLAN") if isinstance(iface.get("VLAN"), dict) else {}
+    name_servers = iface.get("NameServers")
+    return {
+        "status": "ok",
+        "@odata.id": iface_path,
+        "dns_name": iface.get("HostName"),
+        "fqdn_value": iface.get("FQDN"),
+        "dhcp_enabled": dhcpv4.get("DHCPEnabled") if isinstance(dhcpv4, dict) else None,
+        "ip_address": first_ipv4.get("Address") if isinstance(first_ipv4, dict) else None,
+        "subnet_mask": first_ipv4.get("SubnetMask") if isinstance(first_ipv4, dict) else None,
+        "gateway": first_ipv4.get("Gateway") if isinstance(first_ipv4, dict) else None,
+        "vlan_enabled": vlan.get("VLANEnable") if isinstance(vlan, dict) else None,
+        "vlan_id": vlan.get("VLANId") if isinstance(vlan, dict) else None,
+        "name_servers": name_servers if isinstance(name_servers, list) else [],
+    }
+
+
+def _manager_license_summaries(
+    client: httpx.Client,
+    base_url: str,
+    root: dict[str, Any],
+    requests: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    license_service_path = _odata_id(root.get("LicenseService"))
+    if not license_service_path:
+        return []
+    try:
+        service = _get_json(client, base_url, license_service_path, requests)
+        licenses_path = _odata_id(service.get("Licenses"))
+        if not licenses_path:
+            return []
+        collection = _get_json(client, base_url, licenses_path, requests)
+        members = collection.get("Members", [])
+        if not isinstance(members, list):
+            return []
+        summaries: list[dict[str, Any]] = []
+        for member in members[:5]:
+            path = _odata_id(member)
+            if not path:
+                continue
+            payload = _get_json(client, base_url, path, requests)
+            status = payload.get("Status") if isinstance(payload.get("Status"), dict) else {}
+            summaries.append(
+                {
+                    "@odata.id": path,
+                    "name": payload.get("Name"),
+                    "product_type": payload.get("LicenseType"),
+                    "status_state": status.get("State"),
+                }
+            )
+        return summaries
+    except (RedfishJsonDecodeError, httpx.HTTPError):
+        return []
 
 
 def _inventory_collection_access_checks(
