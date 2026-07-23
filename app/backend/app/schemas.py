@@ -1028,6 +1028,7 @@ SECRET_VALUE_RE = re.compile(
 
 
 class IloNetworkIntent(BaseModel):
+    dhcp_enabled: bool | None = None
     hostname: str | None = Field(default=None, max_length=120)
     management_ip: str | None = Field(default=None, max_length=80)
     subnet_mask_or_prefix: str | None = Field(default=None, max_length=80)
@@ -1038,17 +1039,29 @@ class IloNetworkIntent(BaseModel):
 class IloUserIntent(BaseModel):
     username_label: str = Field(min_length=1, max_length=120)
     role: str = Field(min_length=1, max_length=120)
+    password_ref_label: str | None = Field(default=None, max_length=160)
 
 
 class IloSnmpIntent(BaseModel):
     enabled: bool = False
+    version: Literal["v1", "v2c", "v3"] = "v3"
+    system_location: str | None = Field(default=None, max_length=160)
+    system_contact: str | None = Field(default=None, max_length=160)
+    system_role: str | None = Field(default=None, max_length=160)
     destinations: list[str] = Field(default_factory=list, max_length=10)
     community_or_user_ref_labels: list[str] = Field(default_factory=list, max_length=10)
+    snmpv3_security_name: str | None = Field(default=None, max_length=120)
+    snmpv3_auth_protocol: Literal["MD5", "SHA", "SHA256", "SHA384", "SHA512"] = "MD5"
+    snmpv3_auth_passphrase_ref: str | None = Field(default=None, max_length=160)
+    snmpv3_privacy_protocol: Literal["DES", "AES", "AES256"] = "DES"
+    snmpv3_privacy_passphrase_ref: str | None = Field(default=None, max_length=160)
 
 
 class IloTimeIntent(BaseModel):
+    use_dhcp_supplied_time_settings: bool | None = None
     timezone: str | None = Field(default=None, max_length=120)
     ntp_servers: list[str] = Field(default_factory=list, max_length=10)
+    interface_type: str | None = Field(default=None, max_length=120)
 
 
 class IloDnsDomainIntent(BaseModel):
@@ -1056,10 +1069,26 @@ class IloDnsDomainIntent(BaseModel):
     dns_servers: list[str] = Field(default_factory=list, max_length=10)
 
 
+class IloLicenseIntent(BaseModel):
+    advanced_license_key_ref: str | None = Field(default=None, max_length=180)
+    expected_status: str | None = Field(default=None, max_length=120)
+
+
+class IloIpv6Intent(BaseModel):
+    disable_all: bool = True
+    disable_dhcpv6_dns_server: bool = True
+    disable_dhcpv6_domain_name: bool = True
+    disable_dhcpv6_sntp_settings: bool = True
+    disable_dhcpv6_stateful_mode: bool = True
+    disable_dhcpv6_stateless_mode: bool = True
+
+
 class IloSetupIntentWrite(BaseModel):
     network: IloNetworkIntent = Field(default_factory=IloNetworkIntent)
     users: list[IloUserIntent] = Field(default_factory=list, max_length=20)
+    license: IloLicenseIntent = Field(default_factory=IloLicenseIntent)
     snmp: IloSnmpIntent = Field(default_factory=IloSnmpIntent)
+    ipv6: IloIpv6Intent = Field(default_factory=IloIpv6Intent)
     time: IloTimeIntent = Field(default_factory=IloTimeIntent)
     dns_domain: IloDnsDomainIntent = Field(default_factory=IloDnsDomainIntent)
     notes: str | None = Field(default=None, max_length=2000)

@@ -541,7 +541,9 @@ def test_ilo_setup_plan_preview_is_plan_only(client: TestClient) -> None:
     assert {
         "network",
         "users",
+        "license",
         "snmp",
+        "ipv6",
         "time",
         "dns_domain",
         "firmware_readiness",
@@ -640,21 +642,51 @@ def test_ilo_setup_intent_can_be_saved_and_feeds_preview(client: TestClient) -> 
         "/api/v1/providers/ilo-redfish/setup-intent",
         json={
             "network": {
+                "dhcp_enabled": False,
                 "hostname": "ilo-lab-target",
                 "management_ip": "planned-management-ip",
                 "subnet_mask_or_prefix": "planned-prefix",
                 "gateway": "planned-gateway",
                 "vlan": "planned-vlan",
             },
-            "users": [{"username_label": "breakglass-admin", "role": "administrator"}],
+            "users": [
+                {
+                    "password_ref_label": "breakglass-password-ref",
+                    "role": "administrator",
+                    "username_label": "breakglass-admin",
+                }
+            ],
+            "license": {
+                "advanced_license_key_ref": "ilo-advanced-license-ref",
+                "expected_status": "iLO Advanced OK",
+            },
             "snmp": {
                 "enabled": True,
+                "version": "v3",
+                "system_location": "X666",
+                "system_contact": "Operations",
+                "system_role": "iLO Admin Server",
                 "destinations": ["monitoring-placeholder"],
                 "community_or_user_ref_labels": ["snmp-reference-label"],
+                "snmpv3_security_name": "monitor",
+                "snmpv3_auth_protocol": "MD5",
+                "snmpv3_auth_passphrase_ref": "snmp-auth-ref",
+                "snmpv3_privacy_protocol": "DES",
+                "snmpv3_privacy_passphrase_ref": "snmp-privacy-ref",
+            },
+            "ipv6": {
+                "disable_all": True,
+                "disable_dhcpv6_dns_server": True,
+                "disable_dhcpv6_domain_name": True,
+                "disable_dhcpv6_sntp_settings": True,
+                "disable_dhcpv6_stateful_mode": True,
+                "disable_dhcpv6_stateless_mode": True,
             },
             "time": {
+                "use_dhcp_supplied_time_settings": False,
                 "timezone": "UTC",
                 "ntp_servers": ["ntp-placeholder"],
+                "interface_type": "iLO Dedicated Network Port",
             },
             "dns_domain": {
                 "domain_name": "lab.example",
@@ -668,7 +700,13 @@ def test_ilo_setup_intent_can_be_saved_and_feeds_preview(client: TestClient) -> 
     intent = response.json()
     assert intent["provider_id"] == "ilo-redfish"
     assert intent["apply_enabled"] is False
+    assert intent["network"]["dhcp_enabled"] is False
     assert intent["users"][0]["username_label"] == "breakglass-admin"
+    assert intent["license"]["advanced_license_key_ref"] == "ilo-advanced-license-ref"
+    assert intent["snmp"]["system_location"] == "X666"
+    assert intent["snmp"]["snmpv3_security_name"] == "monitor"
+    assert intent["ipv6"]["disable_all"] is True
+    assert intent["time"]["use_dhcp_supplied_time_settings"] is False
 
     read_response = client.get("/api/v1/providers/ilo-redfish/setup-intent")
     assert read_response.status_code == 200
@@ -679,7 +717,9 @@ def test_ilo_setup_intent_can_be_saved_and_feeds_preview(client: TestClient) -> 
     sections = {section["id"]: section for section in preview_response.json()["sections"]}
     assert sections["network"]["status"] in {"planned", "warning"}
     assert sections["users"]["status"] == "planned"
+    assert sections["license"]["status"] == "planned"
     assert sections["snmp"]["status"] == "planned"
+    assert sections["ipv6"]["status"] == "planned"
     assert sections["time"]["status"] == "planned"
     assert sections["dns_domain"]["status"] == "planned"
     assert all(not section["apply_enabled"] for section in sections.values())
@@ -1095,11 +1135,28 @@ def test_ilo_report_preview_saved_intent_is_redacted(client: TestClient) -> None
                 "gateway": "planned-gateway",
                 "vlan": "planned-vlan",
             },
-            "users": [{"username_label": "operator-label", "role": "administrator"}],
+            "users": [
+                {
+                    "password_ref_label": "operator-password-ref",
+                    "role": "administrator",
+                    "username_label": "operator-label",
+                }
+            ],
+            "license": {
+                "advanced_license_key_ref": "ilo-advanced-license-ref",
+                "expected_status": "iLO Advanced OK",
+            },
             "snmp": {
                 "enabled": True,
+                "version": "v3",
+                "system_location": "X666",
+                "system_contact": "Operations",
+                "system_role": "iLO Admin Server",
                 "destinations": ["monitoring-placeholder"],
                 "community_or_user_ref_labels": ["snmp-ref"],
+                "snmpv3_security_name": "monitor",
+                "snmpv3_auth_passphrase_ref": "snmp-auth-ref",
+                "snmpv3_privacy_passphrase_ref": "snmp-privacy-ref",
             },
             "time": {"timezone": "UTC", "ntp_servers": ["ntp-placeholder"]},
             "dns_domain": {
@@ -1117,11 +1174,18 @@ def test_ilo_report_preview_saved_intent_is_redacted(client: TestClient) -> None
     assert "planned-management-ip" not in encoded
     assert "planned-gateway" not in encoded
     assert "operator-label" not in encoded
+    assert "operator-password-ref" not in encoded
+    assert "ilo-advanced-license-ref" not in encoded
     assert "snmp-ref" not in encoded
+    assert "snmp-auth-ref" not in encoded
+    assert "snmp-privacy-ref" not in encoded
     payload = response.json()
     assert payload["desired_setup_intent"]["network"]["management_ip"] == "configured"
     assert payload["desired_setup_intent"]["users"]["desired_local_username_labels"] == "configured:1"
+    assert payload["desired_setup_intent"]["users"]["password_reference_labels"] == "configured:1"
+    assert payload["desired_setup_intent"]["license"]["advanced_license_key_ref"] == "configured"
     assert payload["desired_setup_intent"]["snmp"]["community_or_user_ref_labels"] == "configured:1"
+    assert payload["desired_setup_intent"]["snmp"]["snmpv3_auth_passphrase_ref"] == "configured"
 
 
 def test_ilo_report_preview_cached_discovery(client: TestClient) -> None:

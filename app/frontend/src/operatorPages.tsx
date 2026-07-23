@@ -8,12 +8,14 @@ import {
   HardDrive,
   Layers,
   Play,
+  Plus,
   RefreshCw,
   Route,
   Save,
   Server,
   ShieldCheck,
-  Wrench
+  Wrench,
+  XCircle
 } from "lucide-react";
 import { createContext, FormEvent, Fragment, ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -48,6 +50,9 @@ import type {
   FirmwareUpgradePath,
   HpeStorageDiscovery,
   IloAccessSettings,
+  IloSetupIntent,
+  IloSetupIntentWrite,
+  IloSetupPlanPreview,
   HpeRaidPlanPreview,
   LabAddressPlan,
   LabCredentials,
@@ -7071,11 +7076,14 @@ function MapDeviceEditor({
           <DeviceCredentialsPanel groupId={CREDENTIAL_GROUP_BY_DEVICE_KIND[node.kind]} />
         )}
         {node.kind === "ilo" && (
-          <IloAccessSettingsPanel
-            initialHost={edit.iloInitial}
-            plannedHost={edit.ilo}
-            onReload={onReload}
-          />
+          <>
+            <IloAccessSettingsPanel
+              initialHost={edit.iloInitial}
+              plannedHost={edit.ilo}
+              onReload={onReload}
+            />
+            <IloSetupIntentWorkspacePanel />
+          </>
         )}
         {config.groups.map((group) => (
           <div className="map-field-group" key={group.title}>
@@ -7461,6 +7469,535 @@ function IloAccessSettingsPanel({
       {error && <span className="map-drawer-msg is-error">{error}</span>}
     </section>
   );
+}
+
+function IloSetupIntentWorkspacePanel() {
+  const [intent, setIntent] = useState<IloSetupIntent | null>(null);
+  const [plan, setPlan] = useState<IloSetupPlanPreview | null>(null);
+  const [form, setForm] = useState<IloSetupIntentWrite>(() => iloWorkspaceIntentForm(null));
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function loadIntent() {
+    setLoading(true);
+    setError("");
+    try {
+      const [nextIntent, nextPlan] = await Promise.all([
+        api.iloSetupIntent(),
+        api.iloSetupPlanPreview()
+      ]);
+      setIntent(nextIntent);
+      setPlan(nextPlan);
+      setForm(iloWorkspaceIntentForm(nextIntent));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadIntent();
+  }, []);
+
+  function updateNetwork<K extends keyof IloSetupIntentWrite["network"]>(
+    field: K,
+    value: IloSetupIntentWrite["network"][K]
+  ) {
+    setForm((current) => ({ ...current, network: { ...current.network, [field]: value } }));
+    setMessage("");
+  }
+
+  function updateDns<K extends keyof IloSetupIntentWrite["dns_domain"]>(
+    field: K,
+    value: IloSetupIntentWrite["dns_domain"][K]
+  ) {
+    setForm((current) => ({ ...current, dns_domain: { ...current.dns_domain, [field]: value } }));
+    setMessage("");
+  }
+
+  function updateTime<K extends keyof IloSetupIntentWrite["time"]>(
+    field: K,
+    value: IloSetupIntentWrite["time"][K]
+  ) {
+    setForm((current) => ({ ...current, time: { ...current.time, [field]: value } }));
+    setMessage("");
+  }
+
+  function updateLicense<K extends keyof IloSetupIntentWrite["license"]>(
+    field: K,
+    value: IloSetupIntentWrite["license"][K]
+  ) {
+    setForm((current) => ({ ...current, license: { ...current.license, [field]: value } }));
+    setMessage("");
+  }
+
+  function updateSnmp<K extends keyof IloSetupIntentWrite["snmp"]>(
+    field: K,
+    value: IloSetupIntentWrite["snmp"][K]
+  ) {
+    setForm((current) => ({ ...current, snmp: { ...current.snmp, [field]: value } }));
+    setMessage("");
+  }
+
+  function updateIpv6<K extends keyof IloSetupIntentWrite["ipv6"]>(
+    field: K,
+    value: IloSetupIntentWrite["ipv6"][K]
+  ) {
+    setForm((current) => ({ ...current, ipv6: { ...current.ipv6, [field]: value } }));
+    setMessage("");
+  }
+
+  function updateUser(index: number, field: "password_ref_label" | "role" | "username_label", value: string) {
+    setForm((current) => ({
+      ...current,
+      users: current.users.map((user, userIndex) =>
+        userIndex === index ? { ...user, [field]: value } : user
+      )
+    }));
+    setMessage("");
+  }
+
+  function addUser() {
+    setForm((current) => ({
+      ...current,
+      users: [...current.users, { password_ref_label: "", role: "Administrator", username_label: "" }]
+    }));
+    setMessage("");
+  }
+
+  function removeUser(index: number) {
+    setForm((current) => ({
+      ...current,
+      users: current.users.filter((_, userIndex) => userIndex !== index)
+    }));
+    setMessage("");
+  }
+
+  async function saveIntent(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const saved = await api.saveIloSetupIntent(cleanIloWorkspaceIntent(form));
+      const nextPlan = await api.iloSetupPlanPreview();
+      setIntent(saved);
+      setPlan(nextPlan);
+      setForm(iloWorkspaceIntentForm(saved));
+      setMessage("Saved iLO setup plan. Hardware untouched.");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const planSections = Array.isArray(plan?.sections) ? plan.sections : [];
+  const networkStatus = planSections.find((section) => section.id === "network")?.status || "plan_only";
+  const sectionCount = planSections.length;
+
+  return (
+    <section className="map-field-group ilo-config-intent" aria-label="iLO setup settings">
+      <div className="map-field-group-head">
+        <h4>iLO setup settings</h4>
+        <small>Plan-only runbook fields. Save records intent; it does not write iLO.</small>
+        <span className={`map-status-pill ${statusIsReady(networkStatus) ? "ready" : "unknown"}`}>
+          {loading ? "Loading" : `${sectionCount} sections`}
+        </span>
+      </div>
+      <form className="ilo-config-intent-form" onSubmit={(event) => void saveIntent(event)}>
+        <div className="ilo-intent-subsection">
+          <h5>Network identity</h5>
+          <div className="map-field-grid">
+            <Field label="DHCP">
+              <select
+                value={optionalBooleanSelectValue(form.network.dhcp_enabled)}
+                onChange={(event) => updateNetwork("dhcp_enabled", optionalBooleanFromSelect(event.target.value))}
+              >
+                <option value="">Not set</option>
+                <option value="false">Off / static</option>
+                <option value="true">On / DHCP</option>
+              </select>
+            </Field>
+            <Field label="DNS Name">
+              <input
+                value={form.network.hostname ?? ""}
+                onChange={(event) => updateNetwork("hostname", event.target.value)}
+                placeholder="DOP-X666-iLOADM1"
+              />
+            </Field>
+            <Field label="Subnet Mask / Prefix">
+              <input
+                className="is-mono"
+                value={form.network.subnet_mask_or_prefix ?? ""}
+                onChange={(event) => updateNetwork("subnet_mask_or_prefix", event.target.value)}
+              />
+            </Field>
+            <Field label="Gateway">
+              <input
+                className="is-mono"
+                value={form.network.gateway ?? ""}
+                onChange={(event) => updateNetwork("gateway", event.target.value)}
+              />
+            </Field>
+          </div>
+        </div>
+
+        <div className="ilo-intent-subsection">
+          <h5>DNS, NTP, and license</h5>
+          <div className="map-field-grid">
+            <Field label="DNS Domain">
+              <input
+                value={form.dns_domain.domain_name ?? ""}
+                onChange={(event) => updateDns("domain_name", event.target.value)}
+              />
+            </Field>
+            <Field label="DNS Servers">
+              <input
+                className="is-mono"
+                value={form.dns_domain.dns_servers.join(", ")}
+                onChange={(event) => updateDns("dns_servers", splitCsvInput(event.target.value))}
+              />
+            </Field>
+            <Field label="Use DHCP Time">
+              <select
+                value={optionalBooleanSelectValue(form.time.use_dhcp_supplied_time_settings)}
+                onChange={(event) => updateTime("use_dhcp_supplied_time_settings", optionalBooleanFromSelect(event.target.value))}
+              >
+                <option value="">Not set</option>
+                <option value="false">No</option>
+                <option value="true">Yes</option>
+              </select>
+            </Field>
+            <Field label="NTP Servers">
+              <input
+                className="is-mono"
+                value={form.time.ntp_servers.join(", ")}
+                onChange={(event) => updateTime("ntp_servers", splitCsvInput(event.target.value))}
+              />
+            </Field>
+            <Field label="Timezone">
+              <input
+                value={form.time.timezone ?? ""}
+                onChange={(event) => updateTime("timezone", event.target.value)}
+              />
+            </Field>
+            <Field label="SNTP Interface">
+              <input
+                value={form.time.interface_type ?? ""}
+                onChange={(event) => updateTime("interface_type", event.target.value)}
+                placeholder="iLO Dedicated Network Port"
+              />
+            </Field>
+            <Field label="License Ref">
+              <input
+                value={form.license.advanced_license_key_ref ?? ""}
+                onChange={(event) => updateLicense("advanced_license_key_ref", event.target.value)}
+                placeholder="secret-ref:ilo-advanced-license"
+              />
+            </Field>
+            <Field label="License Status">
+              <input
+                value={form.license.expected_status ?? ""}
+                onChange={(event) => updateLicense("expected_status", event.target.value)}
+                placeholder="iLO Advanced OK"
+              />
+            </Field>
+          </div>
+        </div>
+
+        <div className="ilo-intent-subsection">
+          <h5>SNMP and alerts</h5>
+          <div className="map-field-grid">
+            <label className="map-ilo-tls-toggle">
+              <input
+                checked={form.snmp.enabled}
+                onChange={(event) => updateSnmp("enabled", event.target.checked)}
+                type="checkbox"
+              />
+              <span>SNMP enabled in desired state</span>
+            </label>
+            <Field label="SNMP Version">
+              <select
+                value={form.snmp.version}
+                onChange={(event) => updateSnmp("version", event.target.value as IloSetupIntentWrite["snmp"]["version"])}
+              >
+                <option value="v1">SNMPv1</option>
+                <option value="v2c">SNMPv2c</option>
+                <option value="v3">SNMPv3</option>
+              </select>
+            </Field>
+            <Field label="System Location">
+              <input value={form.snmp.system_location ?? ""} onChange={(event) => updateSnmp("system_location", event.target.value)} />
+            </Field>
+            <Field label="System Contact">
+              <input value={form.snmp.system_contact ?? ""} onChange={(event) => updateSnmp("system_contact", event.target.value)} />
+            </Field>
+            <Field label="System Role">
+              <input value={form.snmp.system_role ?? ""} onChange={(event) => updateSnmp("system_role", event.target.value)} />
+            </Field>
+            <Field label="Alert Destinations">
+              <input
+                className="is-mono"
+                value={form.snmp.destinations.join(", ")}
+                onChange={(event) => updateSnmp("destinations", splitCsvInput(event.target.value))}
+              />
+            </Field>
+            <Field label="Community/User Refs">
+              <input
+                value={form.snmp.community_or_user_ref_labels.join(", ")}
+                onChange={(event) => updateSnmp("community_or_user_ref_labels", splitCsvInput(event.target.value))}
+              />
+            </Field>
+            <Field label="SNMPv3 Security Name">
+              <input value={form.snmp.snmpv3_security_name ?? ""} onChange={(event) => updateSnmp("snmpv3_security_name", event.target.value)} />
+            </Field>
+            <Field label="Auth Protocol">
+              <select
+                value={form.snmp.snmpv3_auth_protocol}
+                onChange={(event) => updateSnmp("snmpv3_auth_protocol", event.target.value as IloSetupIntentWrite["snmp"]["snmpv3_auth_protocol"])}
+              >
+                <option value="MD5">MD5</option>
+                <option value="SHA">SHA</option>
+                <option value="SHA256">SHA256</option>
+                <option value="SHA384">SHA384</option>
+                <option value="SHA512">SHA512</option>
+              </select>
+            </Field>
+            <Field label="Auth Passphrase Ref">
+              <input value={form.snmp.snmpv3_auth_passphrase_ref ?? ""} onChange={(event) => updateSnmp("snmpv3_auth_passphrase_ref", event.target.value)} />
+            </Field>
+            <Field label="Privacy Protocol">
+              <select
+                value={form.snmp.snmpv3_privacy_protocol}
+                onChange={(event) => updateSnmp("snmpv3_privacy_protocol", event.target.value as IloSetupIntentWrite["snmp"]["snmpv3_privacy_protocol"])}
+              >
+                <option value="DES">DES</option>
+                <option value="AES">AES</option>
+                <option value="AES256">AES256</option>
+              </select>
+            </Field>
+            <Field label="Privacy Passphrase Ref">
+              <input value={form.snmp.snmpv3_privacy_passphrase_ref ?? ""} onChange={(event) => updateSnmp("snmpv3_privacy_passphrase_ref", event.target.value)} />
+            </Field>
+          </div>
+        </div>
+
+        <div className="ilo-intent-subsection">
+          <h5>IPv6 and local users</h5>
+          <div className="ilo-intent-toggle-grid">
+            {([
+              ["disable_all", "Disable all IPv6 options"],
+              ["disable_dhcpv6_dns_server", "Disable DHCPv6 DNS"],
+              ["disable_dhcpv6_domain_name", "Disable DHCPv6 domain"],
+              ["disable_dhcpv6_sntp_settings", "Disable DHCPv6 SNTP"],
+              ["disable_dhcpv6_stateful_mode", "Disable DHCPv6 stateful"],
+              ["disable_dhcpv6_stateless_mode", "Disable DHCPv6 stateless"]
+            ] as Array<[keyof IloSetupIntentWrite["ipv6"], string]>).map(([field, label]) => (
+              <label className="map-ilo-tls-toggle" key={field}>
+                <input checked={form.ipv6[field]} onChange={(event) => updateIpv6(field, event.target.checked)} type="checkbox" />
+                <span>{label}</span>
+              </label>
+            ))}
+          </div>
+
+          <div className="ilo-intent-user-list">
+            <div className="ilo-intent-user-head">
+              <h6>Local user references</h6>
+              <button onClick={addUser} type="button">
+                <Plus size={14} />
+                Add user
+              </button>
+            </div>
+            {form.users.length === 0 && <p className="operator-muted">No local user references saved.</p>}
+            {form.users.map((user, index) => (
+              <div className="ilo-intent-user-row" key={`${index}-${user.username_label}`}>
+                <Field label="Username Label">
+                  <input value={user.username_label} onChange={(event) => updateUser(index, "username_label", event.target.value)} />
+                </Field>
+                <Field label="Role">
+                  <input value={user.role} onChange={(event) => updateUser(index, "role", event.target.value)} />
+                </Field>
+                <Field label="Password Ref">
+                  <input value={user.password_ref_label ?? ""} onChange={(event) => updateUser(index, "password_ref_label", event.target.value)} />
+                </Field>
+                <button onClick={() => removeUser(index)} type="button">
+                  <XCircle size={14} />
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <label className="field">
+          <span>Notes</span>
+          <textarea
+            rows={3}
+            value={form.notes ?? ""}
+            onChange={(event) => {
+              setForm((current) => ({ ...current, notes: event.target.value }));
+              setMessage("");
+            }}
+          />
+        </label>
+
+        <div className="device-credentials-actions">
+          {message && <span className="map-drawer-msg">{message}</span>}
+          {error && <span className="map-drawer-msg is-error">{error}</span>}
+          <button className="map-drawer-save" disabled={busy || loading} type="submit">
+            <Save size={14} />
+            {busy ? "Saving..." : "Save iLO setup plan"}
+          </button>
+        </div>
+        <p className="map-drawer-safe">
+          {intent?.updated_at ? `Last saved ${formatDateTime(intent.updated_at)}.` : "No saved iLO setup plan yet."}
+          {" "}Passwords and license keys stay as external references.
+        </p>
+      </form>
+    </section>
+  );
+}
+
+function iloWorkspaceIntentForm(intent: IloSetupIntent | null): IloSetupIntentWrite {
+  return {
+    network: {
+      dhcp_enabled: intent?.network.dhcp_enabled ?? null,
+      gateway: intent?.network.gateway ?? "",
+      hostname: intent?.network.hostname ?? "",
+      management_ip: intent?.network.management_ip ?? "",
+      subnet_mask_or_prefix: intent?.network.subnet_mask_or_prefix ?? "",
+      vlan: intent?.network.vlan ?? ""
+    },
+    users: intent?.users.length
+      ? intent.users.map((user) => ({
+          password_ref_label: user.password_ref_label ?? "",
+          role: user.role,
+          username_label: user.username_label
+        }))
+      : [],
+    license: {
+      advanced_license_key_ref: intent?.license.advanced_license_key_ref ?? "",
+      expected_status: intent?.license.expected_status ?? ""
+    },
+    snmp: {
+      community_or_user_ref_labels: intent?.snmp.community_or_user_ref_labels ?? [],
+      destinations: intent?.snmp.destinations ?? [],
+      enabled: intent?.snmp.enabled ?? false,
+      snmpv3_auth_passphrase_ref: intent?.snmp.snmpv3_auth_passphrase_ref ?? "",
+      snmpv3_auth_protocol: intent?.snmp.snmpv3_auth_protocol ?? "MD5",
+      snmpv3_privacy_passphrase_ref: intent?.snmp.snmpv3_privacy_passphrase_ref ?? "",
+      snmpv3_privacy_protocol: intent?.snmp.snmpv3_privacy_protocol ?? "DES",
+      snmpv3_security_name: intent?.snmp.snmpv3_security_name ?? "",
+      system_contact: intent?.snmp.system_contact ?? "",
+      system_location: intent?.snmp.system_location ?? "",
+      system_role: intent?.snmp.system_role ?? "",
+      version: intent?.snmp.version ?? "v3"
+    },
+    ipv6: {
+      disable_all: intent?.ipv6.disable_all ?? true,
+      disable_dhcpv6_dns_server: intent?.ipv6.disable_dhcpv6_dns_server ?? true,
+      disable_dhcpv6_domain_name: intent?.ipv6.disable_dhcpv6_domain_name ?? true,
+      disable_dhcpv6_sntp_settings: intent?.ipv6.disable_dhcpv6_sntp_settings ?? true,
+      disable_dhcpv6_stateful_mode: intent?.ipv6.disable_dhcpv6_stateful_mode ?? true,
+      disable_dhcpv6_stateless_mode: intent?.ipv6.disable_dhcpv6_stateless_mode ?? true
+    },
+    time: {
+      interface_type: intent?.time.interface_type ?? "iLO Dedicated Network Port",
+      ntp_servers: intent?.time.ntp_servers ?? [],
+      timezone: intent?.time.timezone ?? "",
+      use_dhcp_supplied_time_settings: intent?.time.use_dhcp_supplied_time_settings ?? null
+    },
+    dns_domain: {
+      dns_servers: intent?.dns_domain.dns_servers ?? [],
+      domain_name: intent?.dns_domain.domain_name ?? ""
+    },
+    notes: intent?.notes ?? ""
+  };
+}
+
+function cleanIloWorkspaceIntent(form: IloSetupIntentWrite): IloSetupIntentWrite {
+  return {
+    network: {
+      dhcp_enabled: form.network.dhcp_enabled,
+      gateway: blankToNull(form.network.gateway),
+      hostname: blankToNull(form.network.hostname),
+      management_ip: blankToNull(form.network.management_ip),
+      subnet_mask_or_prefix: blankToNull(form.network.subnet_mask_or_prefix),
+      vlan: blankToNull(form.network.vlan)
+    },
+    users: form.users
+      .map((user) => ({
+        password_ref_label: blankToNull(user.password_ref_label),
+        role: user.role.trim(),
+        username_label: user.username_label.trim()
+      }))
+      .filter((user) => user.role && user.username_label),
+    license: {
+      advanced_license_key_ref: blankToNull(form.license.advanced_license_key_ref),
+      expected_status: blankToNull(form.license.expected_status)
+    },
+    snmp: {
+      community_or_user_ref_labels: form.snmp.community_or_user_ref_labels.map((item) => item.trim()).filter(Boolean),
+      destinations: form.snmp.destinations.map((item) => item.trim()).filter(Boolean),
+      enabled: form.snmp.enabled,
+      snmpv3_auth_passphrase_ref: blankToNull(form.snmp.snmpv3_auth_passphrase_ref),
+      snmpv3_auth_protocol: form.snmp.snmpv3_auth_protocol,
+      snmpv3_privacy_passphrase_ref: blankToNull(form.snmp.snmpv3_privacy_passphrase_ref),
+      snmpv3_privacy_protocol: form.snmp.snmpv3_privacy_protocol,
+      snmpv3_security_name: blankToNull(form.snmp.snmpv3_security_name),
+      system_contact: blankToNull(form.snmp.system_contact),
+      system_location: blankToNull(form.snmp.system_location),
+      system_role: blankToNull(form.snmp.system_role),
+      version: form.snmp.version
+    },
+    ipv6: {
+      disable_all: form.ipv6.disable_all,
+      disable_dhcpv6_dns_server: form.ipv6.disable_dhcpv6_dns_server,
+      disable_dhcpv6_domain_name: form.ipv6.disable_dhcpv6_domain_name,
+      disable_dhcpv6_sntp_settings: form.ipv6.disable_dhcpv6_sntp_settings,
+      disable_dhcpv6_stateful_mode: form.ipv6.disable_dhcpv6_stateful_mode,
+      disable_dhcpv6_stateless_mode: form.ipv6.disable_dhcpv6_stateless_mode
+    },
+    time: {
+      interface_type: blankToNull(form.time.interface_type),
+      ntp_servers: form.time.ntp_servers.map((item) => item.trim()).filter(Boolean),
+      timezone: blankToNull(form.time.timezone),
+      use_dhcp_supplied_time_settings: form.time.use_dhcp_supplied_time_settings
+    },
+    dns_domain: {
+      dns_servers: form.dns_domain.dns_servers.map((item) => item.trim()).filter(Boolean),
+      domain_name: blankToNull(form.dns_domain.domain_name)
+    },
+    notes: blankToNull(form.notes)
+  };
+}
+
+function blankToNull(value: string | null): string | null {
+  const trimmed = (value ?? "").trim();
+  return trimmed ? trimmed : null;
+}
+
+function splitCsvInput(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function optionalBooleanSelectValue(value: boolean | null | undefined): string {
+  if (value === true) return "true";
+  if (value === false) return "false";
+  return "";
+}
+
+function optionalBooleanFromSelect(value: string): boolean | null {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return null;
 }
 
 function OverviewLabMap({
@@ -10556,11 +11093,14 @@ function LabDesignComposer({
             )}
 
             {selectedPart.id === "ilo" && (
-              <IloAccessSettingsPanel
-                initialHost={asString(designAddress.ilo_initial)}
-                plannedHost={asString(selectedSettings.management_ip) || asString(designAddress.ilo)}
-                onReload={onReload}
-              />
+              <>
+                <IloAccessSettingsPanel
+                  initialHost={asString(designAddress.ilo_initial)}
+                  plannedHost={asString(selectedSettings.management_ip) || asString(designAddress.ilo)}
+                  onReload={onReload}
+                />
+                <IloSetupIntentWorkspacePanel />
+              </>
             )}
 
             {!workspaceOnly && selectedPart.id === "switch" && (

@@ -7593,6 +7593,14 @@ pre {
   align-self: end;
 }
 
+.ilo-ipv6-intent-list {
+  border-top: 1px solid #e5e9ef;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-top: 12px;
+}
+
 .ilo-user-intent-list {
   border-top: 1px solid #e5e9ef;
   display: grid;
@@ -7605,15 +7613,72 @@ pre {
   align-items: end;
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+.ilo-user-intent-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.ilo-user-intent-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
 }
 
 .ilo-user-intent-head h3 {
-  grid-column: span 2;
   margin: 0;
 }
 
 .ilo-user-intent-row button {
+  min-height: 40px;
+}
+
+.ilo-config-intent-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.ilo-intent-subsection {
+  border-top: 1px solid rgba(148, 163, 184, 0.35);
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.ilo-intent-subsection h5,
+.ilo-intent-user-head h6 {
+  color: #102033;
+  font-size: 13px;
+  margin: 0;
+}
+
+.ilo-intent-toggle-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ilo-intent-user-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ilo-intent-user-head,
+.ilo-intent-user-row {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+}
+
+.ilo-intent-user-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.ilo-intent-user-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+}
+
+.ilo-intent-user-head button,
+.ilo-intent-user-row button {
   min-height: 40px;
 }
 
@@ -20331,8 +20396,12 @@ button.design-ilo-port:hover {
       grid-template-columns: 1fr;
     }
 
+    .ilo-ipv6-intent-list,
     .ilo-user-intent-head,
-    .ilo-user-intent-row {
+    .ilo-user-intent-row,
+    .ilo-intent-toggle-grid,
+    .ilo-intent-user-head,
+    .ilo-intent-user-row {
       grid-template-columns: 1fr;
     }
 

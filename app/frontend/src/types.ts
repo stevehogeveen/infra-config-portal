@@ -1705,6 +1705,7 @@ export type IloSetupIntent = {
   created_at?: string | null;
   updated_at?: string | null;
   network: {
+    dhcp_enabled: boolean | null;
     hostname: string | null;
     management_ip: string | null;
     subnet_mask_or_prefix: string | null;
@@ -1714,15 +1715,39 @@ export type IloSetupIntent = {
   users: Array<{
     username_label: string;
     role: string;
+    password_ref_label: string | null;
   }>;
+  license: {
+    advanced_license_key_ref: string | null;
+    expected_status: string | null;
+  };
   snmp: {
     enabled: boolean;
+    version: "v1" | "v2c" | "v3";
+    system_location: string | null;
+    system_contact: string | null;
+    system_role: string | null;
     destinations: string[];
     community_or_user_ref_labels: string[];
+    snmpv3_security_name: string | null;
+    snmpv3_auth_protocol: "MD5" | "SHA" | "SHA256" | "SHA384" | "SHA512";
+    snmpv3_auth_passphrase_ref: string | null;
+    snmpv3_privacy_protocol: "DES" | "AES" | "AES256";
+    snmpv3_privacy_passphrase_ref: string | null;
+  };
+  ipv6: {
+    disable_all: boolean;
+    disable_dhcpv6_dns_server: boolean;
+    disable_dhcpv6_domain_name: boolean;
+    disable_dhcpv6_sntp_settings: boolean;
+    disable_dhcpv6_stateful_mode: boolean;
+    disable_dhcpv6_stateless_mode: boolean;
   };
   time: {
+    use_dhcp_supplied_time_settings: boolean | null;
     timezone: string | null;
     ntp_servers: string[];
+    interface_type: string | null;
   };
   dns_domain: {
     domain_name: string | null;

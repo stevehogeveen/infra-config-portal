@@ -14019,3 +14019,76 @@ the app binds that choice to exact OS metadata and baud, then high-confidence Ci
 proves identity. The immediate live step is intentionally left for Steve to initiate from `COM5` at
 9600 after reading the one-blank-CR/LF warning. Destructive gates and the iSCSI read-only boundary
 remain unchanged.
+
+---
+
+## 2026-07-23T15:11:30-04:00 - CODEX (iLO runbook setup fields exposed plan-only)
+
+Claude/CXO: Steve supplied the legacy HPE DL360 Gen10 iLO runbook text and clarified that, ignoring
+the exact IPs and passwords for now, the iLO section must let an operator edit the real setup fields
+from that procedure. This slice implements that as saved setup intent only. No iLO write, user
+change, license install, network readdress, reset, power, firmware, RAID, switch, NetApp, or iSCSI
+action was run or exposed as runnable.
+
+### Product shape
+
+- The iLO map drawer still starts with **Sign in and first contact**. That remains the only place for
+  current iLO host/initial IP, UID, password, TLS choice, Open iLO Web UI, and the standalone
+  read-only iLO reachability check.
+- Directly below first contact, the drawer now shows **iLO setup settings** as a normal operator
+  panel, not hidden under Advanced.
+- Planned iLO address/profile fields stay in the existing **iLO config plan** group after the
+  setup-settings panel.
+- Local storage remains a separate offshoot from iLO. Storage reads still require the current iLO
+  access host and exact live evidence; RAID apply/reset/factory/rebuild stay guarded elsewhere.
+- The older provider detail page also promotes **iLO setup settings** out of Advanced so both iLO
+  surfaces describe the same plan-only intent.
+
+### Editable iLO setup intent fields now covered
+
+- Network identity: DHCP on/off/not-set, DNS Name / iLO hostname, subnet mask or prefix, gateway,
+  management IP, and VLAN.
+- DNS and time: DNS domain, multiple DNS servers, DHCP-supplied time on/off/not-set, multiple NTP
+  servers, timezone, and SNTP interface.
+- License: iLO Advanced license key reference label and expected status. The actual license key is
+  not stored in this panel.
+- SNMP and alerts: enabled flag, SNMP version choice (`v1`, `v2c`, `v3`), system location, system
+  contact, system role, multiple alert destinations, community/user reference labels, SNMPv3
+  security name, auth protocol, auth passphrase reference, privacy protocol, and privacy passphrase
+  reference.
+- IPv6: disable-all plus individual desired disables for DHCPv6 DNS, domain, SNTP, stateful mode,
+  and stateless mode.
+- Local users: username label, role, and password reference label. Plaintext passwords are not stored
+  in setup intent.
+- Notes remain available for operator context.
+
+### Backend contract
+
+- Extended `IloSetupIntentWrite` with `network.dhcp_enabled`, `users[].password_ref_label`,
+  `license`, expanded `snmp`, `ipv6`, and expanded `time`.
+- `GET/PUT /api/v1/providers/ilo-redfish/setup-intent` round-trips the new shape while preserving
+  existing defaults for older stored records.
+- `/api/v1/providers/ilo-redfish/setup-plan-preview`, setup compare, and report preview now include
+  license and dedicated-port IPv6 sections plus detailed SNMP/NTP/user/network plan text.
+- All setup-plan sections keep `apply_enabled=false`; compare remains unknown/read-only until a
+  future explicit readback/apply workflow exists.
+- Report preview redaction was extended so user labels, password references, license references,
+  SNMP community/user references, and SNMPv3 passphrase references do not leak.
+
+### Verification
+
+- Backend iLO setup/compare/report focused tests: 11 passed.
+- Backend provider-preview API smoke: 4 passed.
+- Backend Ruff over `app`, `tests/test_upgrade_decision.py`, and `tests/test_api.py`: passed.
+- Frontend production build: passed; existing large-chunk warning only.
+- Focused iLO/drawer/responsive Playwright group: 15 passed after fixing a partial-mock guard for
+  setup-plan `sections`.
+- Full frontend Playwright suite: **111 passed**.
+- No hardware contact was made in this slice.
+- Full backend pytest was not run and is not claimed green.
+
+### Review request
+
+Please review the new iLO setup-settings panel against Steve's runbook: first contact remains first,
+actual iLO configuration fields are visible below it, local storage stays its own offshoot, and
+everything remains plan-only until a future guarded compare/apply workflow is deliberately designed.

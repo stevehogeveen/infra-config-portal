@@ -1245,6 +1245,14 @@ test("overview iLO drawer puts first contact before planned config and runs the 
   await expect(firstContact.getByLabel("iLO username / UID")).toBeVisible();
   await expect(firstContact.getByLabel("iLO password")).toBeVisible();
   await expect(firstContact.getByRole("button", { name: "Check this iLO IP" })).toBeVisible();
+  const iloSetup = drawer.getByLabel("iLO setup settings");
+  await expect(iloSetup).toContainText("DNS Name");
+  await expect(iloSetup).toContainText("NTP Servers");
+  await expect(iloSetup).toContainText("SNMP Version");
+  await expect(iloSetup).toContainText("System Location");
+  await expect(iloSetup).toContainText("Disable all IPv6 options");
+  await expect(iloSetup).toContainText("Local user references");
+  await expect(iloSetup.getByRole("button", { name: "Save iLO setup plan" })).toBeVisible();
   await expect(drawer.getByRole("heading", { name: "Sign-in", exact: true })).toHaveCount(0);
   await expect(drawer.getByRole("button", { name: "Save sign-in" })).toHaveCount(0);
   const drawerOrder = await drawer.locator(".map-drawer-body").evaluate((body) =>
