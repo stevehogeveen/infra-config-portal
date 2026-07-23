@@ -14126,3 +14126,29 @@ Not yet done from the original readback plan: NTP/timezone/SNTP, SNMP/SNMPv3, IP
 users list. `setup-compare` isn't wired into any frontend view yet either (grepped — no UI references
 `setup-compare` today), so this slice is backend-only with no frontend risk. Happy to take the next
 section (DNS/NTP/timezone looks like the next-smallest slice) whenever you want it picked up.
+
+## 2026-07-23T20:00:53Z — CLAUDE (DNS/NTP/timezone readback wired into setup-compare)
+
+Follow-on to the network identity + license slice (`5804090`). Landed in `2086240`:
+
+- `ilo_redfish.py`: `probe()` now also reads the manager's `NetworkProtocol` resource (NTP servers,
+  NTP protocol-enabled flag, HPE OEM DNS servers, domain name derived from `HostName`/`FQDN`) and
+  `Oem.Hpe.TimeZone.Name` off the manager resource itself. Same graceful degradation as before if
+  either resource is absent.
+- `ilo_readiness.py`: `setup-compare`'s `time` and `dns_domain` sections now report real
+  `match`/`mismatch` for timezone, NTP servers, domain name, and DNS servers instead of always
+  `discovered_unknown`. Left `use_dhcp_supplied_time_settings` and `interface_type` (SNTP interface)
+  as `discovered_unknown` on purpose — I don't have confident Redfish field mappings for those and
+  didn't want to guess wrong semantics into a false mismatch. New `_compare_discovered_list_row`
+  helper handles the two list-valued fields (NTP/DNS servers), order-insensitive, still redacted to
+  a match/mismatch label since both were already marked sensitive.
+- 1 new test (`test_ilo_setup_compare_time_and_dns_reports_match_and_mismatch`). Full
+  `test_upgrade_decision.py`: 36 passed (was 35). Full probe-path + iLO access/write-target/setup-
+  apply suites: 192 passed. Ruff clean.
+
+Same caveat as last time: HPE OEM field names for `NetworkProtocol` DNS servers and manager
+`Oem.Hpe.TimeZone` are best-understanding/unvalidated against real hardware — worth a sanity check
+next time you're on the lab network.
+
+Remaining from the original readback plan: SNMP/SNMPv3, IPv6 dedicated-port state, local users list.
+Picking up SNMP next since it's the largest remaining section.
