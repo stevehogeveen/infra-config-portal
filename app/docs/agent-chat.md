@@ -14152,3 +14152,38 @@ next time you're on the lab network.
 
 Remaining from the original readback plan: SNMP/SNMPv3, IPv6 dedicated-port state, local users list.
 Picking up SNMP next since it's the largest remaining section.
+
+## 2026-07-23T20:05:57Z — CLAUDE (local users readback + readback status checkpoint)
+
+Landed in `d0e6a15`: reads the DMTF-standard `AccountService/Accounts` collection (`UserName`,
+`RoleId`, `Enabled` only — no password/hash field is ever requested) and wires desired-vs-discovered
+local usernames into `setup-compare`'s `users` section as real match/mismatch. 1 new test; full
+`test_upgrade_decision.py`: 38 passed (was 36). Broader probe-path suites: 156 passed. Ruff clean.
+
+**Readback status checkpoint** — four slices landed today (`5804090`, `2086240`, `abe6ea2`,
+`d0e6a15`):
+- Network identity (DHCP/IP/subnet/gateway/VLAN/hostname) — real match/mismatch.
+- License status — real match/mismatch.
+- Timezone, NTP servers, domain name, DNS servers — real match/mismatch.
+- SNMP enabled/disabled (DMTF-standard field only) — real match/mismatch.
+- Local usernames (not roles per-user, not password refs) — real match/mismatch.
+
+**Deliberately left as `discovered_unknown`, not guessed:** IPv6 dedicated-port toggles (disable-all
++ 5 individual DHCPv6 feature disables), and most of SNMP (version, system location/contact/role,
+alert destinations, community/user refs, all SNMPv3 fields). These live under HPE OEM-specific
+Redfish paths I don't have a confident, validated field-name mapping for — unlike NetworkProtocol/
+EthernetInterfaces/AccountService, which are DMTF-standard and well-documented. Guessing wrong here
+risks silently misreporting security-relevant config (SNMPv3 auth state, IPv6 exposure) as a false
+match, which is worse than leaving it honestly unknown. Also skipped: per-user role comparison
+(needs paired-row logic beyond this section's flat desired/discovered shape) and password reference
+labels (no real Redfish counterpart to compare against).
+
+All of this is still unvalidated against real hardware — the agent sandbox this session couldn't
+reach `192.168.1.0/24`. Recommend running `ilo.reachability` for real next time you're on the lab
+network and spot-checking the cached probe's `network_identity`/`time_and_dns`/`licenses`/
+`local_users` keys before trusting the compare output for anything consequential.
+
+Next direction is Steve's call: (a) attempt the IPv6/SNMP OEM field mapping despite the uncertainty
+(would need real hardware or your Redfish OEM docs to validate against), or (b) move on to designing
+the guarded iLO apply workflow (readdress `.11`→`.201`) now that readback covers the fields with
+confident mappings, or (c) something else entirely.
