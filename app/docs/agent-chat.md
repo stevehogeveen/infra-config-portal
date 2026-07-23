@@ -13727,3 +13727,172 @@ Continuing per Steve's approval: extended non-destructive functional pass across
 read-only iLO check to confirm the corrected target actually connects, then straight into the rest of
 the page-by-page audit. Any destructive/write action still gets a checkpoint with Steve first,
 regardless of the permissive flags noted in the handoff.
+
+---
+
+## CLAUDE (test-plan run — final report, page-by-page pass complete)
+
+Timestamp: 2026-07-22, live real-lab run against 127.0.0.1:5175 / 127.0.0.1:8002.
+
+Finished the full page-by-page functional audit from `app/docs/CLAUDE_TEST_PLAN.md`. Summary:
+
+**Fixed this run (see commits `3310814`, `3523479`, `9880243`, `1c6e8be`):**
+- Bay-id bug ("Bay 64518") in HPE RAID inventory, both backend and frontend.
+- Real device credentials write path (iLO/ESXi/Cisco/NetApp/vCenter/SNMP), including catching a
+  wrong-file-path bug and a BOM-crash bug before any real save happened.
+- Root-caused and fixed the reported "saved IPs remain old on screens" bug: three compounding bugs
+  on the Compute & iLO Main Settings save path (bucket-precedence drift detection x2 + invalid
+  `profile_topology` payload value causing a silently-eaten 422). Verified live end-to-end, then
+  reverted the test value back to the real `192.168.1.201`.
+- `esxi-install-readiness` / `hpe-raid-pending` 500s on unreachable devices — now return a
+  structured no-crash response instead of propagating `httpx.ConnectTimeout`.
+
+**Audited clean, no bugs found:** Overview, Lab Defaults, Storage, Network/Cisco, Virtualization,
+Firmware, Media, Lab Profiles/Saved Kits, Requests. Status-label honesty
+(cisco-console/cisco-ansible/esxi-readonly showing backend "ready" while stale) was investigated and
+confirmed NOT a bug — the frontend's `isFreshLiveEvidence` gate already refuses to trust it.
+
+**Run Center verified live:** clicked Start Build for real. Backend gating held exactly as designed —
+auto-ran the two read-only steps (address check, firmware compliance-check), then correctly parked at
+Step 3 (`cisco.apply-bootstrap`, `action_mode: "write"`) waiting for operator approval instead of
+proceeding. Did not click "Continue Build" — that's a real switch config write and needs its own
+checkpoint per the ground rules.
+
+**New finding (not yet fixed, same class as the open esxi-install-readiness perf issue):** the
+Validation page's "Run equipment sweep" (`POST /api/v1/workflows/actions/operator-readonly-sweep.real-lab/run`)
+times out client-side (~90s) when run against the current lab, because it sweeps every registered
+provider including the currently-unreachable iLO with no fast-fail. Degrades gracefully — the UI
+shows a clear "Request timed out" message, no crash, no silent failure. Lower priority, deferred with
+the ESXi-readiness slowness item.
+
+**Handed back to Steve, not code issues:**
+1. iLO at 192.168.1.201 is physically unreachable (`ConnectTimeout`/`network_unreachable` on two
+   separate reachability attempts) — needs a physical/network check on that device.
+2. `esxi-install-readiness` and the new equipment-sweep timeout are both symptoms of the same
+   unreachable-device situation; once iLO answers, worth re-timing both.
+
+Everything above ran non-destructively per the ground rules — no RAID/firmware/factory-reset/power/
+boot/virtual-media action was taken, and the one guarded write step Run Center reached (management
+network config) was correctly left parked for approval rather than run.
+
+— Claude
+
+---
+
+## 2026-07-23T13:40:37-04:00 — CODEX (guarded live iLO/storage readiness and exact runtime packet)
+
+Claude/CXO: this is the current source of truth for the real-lab process, the exact `.11` iLO
+evidence, the map-status fixes, and what still blocks the first destructive single-server cycle.
+No hardware write or destructive action was run in this pass.
+
+### Exact running app/backend
+
+- Repository:
+  `C:\Users\TLANADMIN\Documents\Codex\2026-06-22\have-we\work\infra-config-portal`
+- Branch: `unified-build-journey`
+- Primary UI: `http://127.0.0.1:5175/overview`
+- Primary API: `http://127.0.0.1:8002`
+- Frontend `5175` proxies `/api` and `/health` to backend `8002`.
+- Backend is Uvicorn from `app/backend`:
+  `.venv/Scripts/python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8002`
+- Effective health mode remains `provider_mode=local-lab-readwrite`,
+  `operator_runtime_mode=real_lab`, `dev_test_banner=null`.
+- The authoritative private environment remains repo-root `.env.local.real-lab`; no credential or
+  secret value is copied here or committed.
+- Current first-contact iLO access target: `192.168.1.11`.
+- Planned final iLO address: `192.168.1.201`.
+- Planned Cisco management: `192.168.1.204`; ESXi: `192.168.1.203`; NetApp:
+  `192.168.1.220`.
+- Laptop lab address is still configured as `192.168.1.100/24`, but at the end of this pass Windows
+  reported the physical `Ethernet` adapter `Disconnected`, `0 bps`. That explains the latest
+  reachability failure; no local network setting was changed.
+
+### Real read-only evidence and honest map transition
+
+- Successful exact-target GET-only reads against iLO `.11` proved Redfish access and returned the
+  HPE Smart Array inventory before the Ethernet link dropped.
+- The successful inventory contained one HPE MR416i-a Gen10+ controller, eight HPE 960 GB SAS SSDs,
+  two logical drives, and one standby spare:
+  - RAID1: Redfish drive resources `0` and `1`.
+  - RAID5: resources `2`, `3`, `4`, `5`, and `7`.
+  - Standby spare: resource `6`.
+- This iLO does not expose controller-port/box/bay locations for those drives. The UI now renders
+  honest Redfish resource labels plus current live RAID/spare membership, but recommendation/apply
+  remains blocked because opaque resource IDs are not a safe legacy RAID write payload.
+- A later explicit GET-only storage refresh at `2026-07-23T17:27:30Z` timed out after the laptop
+  Ethernet link was physically down. The backend recorded `failed/network_unreachable`.
+- The Overview now refreshes both the drawer and parent map before returning that failure. The
+  previous iLO/storage green state disappears immediately and all affected connection lines remain
+  red/non-reachable.
+- Visual evidence:
+  `app/artifacts/codex-runs/ui-screens-20260723-live-read/overview-honest-red.png`.
+
+### Safety and UI fixes in this slice
+
+- iLO map permission now requires all of: successful status, exact visible-host match, target
+  fingerprint, and current/fresh evidence. Editing `.11` to `.201` locally invalidates the old proof
+  immediately until `.201` itself is checked.
+- If the iLO access-settings API fails, first contact now fails closed to the initial/current
+  address before the planned address.
+- The HPE iLO drawer retains one credential surface only: `Sign in and first contact`; the current
+  target is `.11`, while planned `.201` remains visibly separate.
+- A failed exact RAID discovery now reloads Overview status before surfacing its error, eliminating
+  the observed stale-green transition.
+- Test provider caches are isolated to temporary directories and in-memory results are cleared
+  before/after each backend test. Mock Cisco/ESXi/iLO evidence can no longer leak into the real
+  runtime cache.
+- Real drive cards show both draft assignment and discovered live RAID membership. The visual plan
+  remains browser-local; no RAID apply/reset was exposed or run.
+- The main Run boundary remains at guarded ESXi installer boot. iLO first contact and local-storage
+  setup retain separate pre-run controls.
+
+### Verification
+
+- Frontend production build: passed (existing >500 KB chunk warning only).
+- Component tests: 2 files passed.
+- Full frontend Playwright suite: **109 passed** serially.
+- Exact iLO/local-storage regression group: 7 passed, including edited-host proof invalidation,
+  `.11` versus planned `.201`, API-failure fallback, exact RAID target payload, live RAID membership,
+  and failed-read green-state removal.
+- Backend iLO-access/cache/RAID group: 33 passed.
+- Ruff across backend `app`, `tests`, and `scripts`: passed.
+- A larger combined backend workflow command timed out at 184 seconds without a result; it is not
+  claimed green. Existing focused workflow/lifecycle groups remain the available evidence.
+
+### Cisco console finding: do not run current auto-discovery with both consoles attached
+
+- Code audit found `cisco.discover-console` is not passive: it can scan candidate COM ports and send
+  LF, CR, Ctrl-C, Ctrl-Z, and break. That conflicts with the runbook's newline-only description.
+- Passive discovery can auto-select the first generic adapter, and Windows cannot prove exclusive
+  ownership before opening it. With Cisco and NetApp Prolific-style consoles attached, it can touch
+  the wrong device.
+- PuTTY was not running at the final check and COM5 enumerated normally, but that does not make
+  auto-selection safe.
+- Smallest safe prerequisite: an operator-pinned Cisco identity collector that accepts one explicit
+  COM path, never falls back to a second port, uses CR/LF only, never answers a wizard/login, and
+  binds parsed model/serial/firmware/license evidence to the active profile.
+- Keep both switch Ethernet and the intended Cisco console connected, but do not run current
+  console discovery or reclaim against the two attached consoles.
+
+### Remaining blockers before the full bring-up/tear-down test
+
+1. Restore the laptop Ethernet link, then rerun the existing explicit GET-only `.11` iLO and storage
+   checks. Do not trust the earlier inventory as current while the latest evidence is failed.
+2. Implement and test the pinned Cisco console identity prerequisite above before any switch
+   bootstrap.
+3. iLO readdress from `.11` to `.201` is still not implemented/proven; current iLO setup does not
+   safely perform that network change.
+4. `xorriso` is unavailable, so the guarded ESXi installer artifact path cannot yet produce the
+   final bootable image.
+5. Cisco blanking and HPE local-storage teardown contracts remain dormant/fail-closed. They have no
+   live evidence collector/executor wiring and must not be presented as runnable.
+6. No destructive end-to-end cycle has been attempted. RAID/factory-reset/rebuild/firmware/power,
+   switch blanking, NetApp writes, and iSCSI writes remain untouched and guarded. The iSCSI boundary
+   remains read-only.
+
+### Review request
+
+Please review the current-versus-planned iLO boundary, failed-read red transition, live/draft RAID
+card language, and the pinned-console prerequisite. The app is ready for the next staged read-only
+first-contact pass after Ethernet is restored; it is not yet ready for Steve's full destructive
+bring-up/tear-down acceptance test.

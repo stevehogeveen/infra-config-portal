@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ from app.providers.ilo_redfish import (
     IloRedfishConfig,
     _base_url,
     ilo_redfish_redaction_values,
+    ilo_target_fingerprint,
 )
 from app.providers.probe_cache import get_probe_result
 from app.providers.redaction import redact_sensitive
@@ -25,6 +27,14 @@ from app.services.env_utils import env_int as _env_int
 from app.services.firmware_compliance import firmware_gate_blockers
 from app.services.guarded_action_context import GuardedActionContext, guarded_confirmation, guarded_flag
 from app.services.json_file_store import read_json_object, write_json_object, write_text_value
+from app.services.ilo_write_target import (
+    IloWriteTargetContext,
+    compact_ilo_write_target,
+    exact_ilo_write_config,
+    refresh_ilo_write_target_context,
+    requested_ilo_write_host,
+    resolve_ilo_write_target_context,
+)
 from app.services.list_utils import unique_preserving_order, unique_strings
 from app.services.path_utils import path_exists, repo_relative_path
 from app.schemas import (
@@ -70,8 +80,13 @@ DISABLED_RAID_ACTIONS = [
 ]
 
 
-def get_hpe_storage_discovery() -> HpeStorageDiscoveryRead:
-    probe, probe_time = get_probe_result(PROVIDER_ID)
+def get_hpe_storage_discovery(
+    *,
+    probe: dict[str, Any] | None = None,
+    probe_time: str | None = None,
+) -> HpeStorageDiscoveryRead:
+    if probe is None:
+        probe, probe_time = get_probe_result(PROVIDER_ID)
     if not isinstance(probe, dict):
         return HpeStorageDiscoveryRead(
             provider_id=PROVIDER_ID,
@@ -97,9 +112,16 @@ def get_hpe_storage_discovery() -> HpeStorageDiscoveryRead:
     warnings = [*_string_list(storage.get("warnings")), *_string_list(probe.get("warnings"))]
     blockers = _string_list(probe.get("blockers"))
     inventory_available = bool(controllers or physical_drives or logical_drives)
+    opaque_drive_count = sum(not _bay_id(drive) for drive in physical_drives)
 
     if not inventory_available:
         blockers.append("Cached iLO probe does not include HPE storage inventory.")
+    if opaque_drive_count:
+        warnings.append(
+            f"{opaque_drive_count} physical drive(s) have stable Redfish resource identities, "
+            "but iLO did not report physical bay locations. They remain visible for read-only "
+            "inventory; opaque resource IDs cannot be used as ControllerPort:Box:Bay RAID payload values."
+        )
 
     return HpeStorageDiscoveryRead(
         provider_id=PROVIDER_ID,
@@ -113,9 +135,16 @@ def get_hpe_storage_discovery() -> HpeStorageDiscoveryRead:
         warnings=_unique(warnings),
         blockers=_unique(blockers),
         next_safe_action=(
-            "Review discovered drives and save a plan-only RAID intent."
-            if inventory_available
-            else "Run the HPE iLO GET-only probe and confirm Smart Array storage inventory is returned."
+            (
+                "Review the read-only drive inventory, then resolve SmartStorage physical bay "
+                "locations before saving or applying a RAID plan."
+            )
+            if physical_drives and opaque_drive_count == len(physical_drives)
+            else (
+                "Review discovered drives and save a plan-only RAID intent."
+                if inventory_available
+                else "Run the HPE iLO GET-only probe and confirm Smart Array storage inventory is returned."
+            )
         ),
     )
 
@@ -338,7 +367,9 @@ def apply_hpe_raid_plan(
     *,
     guarded_context: GuardedActionContext | None = None,
 ) -> dict[str, Any]:
-    IloRedfishAdapter(provider_mode="local-lab-readwrite").probe()
+    requested_host = requested_ilo_write_host(payload.ilo_host)
+    write_target, target_blockers = resolve_ilo_write_target_context(requested_host)
+    config = exact_ilo_write_config(write_target) if write_target is not None else None
     preview = get_hpe_raid_plan_preview(session)
     confirmation_phrase = (
         guarded_context.confirmation_phrase
@@ -350,6 +381,15 @@ def apply_hpe_raid_plan(
         confirmation_phrase=confirmation_phrase or "",
         guarded_context=guarded_context,
     )
+    blockers = _unique([*target_blockers, *blockers])
+    if not blockers and write_target is not None:
+        refreshed_target, refreshed_config, refresh_blockers = (
+            refresh_ilo_write_target_context(write_target)
+        )
+        blockers = _unique([*blockers, *refresh_blockers])
+        if refreshed_target is not None and refreshed_config is not None:
+            write_target = refreshed_target
+            config = refreshed_config
     started_at = datetime.now(UTC).isoformat()
     if blockers:
         result = {
@@ -364,20 +404,28 @@ def apply_hpe_raid_plan(
             "before": _layout_summary(preview.current_layout),
             "after": None,
             "redfish_result": None,
+            "write_target": compact_ilo_write_target(write_target),
             "not_attempted": DISABLED_RAID_ACTIONS,
         }
         _write_apply_artifacts(result)
         return result
 
+    assert config is not None
     before = get_hpe_storage_discovery()
     redfish_payload = _redfish_settings_payload(preview.desired_intent)
     redfish_result: dict[str, Any] = {}
     status = "failed"
     message = "HPE RAID apply failed."
     try:
-        response_payload = _patch_smartstorage_settings(redfish_payload)
+        response_payload = _patch_smartstorage_settings(
+            redfish_payload,
+            config=config,
+        )
         redfish_result = response_payload
-        probe = IloRedfishAdapter(provider_mode="local-lab-readwrite").probe()
+        probe = IloRedfishAdapter(
+            provider_mode="local-lab-readwrite",
+            config=config,
+        ).probe()
         after = get_hpe_storage_discovery()
         if 200 <= int(response_payload.get("status_code", 0)) < 300:
             status = "succeeded"
@@ -405,6 +453,7 @@ def apply_hpe_raid_plan(
         "redfish_payload": redfish_payload,
         "redfish_result": redfish_result,
         "post_apply_probe_status": probe.get("status") if isinstance(probe, dict) else None,
+        "write_target": compact_ilo_write_target(write_target),
         "not_attempted": [],
     }
     _write_apply_artifacts(result)
@@ -534,10 +583,27 @@ def build_hpe_raid_reset_plan() -> dict[str, Any]:
     }
 
 
-def reset_server_for_raid(*, guarded_context: GuardedActionContext | None = None) -> dict[str, Any]:
+def reset_server_for_raid(
+    *,
+    ilo_host: str | None = None,
+    guarded_context: GuardedActionContext | None = None,
+) -> dict[str, Any]:
     started_at = datetime.now(UTC).isoformat()
-    before = _server_reset_observation()
-    blockers = _reset_blockers(guarded_context=guarded_context)
+    requested_host = requested_ilo_write_host(ilo_host)
+    write_target, target_blockers = resolve_ilo_write_target_context(requested_host)
+    blockers = _unique(
+        [
+            *target_blockers,
+            *_reset_blockers(guarded_context=guarded_context),
+        ]
+    )
+    if not blockers and write_target is not None:
+        refreshed_target, _refreshed_config, refresh_blockers = (
+            refresh_ilo_write_target_context(write_target)
+        )
+        blockers = _unique([*blockers, *refresh_blockers])
+        if refreshed_target is not None:
+            write_target = refreshed_target
     if blockers:
         result = {
             "provider_id": PROVIDER_ID,
@@ -545,19 +611,73 @@ def reset_server_for_raid(*, guarded_context: GuardedActionContext | None = None
             "message": "Server reset for RAID pending settings did not run.",
             "started_at": started_at,
             "finished_at": datetime.now(UTC).isoformat(),
-            "before": before,
+            "before": None,
             "reset": None,
             "after": None,
             "blockers": blockers,
+            "write_target": compact_ilo_write_target(write_target),
             "next_safe_action": "Set the reset gates and exact confirmation phrase from a terminal.",
         }
         _write_reset_report(result)
         return result
 
+    assert write_target is not None
+    config = exact_ilo_write_config(write_target)
+    before = _server_reset_observation(config=config)
+    last_apply = _last_apply_full_state()
+    pending, pending_blockers = _target_bound_reset_preconditions(
+        write_target,
+        before,
+        last_apply,
+    )
+    if pending_blockers:
+        result = {
+            "provider_id": PROVIDER_ID,
+            "status": "blocked",
+            "message": "Server reset for RAID pending settings did not run.",
+            "started_at": started_at,
+            "finished_at": datetime.now(UTC).isoformat(),
+            "before": before,
+            "pending": pending,
+            "reset": None,
+            "after": None,
+            "blockers": pending_blockers,
+            "write_target": compact_ilo_write_target(write_target),
+            "next_safe_action": (
+                "Collect fresh exact-target pending RAID evidence from the same apply receipt."
+            ),
+        }
+        _write_reset_report(result)
+        return result
+
+    refreshed_target, refreshed_config, refresh_blockers = (
+        refresh_ilo_write_target_context(write_target)
+    )
+    if refresh_blockers or refreshed_target is None or refreshed_config is None:
+        result = {
+            "provider_id": PROVIDER_ID,
+            "status": "blocked",
+            "message": "Server reset for RAID pending settings did not run.",
+            "started_at": started_at,
+            "finished_at": datetime.now(UTC).isoformat(),
+            "before": before,
+            "pending": pending,
+            "reset": None,
+            "after": None,
+            "blockers": refresh_blockers,
+            "write_target": compact_ilo_write_target(refreshed_target),
+            "next_safe_action": (
+                "Rerun exact-target iLO Inventory Read and revalidate pending RAID evidence."
+            ),
+        }
+        _write_reset_report(result)
+        return result
+    write_target = refreshed_target
+    config = refreshed_config
     reset_type = _reset_type_for_power_state(before.get("power_state"))
-    reset_result = _post_system_reset(reset_type)
+    reset_result = _post_system_reset(reset_type, config=config)
     time.sleep(10)
-    after = _server_reset_observation(allow_errors=True)
+    after = _server_reset_observation(config=config, allow_errors=True)
     result = {
         "provider_id": PROVIDER_ID,
         "status": "reset-requested" if 200 <= int(reset_result.get("status_code") or 0) < 300 else "failed",
@@ -565,14 +685,96 @@ def reset_server_for_raid(*, guarded_context: GuardedActionContext | None = None
         "started_at": started_at,
         "finished_at": datetime.now(UTC).isoformat(),
         "before": before,
+        "pending": pending,
         "reset_type": reset_type,
         "reset": reset_result,
         "after": after,
         "blockers": [],
+        "write_target": compact_ilo_write_target(write_target),
         "next_safe_action": "Run provider-lab-hpe-raid-validate-after-reset after iLO and the server settle.",
     }
     _write_reset_report(result)
     return result
+
+
+def _target_bound_reset_preconditions(
+    write_target: IloWriteTargetContext,
+    before: dict[str, Any],
+    last_apply: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    blockers: list[str] = []
+    apply_target = (
+        last_apply.get("write_target")
+        if isinstance(last_apply.get("write_target"), dict)
+        else {}
+    )
+    for key, expected in (
+        ("current_access_host", write_target.current_access_host),
+        ("target_fingerprint", write_target.target_fingerprint),
+        (
+            "identity_fingerprint_sha256",
+            write_target.identity_fingerprint_sha256,
+        ),
+    ):
+        if apply_target.get(key) != expected:
+            blockers.append(
+                f"Last RAID apply receipt is not bound to this iLO write target ({key})."
+            )
+    if last_apply.get("status") != "succeeded":
+        blockers.append("A successful target-bound RAID apply receipt is required before reset.")
+
+    expected_payload = (
+        last_apply.get("redfish_payload")
+        if isinstance(last_apply.get("redfish_payload"), dict)
+        else {}
+    )
+    expected_drives = _planned_logical_drive_debug(expected_payload)
+    current_drives = (
+        before.get("current_logical_drives")
+        if isinstance(before.get("current_logical_drives"), list)
+        else []
+    )
+    settings_drives = (
+        before.get("settings_logical_drives")
+        if isinstance(before.get("settings_logical_drives"), list)
+        else []
+    )
+    pending_matches_expected = bool(expected_drives) and _drive_debug_equivalent(
+        settings_drives,
+        expected_drives,
+    )
+    live_matches_expected = bool(expected_drives) and _drive_debug_equivalent(
+        current_drives,
+        expected_drives,
+    )
+    pending_differs_from_live = not _drive_debug_equivalent(
+        current_drives,
+        settings_drives,
+    )
+    reset_required = (
+        pending_matches_expected
+        and not live_matches_expected
+        and (
+            _last_apply_has_message(last_apply, "iLO.2.25.SystemResetRequired")
+            or pending_differs_from_live
+        )
+    )
+    pending = {
+        "expected_logical_drives": expected_drives,
+        "current_logical_drives": current_drives,
+        "settings_logical_drives": settings_drives,
+        "pending_matches_expected": pending_matches_expected,
+        "live_matches_expected": live_matches_expected,
+        "pending_differs_from_live": pending_differs_from_live,
+        "reset_required": reset_required,
+    }
+    if not expected_drives:
+        blockers.append("Last RAID apply receipt has no reviewed logical-drive payload.")
+    if not pending_matches_expected:
+        blockers.append("Fresh pending SmartStorage settings do not match the last RAID apply receipt.")
+    if not reset_required:
+        blockers.append("Fresh exact-target RAID evidence does not prove that a reset is required.")
+    return pending, _unique(blockers)
 
 
 def validate_hpe_raid_after_reset(session: Session) -> dict[str, Any]:
@@ -833,8 +1035,11 @@ def _redfish_raid(value: str) -> str:
     return f"Raid{normalized}"
 
 
-def _patch_smartstorage_settings(payload: dict[str, Any]) -> dict[str, Any]:
-    config = IloRedfishConfig.from_settings()
+def _patch_smartstorage_settings(
+    payload: dict[str, Any],
+    *,
+    config: IloRedfishConfig,
+) -> dict[str, Any]:
     if not config.host or not config.username or not config.password:
         raise RuntimeError("Complete iLO configuration is required for HPE RAID apply.")
 
@@ -847,7 +1052,11 @@ def _patch_smartstorage_settings(payload: dict[str, Any]) -> dict[str, Any]:
         trust_env=False,
         verify=config.verify_tls,
     ) as client:
-        current = _get_with_retries(client, base_url + SMART_STORAGE_SETTINGS_PATH)
+        current = _get_with_retries(
+            client,
+            base_url + SMART_STORAGE_SETTINGS_PATH,
+            require_success=True,
+        )
         etag = current.headers.get("etag") or current.headers.get("ETag") or "*"
         response = client.patch(
             base_url + SMART_STORAGE_SETTINGS_PATH,
@@ -869,7 +1078,11 @@ def _patch_smartstorage_settings(payload: dict[str, Any]) -> dict[str, Any]:
         }
 
 
-def _get_smartstorage_resource(path: str) -> dict[str, Any]:
+def _get_smartstorage_resource(
+    path: str,
+    *,
+    config: IloRedfishConfig | None = None,
+) -> dict[str, Any]:
     # Every caller of this wrapper (write_hpe_raid_pending_report and others)
     # feeds the result straight into _resource_body_or_error/_response_summary,
     # which already tolerate a missing/None status_code - they were written
@@ -881,7 +1094,9 @@ def _get_smartstorage_resource(path: str) -> dict[str, Any]:
     # esxi_install_readiness.py's _safe_get already uses for the same class
     # of call.
     try:
-        return _get_redfish_resource(path)
+        if config is None:
+            return _get_redfish_resource(path)
+        return _get_redfish_resource(path, config=config)
     except Exception as exc:
         return {
             "method": "GET",
@@ -892,8 +1107,12 @@ def _get_smartstorage_resource(path: str) -> dict[str, Any]:
         }
 
 
-def _get_redfish_resource(path: str) -> dict[str, Any]:
-    config = IloRedfishConfig.from_settings()
+def _get_redfish_resource(
+    path: str,
+    *,
+    config: IloRedfishConfig | None = None,
+) -> dict[str, Any]:
+    config = config or IloRedfishConfig.from_settings()
     if not config.target_candidates or not config.username or not config.password:
         raise RuntimeError("Complete iLO configuration is required for HPE Redfish access.")
 
@@ -923,6 +1142,7 @@ def _get_redfish_resource(path: str) -> dict[str, Any]:
             "method": "GET",
             "path": path,
             "target_source": candidate.get("source"),
+            "target_fingerprint": ilo_target_fingerprint(candidate.get("host")),
             "status_code": response.status_code,
             "etag": response.headers.get("etag") or response.headers.get("ETag"),
             "body": body if isinstance(body, dict) else {"value": body},
@@ -932,14 +1152,26 @@ def _get_redfish_resource(path: str) -> dict[str, Any]:
     raise RuntimeError("Complete iLO target configuration is required for HPE Redfish access.")
 
 
-def _post_system_reset(reset_type: str) -> dict[str, Any]:
-    config = IloRedfishConfig.from_settings()
+def _post_system_reset(
+    reset_type: str,
+    *,
+    config: IloRedfishConfig,
+) -> dict[str, Any]:
     if not config.host or not config.username or not config.password:
         raise RuntimeError("Complete iLO configuration is required for server reset.")
 
-    system = _get_redfish_resource(SYSTEM_PATH)
+    system = _get_redfish_resource(SYSTEM_PATH, config=config)
+    system_status = int(system.get("status_code") or 0)
+    if system_status < 200 or system_status >= 300:
+        raise RuntimeError(
+            "Exact-target system preflight must return HTTP 2xx before reset."
+        )
     system_body = system.get("body") if isinstance(system.get("body"), dict) else {}
     target = _system_reset_target(system_body)
+    if target is None:
+        raise RuntimeError(
+            "Exact-target system preflight did not advertise a reset action."
+        )
     base_url = _base_url(config.host)
     timeout = httpx.Timeout(config.timeout_seconds)
     with httpx.Client(
@@ -958,6 +1190,8 @@ def _post_system_reset(reset_type: str) -> dict[str, Any]:
             {
                 "method": "POST",
                 "path": target,
+                "target_source": config.host_source,
+                "target_fingerprint": ilo_target_fingerprint(config.host),
                 "status_code": response.status_code,
                 "request": {"ResetType": reset_type},
                 "response": body if isinstance(body, dict) else {"value": body},
@@ -969,7 +1203,7 @@ def _reset_type_for_power_state(power_state: Any) -> str:
     return "On" if str(power_state or "").strip().lower() == "off" else "GracefulRestart"
 
 
-def _system_reset_target(system_body: dict[str, Any]) -> str:
+def _system_reset_target(system_body: dict[str, Any]) -> str | None:
     actions = system_body.get("Actions")
     if isinstance(actions, dict):
         action = actions.get("#ComputerSystem.Reset") or actions.get("ComputerSystem.Reset")
@@ -977,14 +1211,24 @@ def _system_reset_target(system_body: dict[str, Any]) -> str:
             target = action.get("target") or action.get("Target")
             if isinstance(target, str) and target:
                 return target
-    return "/redfish/v1/systems/1/Actions/ComputerSystem.Reset/"
+    return None
 
 
-def _server_reset_observation(*, allow_errors: bool = False) -> dict[str, Any]:
+def _server_reset_observation(
+    *,
+    config: IloRedfishConfig | None = None,
+    allow_errors: bool = False,
+) -> dict[str, Any]:
     try:
-        system = _get_redfish_resource(SYSTEM_PATH)
-        current = _get_smartstorage_resource(SMART_STORAGE_CONFIG_PATH)
-        settings_response = _get_smartstorage_resource(SMART_STORAGE_SETTINGS_PATH)
+        system = _get_redfish_resource(SYSTEM_PATH, config=config)
+        current = _get_smartstorage_resource(
+            SMART_STORAGE_CONFIG_PATH,
+            config=config,
+        )
+        settings_response = _get_smartstorage_resource(
+            SMART_STORAGE_SETTINGS_PATH,
+            config=config,
+        )
     except Exception as exc:
         if not allow_errors:
             raise
@@ -1006,14 +1250,19 @@ def _server_reset_observation(*, allow_errors: bool = False) -> dict[str, Any]:
     }
 
 
-def _wait_for_ilo(*, wait_seconds: int, interval_seconds: int) -> dict[str, Any]:
+def _wait_for_ilo(
+    *,
+    wait_seconds: int,
+    interval_seconds: int,
+    config: IloRedfishConfig | None = None,
+) -> dict[str, Any]:
     started = time.monotonic()
     attempts = 0
     last_error = None
     while time.monotonic() - started <= wait_seconds:
         attempts += 1
         try:
-            system = _get_redfish_resource(SYSTEM_PATH)
+            system = _get_redfish_resource(SYSTEM_PATH, config=config)
             if int(system.get("status_code") or 0) == 200:
                 body = system.get("body") if isinstance(system.get("body"), dict) else {}
                 return {
@@ -1034,11 +1283,19 @@ def _wait_for_ilo(*, wait_seconds: int, interval_seconds: int) -> dict[str, Any]
     }
 
 
-def _get_with_retries(client: httpx.Client, url: str) -> httpx.Response:
+def _get_with_retries(
+    client: httpx.Client,
+    url: str,
+    *,
+    require_success: bool = False,
+) -> httpx.Response:
     last_exc: Exception | None = None
     for _ in range(3):
         try:
-            return client.get(url)
+            response = client.get(url)
+            if require_success:
+                response.raise_for_status()
+            return response
         except httpx.HTTPError as exc:
             last_exc = exc
     if last_exc:
@@ -1561,6 +1818,12 @@ def _validate_intent(
     discovered_bays.discard("")
     selected_bays: set[str] = set()
 
+    if intent.volumes and discovery.physical_drives and not discovered_bays:
+        blockers.append(
+            "Discovered physical drives have only opaque Redfish resource IDs. "
+            "RAID apply requires physical bay locations for the ControllerPort:Box:Bay payload."
+        )
+
     for volume in intent.volumes:
         if not volume.drive_bays:
             blockers.append(f"{volume.name} has no physical drive bays selected.")
@@ -1738,9 +2001,27 @@ def _recommended_local_storage_layout(discovery: HpeStorageDiscoveryRead) -> dic
             "warnings": [],
         }
 
+    bay_mapped_drives = [drive for drive in discovery.physical_drives if _bay_id(drive)]
+    if discovery.physical_drives and not bay_mapped_drives:
+        return {
+            "status": "blocked",
+            "summary": (
+                "Physical drives are visible, but iLO did not report the physical bay locations "
+                "required for a RAID plan."
+            ),
+            "volumes": [],
+            "usable_drive_count": 0,
+            "blockers": [
+                "ControllerPort:Box:Bay drive locations are required before RAID recommendation or apply."
+            ],
+            "warnings": [
+                "Opaque Redfish resource IDs are retained for inventory display only."
+            ],
+        }
+
     healthy_known = [
         drive
-        for drive in discovery.physical_drives
+        for drive in bay_mapped_drives
         if _drive_health_ok(drive) is True and _capacity_bytes(drive) > 0
     ]
     groups: dict[tuple[str, int], list[dict[str, Any]]] = {}
@@ -1761,6 +2042,11 @@ def _recommended_local_storage_layout(discovery: HpeStorageDiscoveryRead) -> dic
     selected = max(groups.values(), key=lambda group: (len(group), _capacity_bytes(group[0])))
     selected = sorted(selected, key=_drive_sort_key)
     warnings: list[str] = []
+    opaque_drive_count = len(discovery.physical_drives) - len(bay_mapped_drives)
+    if opaque_drive_count:
+        warnings.append(
+            f"{opaque_drive_count} drive(s) without physical bay locations were excluded from the recommendation."
+        )
     if len(groups) > 1:
         warnings.append("Mixed drive media or capacity detected; recommendation uses the largest matching drive group only.")
 
@@ -1845,10 +2131,16 @@ def _local_storage_next_action(blockers: list[str], desired_count: int, current_
 def _drive_for_ui(drive: dict[str, Any]) -> dict[str, Any]:
     bay = _bay_id(drive)
     capacity = _capacity_bytes(drive)
+    selection_id, identity_kind = _physical_drive_inventory_identity(drive)
     return {
         **drive,
         "bay_id": bay,
-        "display_label": f"Bay {bay}" if bay else str(drive.get("Name") or drive.get("Id") or "Drive"),
+        "selection_id": bay or selection_id,
+        "inventory_id": selection_id,
+        "identity_kind": identity_kind,
+        "raid_payload_id": bay or None,
+        "raid_payload_compatible": bool(bay),
+        "display_label": _physical_drive_display_label(drive, bay, selection_id),
         "capacity_bytes": capacity,
         "capacity_label": _capacity_label(capacity),
         "media_type": drive.get("MediaType") or drive.get("InterfaceType") or drive.get("Protocol"),
@@ -1918,9 +2210,50 @@ def _controller_identity(controller: dict[str, Any]) -> tuple[Any, ...]:
 
 
 def _physical_drive_identity(drive: dict[str, Any]) -> tuple[Any, ...]:
-    return (
-        drive.get("bay_id") or _bay_id(drive),
+    return _physical_drive_inventory_identity(drive)
+
+
+def _physical_drive_inventory_identity(drive: dict[str, Any]) -> tuple[str, str]:
+    bay = _bay_id(drive)
+    if bay:
+        return (f"bay:{bay}", "physical_bay")
+
+    resource_path = drive.get("@odata.id")
+    if isinstance(resource_path, str) and resource_path.strip():
+        normalized_path = resource_path.strip().rstrip("/") or "/"
+        return (f"redfish:{normalized_path}", "redfish_resource")
+
+    fingerprint = drive.get("identity_fingerprint_sha256")
+    if isinstance(fingerprint, str) and fingerprint.strip():
+        return (f"fingerprint:{fingerprint.strip().lower()}", "redfish_fingerprint")
+
+    canonical = json.dumps(
+        drive,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
     )
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return (f"fingerprint:{digest}", "inventory_fingerprint")
+
+
+def _physical_drive_display_label(
+    drive: dict[str, Any],
+    bay: str,
+    inventory_id: str,
+) -> str:
+    if bay:
+        return f"Bay {bay}"
+
+    name = str(drive.get("Name") or "Physical drive").strip() or "Physical drive"
+    resource_token = str(drive.get("Id") or "").strip()
+    if not resource_token:
+        resource_path = drive.get("@odata.id")
+        if isinstance(resource_path, str) and resource_path.strip():
+            resource_token = resource_path.strip().rstrip("/").rsplit("/", 1)[-1]
+    if not resource_token:
+        resource_token = inventory_id.rsplit(":", 1)[-1][:12]
+    return f"{name} (Redfish resource {resource_token})"
 
 
 def _logical_drive_identity(drive: dict[str, Any]) -> tuple[Any, ...]:

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 from xml.etree import ElementTree
@@ -556,6 +559,7 @@ class IloRedfishAdapter:
         )
 
     def _record_result(self, result: dict[str, Any]) -> dict[str, Any]:
+        result = _attach_write_target_evidence(result)
         redacted = redact_sensitive(result, self._redaction_values())
         previous_result, previous_checked_at = get_probe_result(PROVIDER_ID)
         redacted = _preserve_legacy_identity(redacted, previous_result, previous_checked_at)
@@ -2137,7 +2141,134 @@ def _resource_summary(payload: dict[str, Any]) -> dict[str, Any]:
     summary = {key: payload[key] for key in keys if key in payload}
     if "SerialNumber" in payload:
         summary["serial_number_present"] = bool(payload["SerialNumber"])
+    identity_values = {
+        key: payload.get(key)
+        for key in (
+            "@odata.id",
+            "Id",
+            "UUID",
+            "SerialNumber",
+            "Manufacturer",
+            "Model",
+            "ManagerType",
+        )
+        if payload.get(key) not in {None, ""}
+    }
+    if identity_values:
+        summary["identity_fingerprint_sha256"] = hashlib.sha256(
+            json.dumps(
+                identity_values,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
+    hardware_identity_values = {
+        key: payload.get(key)
+        for key in ("UUID", "SerialNumber")
+        if payload.get(key) not in {None, ""}
+    }
+    if hardware_identity_values:
+        summary["hardware_identity_fingerprint_sha256"] = hashlib.sha256(
+            json.dumps(
+                hardware_identity_values,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
     return summary
+
+
+def _attach_write_target_evidence(result: dict[str, Any]) -> dict[str, Any]:
+    if result.get("status") != "ok":
+        return result
+
+    managers = result.get("managers") if isinstance(result.get("managers"), list) else []
+    systems = result.get("systems") if isinstance(result.get("systems"), list) else []
+    chassis = result.get("chassis") if isinstance(result.get("chassis"), list) else []
+    manager_fingerprints = _identity_fingerprints(managers)
+    system_fingerprints = _identity_fingerprints(systems)
+    chassis_fingerprints = _identity_fingerprints(chassis)
+    system_hardware_fingerprints = _hardware_identity_fingerprints(systems)
+    identity_verified = bool(
+        manager_fingerprints
+        and system_fingerprints
+        and system_hardware_fingerprints
+    )
+    identity_payload = {
+        "managers": manager_fingerprints,
+        "systems": system_fingerprints,
+        "system_hardware": system_hardware_fingerprints,
+        "chassis": chassis_fingerprints,
+    }
+    identity_fingerprint = (
+        hashlib.sha256(
+            json.dumps(
+                identity_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        if identity_verified
+        else None
+    )
+    evidence: dict[str, Any] = {
+        "source": "live-ilo-redfish-inventory",
+        "collected_at": datetime.now(UTC).isoformat(),
+        "target_source": result.get("target_source"),
+        "target_fingerprint": result.get("target_fingerprint"),
+        "identity_fingerprint_sha256": identity_fingerprint,
+        "candidate_index": result.get("candidate_index"),
+        "target_candidate_count": result.get("target_candidate_count"),
+        "exact_target_only": (
+            result.get("candidate_index") == 1
+            and result.get("target_candidate_count") == 1
+        ),
+        "authenticated": True,
+        "read_only_collection": True,
+        "inventory_complete": identity_verified,
+        "identity_verified": identity_verified,
+    }
+    evidence["evidence_digest_sha256"] = hashlib.sha256(
+        json.dumps(
+            evidence,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+    return {**result, "write_target_evidence": evidence}
+
+
+def _identity_fingerprints(items: list[Any]) -> list[str]:
+    return sorted(
+        {
+            fingerprint
+            for item in items
+            if isinstance(item, dict)
+            and isinstance(
+                fingerprint := item.get("identity_fingerprint_sha256"),
+                str,
+            )
+            and re.fullmatch(r"[0-9a-f]{64}", fingerprint)
+        }
+    )
+
+
+def _hardware_identity_fingerprints(items: list[Any]) -> list[str]:
+    return sorted(
+        {
+            fingerprint
+            for item in items
+            if isinstance(item, dict)
+            and isinstance(
+                fingerprint := item.get("hardware_identity_fingerprint_sha256"),
+                str,
+            )
+            and re.fullmatch(r"[0-9a-f]{64}", fingerprint)
+        }
+    )
 
 
 def _strip_links(summary: dict[str, Any]) -> dict[str, Any]:

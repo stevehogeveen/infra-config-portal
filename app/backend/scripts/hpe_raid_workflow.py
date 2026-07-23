@@ -115,7 +115,10 @@ def _run_apply() -> int:
     with SessionLocal() as session:
         result = apply_hpe_raid_plan(
             session,
-            HpeRaidApplyCreate(confirmation_phrase=confirmation),
+            HpeRaidApplyCreate(
+                confirmation_phrase=confirmation,
+                ilo_host=os.getenv("ILO_WRITE_TARGET_HOST"),
+            ),
         )
     print(json.dumps(_sanitize(result), indent=2))
     print(f"apply_report={_rel(APPLY_REPORT)}")
@@ -140,7 +143,9 @@ def _run_pending() -> int:
 
 
 def _run_reset() -> int:
-    result = reset_server_for_raid()
+    result = reset_server_for_raid(
+        ilo_host=os.getenv("ILO_WRITE_TARGET_HOST"),
+    )
     print(json.dumps(_sanitize(_reset_summary(result)), indent=2))
     print(f"reset_report={_rel(RESET_REPORT)}")
     return 0 if result.get("status") == "reset-requested" else 2

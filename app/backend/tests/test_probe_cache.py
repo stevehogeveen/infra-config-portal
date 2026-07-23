@@ -5,6 +5,11 @@ from pathlib import Path
 from app.providers import probe_cache
 
 
+def test_backend_tests_keep_provider_probe_cache_out_of_runtime_artifacts(tmp_path: Path) -> None:
+    assert probe_cache.CACHE_DIR == tmp_path / "provider-probe-cache"
+    assert "artifacts/codex-runs/provider-probe-cache" not in probe_cache.CACHE_DIR.as_posix()
+
+
 def test_probe_cache_persists_across_memory_clear(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(probe_cache, "CACHE_DIR", tmp_path)
     probe_cache.clear_probe_results()

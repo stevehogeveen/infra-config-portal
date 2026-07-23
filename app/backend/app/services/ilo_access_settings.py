@@ -11,6 +11,7 @@ from app.providers.probe_cache import get_probe_result
 from app.services.env_utils import bool_value
 from app.services.json_file_store import write_text_value
 from app.services.path_utils import display_path, path_exists
+from app.services.status_source import status_source_metadata
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 ENV_KEYS = {
@@ -110,12 +111,18 @@ def _last_probe_summary(host: str | None, config: IloRedfishConfig) -> dict[str,
         return {
             "last_probe_status": "not_checked",
             "last_probe_time": None,
+            "last_probe_freshness": "not_checked",
+            "last_probe_is_current": False,
             "last_probe_message": None,
             "last_probe_target_source": None,
             "last_probe_target_matches_access_host": False,
             "last_probe_target_matches_configured_candidates": False,
             "last_probe_target_fingerprint_present": False,
         }
+    source_metadata = status_source_metadata(
+        source_type="live_cached",
+        checked_at=checked_at,
+    )
     target_fingerprint = _clean_optional(result.get("target_fingerprint"))
     candidate_fingerprints = {
         fingerprint
@@ -125,6 +132,8 @@ def _last_probe_summary(host: str | None, config: IloRedfishConfig) -> dict[str,
     return {
         "last_probe_status": _clean_optional(result.get("status")) or "unknown",
         "last_probe_time": checked_at,
+        "last_probe_freshness": source_metadata["freshness"],
+        "last_probe_is_current": bool(source_metadata["is_current"]),
         "last_probe_message": _clean_optional(result.get("message")),
         "last_probe_target_source": _clean_optional(result.get("target_source")),
         "last_probe_target_matches_access_host": bool(

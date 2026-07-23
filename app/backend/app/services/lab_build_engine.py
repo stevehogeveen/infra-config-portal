@@ -15,13 +15,18 @@ from sqlalchemy.orm import Session
 
 from app.providers.redaction import redact_sensitive
 from app.services.control_actions import REPO_ROOT
+from app.services.ilo_access_settings import IloAccessSettingsError, read_ilo_access_settings
 from app.services.json_file_store import read_json_object, write_json_object, write_text_value
 from app.services.lab_profiles import (
     active_lab_profile_context,
     lab_profile_context_fingerprint,
 )
 from app.services.path_utils import display_path, glob_paths
-from app.services.workflow_action_run_store import workflow_action_run_trace
+from app.services.status_source import DEFAULT_STALE_AFTER_SECONDS
+from app.services.workflow_action_run_store import (
+    latest_workflow_action_run_trace,
+    workflow_action_run_trace,
+)
 from app.services.workflow_action_runner import run_workflow_action
 
 BuildStepStatus = Literal[
@@ -88,6 +93,41 @@ class BuildStepDefinition:
     preflight_blocker: str | None = None
 
 
+@dataclass(frozen=True)
+class BuildStartEvidenceRequirement:
+    action_id: str
+    accepted_evidence_statuses: frozenset[str]
+    blocker: str
+
+
+BUILD_START_EVIDENCE_REQUIREMENTS = (
+    BuildStartEvidenceRequirement(
+        "cisco.current-intent-diff",
+        frozenset({"ready"}),
+        (
+            "Complete the switch's initial setup, then run the Cisco current-to-intent "
+            "read-only check with no remaining drift before starting the ESXi build."
+        ),
+    ),
+    BuildStartEvidenceRequirement(
+        "ilo.reachability",
+        frozenset({"ok"}),
+        (
+            "Complete iLO first contact, then run Check this iLO IP for the current "
+            "access address before starting the ESXi build."
+        ),
+    ),
+    BuildStartEvidenceRequirement(
+        "raid.validate",
+        frozenset({"succeeded"}),
+        (
+            "Complete local-storage initial setup, then run RAID validation against "
+            "the saved layout before starting the ESXi build."
+        ),
+    ),
+)
+
+
 ActionRunner = Callable[[str, Session | None, dict[str, Any] | None], dict[str, Any]]
 
 
@@ -97,9 +137,17 @@ def get_lab_build_plan(
     definitions: tuple[BuildStepDefinition, ...] | None = None,
 ) -> dict[str, Any]:
     resolved_context = context or active_lab_profile_context()
-    ordered = _ordered_definitions(definitions or _kit_step_definitions(resolved_context))
+    using_default_definitions = definitions is None
+    resolved_definitions = (
+        _kit_step_definitions(resolved_context)
+        if using_default_definitions
+        else definitions
+    )
+    ordered = _ordered_definitions(resolved_definitions)
     profile = _active_profile(resolved_context)
     blockers = _plan_blockers(profile, ordered)
+    if using_default_definitions:
+        blockers.extend(_build_start_evidence_blockers(resolved_context))
     return {
         "kit_id": str(profile.get("id") or "runtime-profile"),
         "kit_name": str(profile.get("name") or "Current lab"),
@@ -283,72 +331,44 @@ def _kit_step_definitions(context: dict[str, Any]) -> tuple[BuildStepDefinition,
 
     definitions = [
         BuildStepDefinition(
-            "profile",
-            "Check lab addresses",
-            "Confirm the selected kit and its address plan are complete.",
-            "lab-profile.validate-ip-profile",
-            "read_only",
-            (),
-            ("lab-profile",),
-            "/overview",
-            "Correct the selected kit or address plan, then retry.",
-        ),
-        BuildStepDefinition(
-            "firmware",
-            "Check firmware readiness",
-            "Compare installed firmware with the selected kit baseline.",
-            "firmware.compliance-check",
-            "read_only",
-            ("lab-profile",),
-            ("firmware-ready",),
-            "/firmware-upgrades",
-            "Review the firmware map and resolve the listed exception.",
-        ),
-        BuildStepDefinition(
-            "network",
-            "Configure the management network",
-            "Prepare the switch so the remaining devices can use the management network.",
-            "cisco.apply-bootstrap",
-            "write",
-            ("lab-profile", "firmware-ready"),
-            ("mgmt-network",),
-            "/network",
-            "Open Network Setup, approve the guarded change, then resume this build.",
-        ),
-        BuildStepDefinition(
-            "server-control",
-            "Check server management",
-            "Confirm the server management controller can be reached before storage work.",
-            "ilo.reachability",
-            "read_only",
-            ("lab-profile", "firmware-ready"),
-            ("server-control",),
-            "/server",
-            "Open Server Setup and correct the management connection, then retry.",
-        ),
-        BuildStepDefinition(
-            "local-storage",
-            "Create the server storage layout",
-            "Apply the saved local disk and RAID plan for this server.",
-            "raid.apply",
+            "esxi-installer-boot",
+            "Boot the ESXi installer",
+            (
+                "Run the guarded server power/reset stage that requests a boot from previously prepared "
+                "ESXi installer media. This stage does not install or configure ESXi."
+            ),
+            "esxi.rebuild-install",
             "destructive",
-            ("server-control",),
-            ("local-storage",),
-            "/server",
-            "Open Server Setup, review and approve the RAID plan, then resume this build.",
+            (),
+            ("esxi-installer-boot-requested",),
+            "/virtualization",
+            (
+                "Open Virtualization Setup, review the installer-media and boot prerequisites, approve "
+                "only the guarded installer boot, then resume this build."
+            ),
+            rationale=(
+                "The existing guarded action requests installer boot through iLO; it is not proof that "
+                "ESXi was installed or configured."
+            ),
             can_retry=False,
         ),
         BuildStepDefinition(
             "hypervisor",
-            "Install the compute host",
-            "Install and configure the compute host after local storage and networking are ready.",
-            "esxi.rebuild-install",
-            "destructive",
-            ("mgmt-network", "local-storage"),
+            "Validate ESXi management",
+            (
+                "After the operator completes ESXi installation and initial host configuration, confirm "
+                "target-bound management evidence before treating the compute host as ready."
+            ),
+            "esxi.management-validation",
+            "read_only",
+            ("esxi-installer-boot-requested",),
             ("hypervisor",),
             "/virtualization",
-            "Open Virtualization Setup, approve the guarded install, then resume this build.",
-            can_retry=False,
+            (
+                "Complete the ESXi installer and initial management configuration, then retry this "
+                "read-only validation."
+            ),
+            rationale="An installer boot request alone never establishes a usable ESXi host.",
         ),
     ]
 
@@ -362,7 +382,7 @@ def _kit_step_definitions(context: dict[str, Any]) -> tuple[BuildStepDefinition,
                     "Apply the saved storage system identity, network, and service plan.",
                     "netapp.setup-apply",
                     "write",
-                    ("mgmt-network",),
+                    ("hypervisor",),
                     ("storage-system",),
                     "/storage",
                     "Open Storage Setup, approve the guarded setup, then resume this build.",
@@ -849,6 +869,104 @@ def _plan_blockers(profile: dict[str, Any], definitions: list[BuildStepDefinitio
         blockers.append("Add a site subnet to the selected kit before starting the build.")
     blockers.extend(item.preflight_blocker for item in definitions if item.preflight_blocker)
     return blockers
+
+
+def _build_start_evidence_blockers(context: dict[str, Any]) -> list[str]:
+    profile = _active_profile(context)
+    profile_id = str(profile.get("id") or "runtime-profile")
+    profile_fingerprint = lab_profile_context_fingerprint(context)
+    now = datetime.now(UTC)
+    blockers: list[str] = []
+    evidence_times: dict[str, datetime] = {}
+
+    for requirement in BUILD_START_EVIDENCE_REQUIREMENTS:
+        trace = latest_workflow_action_run_trace(requirement.action_id)
+        checked_at = _build_start_trace_time(trace)
+        if not _build_start_trace_is_accepted(
+            trace,
+            requirement=requirement,
+            profile_id=profile_id,
+            profile_fingerprint=profile_fingerprint,
+            checked_at=checked_at,
+            now=now,
+        ):
+            blockers.append(requirement.blocker)
+            continue
+        assert checked_at is not None
+        evidence_times[requirement.action_id] = checked_at
+
+    try:
+        ilo_access = read_ilo_access_settings()
+    except IloAccessSettingsError:
+        ilo_access = {}
+    ilo_checked_at = _parse_datetime(ilo_access.get("last_probe_time"))
+    ilo_access_ready = (
+        bool(ilo_access.get("host"))
+        and ilo_access.get("username_configured") is True
+        and ilo_access.get("password_configured") is True
+        and str(ilo_access.get("last_probe_status") or "").lower() == "ok"
+        and ilo_access.get("last_probe_target_matches_access_host") is True
+        and _build_start_time_is_current(ilo_checked_at, now=now)
+    )
+    ilo_requirement = BUILD_START_EVIDENCE_REQUIREMENTS[1]
+    if not ilo_access_ready and ilo_requirement.blocker not in blockers:
+        blockers.append(ilo_requirement.blocker)
+
+    ilo_trace_time = evidence_times.get("ilo.reachability")
+    raid_trace_time = evidence_times.get("raid.validate")
+    raid_requirement = BUILD_START_EVIDENCE_REQUIREMENTS[2]
+    if (
+        ilo_trace_time is not None
+        and raid_trace_time is not None
+        and raid_trace_time < ilo_trace_time
+        and raid_requirement.blocker not in blockers
+    ):
+        blockers.append(raid_requirement.blocker)
+
+    return blockers
+
+
+def _build_start_trace_is_accepted(
+    trace: dict[str, Any] | None,
+    *,
+    requirement: BuildStartEvidenceRequirement,
+    profile_id: str,
+    profile_fingerprint: str,
+    checked_at: datetime | None,
+    now: datetime,
+) -> bool:
+    if not isinstance(trace, dict):
+        return False
+    return (
+        str(trace.get("action_id") or "") == requirement.action_id
+        and str(trace.get("status") or "").lower() == "completed"
+        and str(trace.get("evidence_status") or "").lower()
+        in requirement.accepted_evidence_statuses
+        and str(trace.get("source_type") or "").lower() == "live_probe"
+        and str(trace.get("freshness") or "").lower() == "current"
+        and trace.get("not_mock") is True
+        and trace.get("executed") is True
+        and not trace.get("blockers")
+        and str(trace.get("lab_profile_id") or "") == profile_id
+        and str(trace.get("lab_profile_fingerprint") or "") == profile_fingerprint
+        and _build_start_time_is_current(checked_at, now=now)
+    )
+
+
+def _build_start_trace_time(trace: dict[str, Any] | None) -> datetime | None:
+    if not isinstance(trace, dict):
+        return None
+    return _parse_datetime(
+        trace.get("evidence_checked_at")
+        or trace.get("checked_at")
+        or trace.get("finished_at")
+    )
+
+
+def _build_start_time_is_current(value: datetime | None, *, now: datetime) -> bool:
+    if value is None or value > now:
+        return False
+    return now - value <= timedelta(seconds=DEFAULT_STALE_AFTER_SECONDS)
 
 
 def _deployment_mode(context: dict[str, Any]) -> str:

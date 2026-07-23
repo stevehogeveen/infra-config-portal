@@ -11355,7 +11355,7 @@ function firmwareGuardedControls(actions: WorkflowAction[]): WorkflowAction[] {
 function firmwareRelatedActionLabel(action: WorkflowAction): string {
   const labels: Record<string, string> = {
     "cisco.apply-bootstrap": "Configure",
-    "esxi.rebuild-install": "Rebuild",
+    "esxi.rebuild-install": "Boot Installer",
     "ilo.virtual-media-insert": "Insert Media",
     "netapp.ontap-upgrade-apply": "Upgrade",
     "netapp.setup-apply": "Apply Setup",
@@ -11367,7 +11367,7 @@ function firmwareRelatedActionLabel(action: WorkflowAction): string {
 function firmwareRelatedActionTitle(action: WorkflowAction): string {
   const labels: Record<string, string> = {
     "cisco.apply-bootstrap": "Cisco Configure",
-    "esxi.rebuild-install": "ESXi Rebuild",
+    "esxi.rebuild-install": "ESXi Installer Boot",
     "ilo.virtual-media-insert": "iLO Virtual Media",
     "netapp.ontap-upgrade-apply": "NetApp ONTAP Upgrade",
     "netapp.setup-apply": "NetApp Setup",
@@ -14346,6 +14346,7 @@ function guardedWorkflowRunButtonLabel(action: WorkflowAction): string {
   const id = action.action_id;
   if (id.includes("upgrade")) return "Start Upgrade";
   if (id.includes("reset") || id.includes("reload")) return "Reset";
+  if (id === "esxi.rebuild-install") return "Boot Installer";
   if (id.includes("rebuild") || id.includes("install")) return "Rebuild";
   if (id.includes("virtual-media")) return "Insert Media";
   if (id.includes("one-time-boot")) return "Set Boot";

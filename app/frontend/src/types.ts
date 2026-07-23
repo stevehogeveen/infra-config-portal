@@ -262,6 +262,8 @@ export type IloAccessSettings = {
   updated_at: string | null;
   last_probe_status: string;
   last_probe_time: string | null;
+  last_probe_freshness: string;
+  last_probe_is_current: boolean;
   last_probe_message: string | null;
   last_probe_target_source: string | null;
   last_probe_target_matches_access_host: boolean;
@@ -1049,7 +1051,9 @@ export type WorkflowActionRun = {
   started_at: string;
   finished_at: string;
   checked_at: string;
+  evidence_checked_at?: string | null;
   status: string;
+  evidence_status?: string | null;
   source_type: "live_probe" | "live_cached" | "historical_artifact" | "test_fixture" | "not_checked" | string;
   freshness: string;
   not_mock: boolean;
@@ -1185,7 +1189,6 @@ export type WorkflowActionRunRequest = {
   cisco_commands?: string[];
   confirmation_phrase?: string;
   confirmed_gates?: string[];
-  host?: string;
   ilo_host?: string;
 };
 

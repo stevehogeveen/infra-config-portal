@@ -642,6 +642,8 @@ export function OperatorOverviewPage({
   const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
   const [vcenterNetapp, setVcenterNetapp] = useState<ProviderProbeResult | null>(null);
   const [buildVerification, setBuildVerification] = useState<ProviderProbeResult | null>(null);
+  const [iloAccessSettings, setIloAccessSettings] = useState<IloAccessSettings | null>(null);
+  const [hpeStorageDiscovery, setHpeStorageDiscovery] = useState<HpeStorageDiscovery | null>(null);
   const [error, setError] = useState("");
 
   async function load() {
@@ -652,19 +654,25 @@ export function OperatorOverviewPage({
         nextValidation,
         nextFirmware,
         nextVcenterNetapp,
-        nextBuildVerification
+        nextBuildVerification,
+        nextIloAccessSettings,
+        nextHpeStorageDiscovery
       ] = await Promise.all([
         safeApi(api.providers, [] as ProviderStatus[]),
         safeApi(api.labValidation, null),
         safeApi(api.firmwareSummary, [] as FirmwareSummary[]),
         safeApi(api.vcenterNetappReadiness, null),
-        safeApi(api.buildVerification, null)
+        safeApi(api.buildVerification, null),
+        safeApi(api.iloAccessSettings, null),
+        safeApi(api.hpeStorageDiscovery, null)
       ]);
       setProviders(Array.isArray(nextProviders) ? nextProviders : []);
       setValidation(nextValidation);
       setFirmwareSummaries(Array.isArray(nextFirmware) ? nextFirmware : []);
       setVcenterNetapp(nextVcenterNetapp);
       setBuildVerification(nextBuildVerification);
+      setIloAccessSettings(nextIloAccessSettings);
+      setHpeStorageDiscovery(nextHpeStorageDiscovery);
       if (onReloadLabProfile) {
         await onReloadLabProfile();
       }
@@ -677,8 +685,8 @@ export function OperatorOverviewPage({
     void load();
   }, []);
   const accessRows = useMemo(
-    () => overviewAccessRows({ address, providers, validation, vcenterNetapp }),
-    [address, providers, validation, vcenterNetapp]
+    () => overviewAccessRows({ address, iloAccessSettings, providers, validation, vcenterNetapp }),
+    [address, iloAccessSettings, providers, validation, vcenterNetapp]
   );
   const operatorHome = useMemo(
     () => buildOperatorHomeModel({
@@ -704,6 +712,8 @@ export function OperatorOverviewPage({
             address={address}
             features={features}
             health={health}
+            hpeStorageDiscovery={hpeStorageDiscovery}
+            iloAccessSettings={iloAccessSettings}
             labProfileState={labProfileState}
             onReload={async () => {
               await onReloadLabProfile?.();
@@ -1938,6 +1948,7 @@ type LocalRaidDraft = {
 
 type LocalRaidInventoryBay = {
   bay: string;
+  currentLayout: string;
   label: string;
   detail: string;
   health: string;
@@ -2254,8 +2265,12 @@ function LocalStorageRaidPlanner({
               type="button"
             >
               <span>{inventory?.label || `Bay ${bay}`}</span>
-              <strong>{meta.shortLabel}</strong>
-              <small>{inventory ? `${inventory.detail} · ${inventory.health}` : (raid || meta.detail)}</small>
+              <strong>Draft: {meta.shortLabel}</strong>
+              <small>
+                {inventory
+                  ? `${inventory.detail} · ${inventory.health} · Live: ${inventory.currentLayout}`
+                  : (raid || meta.detail)}
+              </small>
             </button>
           );
         })}
@@ -2322,14 +2337,18 @@ function LocalRaidPlannerDrawer({
   activeProfile,
   address,
   features,
+  iloAccessHost,
   netappInScope,
-  onClose
+  onClose,
+  onReload
 }: {
   activeProfile: LabProfile | null;
   address: LabAddressPlan;
   features: LabProfileFeatures | null;
+  iloAccessHost: string | null;
   netappInScope: boolean;
   onClose: () => void;
+  onReload: () => Promise<void> | void;
 }) {
   const storageProtocol = asString(features?.storage_protocol) || (netappInScope ? "nfs" : "local");
   const serverPart: DesignPartId = asString(activeProfile?.devices?.server_model).toLowerCase() === "gen10plus" ? "server-gen10plus" : "server-gen10";
@@ -2346,7 +2365,7 @@ function LocalRaidPlannerDrawer({
     ...localRaidSettingsFromDraft(initialDraft, netappInScope)
   }));
   const [discovery, setDiscovery] = useState<HpeStorageDiscovery | null>(null);
-  const [discoveryLoading, setDiscoveryLoading] = useState(true);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [discoveryError, setDiscoveryError] = useState("");
 
   async function loadDiscovery() {
@@ -2363,12 +2382,25 @@ function LocalRaidPlannerDrawer({
   }
 
   useEffect(() => {
-    void loadDiscovery();
-  }, [draftKey]);
+    setDiscovery(null);
+    setDiscoveryLoading(false);
+    setDiscoveryError("");
+  }, [draftKey, iloAccessHost]);
 
   async function runStorageInventoryRead() {
-    await api.runWorkflowAction("raid.discovery");
-    await loadDiscovery();
+    const targetHost = asString(iloAccessHost);
+    if (!targetHost) {
+      throw new Error("Save the current iLO first-contact IP before reading local storage.");
+    }
+    const run = await api.runWorkflowAction("raid.discovery", { ilo_host: targetHost });
+    await Promise.all([loadDiscovery(), Promise.resolve(onReload())]);
+    if (
+      run.status !== "completed" ||
+      run.blockers.length > 0 ||
+      (run.evidence_status != null && run.evidence_status !== "ok")
+    ) {
+      throw new Error(run.blockers[0] || "The exact-target iLO storage read did not complete.");
+    }
   }
 
   function commitLocalPlan(nextSettings: LocalRaidSettingsUpdate, draft: LocalRaidDraft) {
@@ -2401,9 +2433,8 @@ function LocalRaidPlannerDrawer({
           initialDraft={initialDraft}
           netappInScope={netappInScope}
           onCommit={commitLocalPlan}
-          onReloadDiscovery={loadDiscovery}
           onRunInventory={runStorageInventoryRead}
-          inventoryRunLabel="Read storage from iLO"
+          inventoryRunLabel={iloAccessHost ? `Read storage from iLO ${iloAccessHost}` : "Read storage from iLO"}
           requiresInventory
           settings={settings}
           storageProtocol={storageProtocol}
@@ -2477,6 +2508,16 @@ function localRaidDefaultDraftForBayIds(
 
 function localRaidInventoryBays(discovery: HpeStorageDiscovery | null | undefined): LocalRaidInventoryBay[] {
   const seen = new Set<string>();
+  const liveLayoutByResource = new Map<string, string>();
+  recordArray(discovery?.logical_drives).forEach((logicalDrive) => {
+    const links = objectValue(logicalDrive.Links);
+    const logicalName = asString(logicalDrive.display_label) || asString(logicalDrive.Name) || "Logical drive";
+    const raidLevel = asString(logicalDrive.raid_level) || asString(logicalDrive.RAIDType) || "RAID level unknown";
+    recordArray(links.Drives).forEach((driveLink) => {
+      const resource = localRaidResourcePath(driveLink);
+      if (resource) liveLayoutByResource.set(resource, `${logicalName} · ${raidLevel}`);
+    });
+  });
   return recordArray(discovery?.physical_drives)
     .map((drive, index) => {
       // Only trust a real bay/slot location here. drive.Id is a Redfish
@@ -2490,8 +2531,13 @@ function localRaidInventoryBays(discovery: HpeStorageDiscovery | null | undefine
       const capacity = asString(drive.capacity_label) || asString(drive.capacity) || asString(drive.Capacity) || "capacity unknown";
       const media = asString(drive.media_type) || asString(drive.MediaType) || asString(drive.InterfaceType) || "media unknown";
       const health = asString(drive.health) || asString(drive.Health) || asString(drive.status) || "health unknown";
+      const state = asString(objectValue(drive.Status).State) || asString(drive.state);
+      const resource = localRaidResourcePath(drive);
+      const currentLayout = (resource && liveLayoutByResource.get(resource))
+        || (/spare/i.test(state) ? "Hot spare" : "Unassigned");
       return {
         bay: cleanBay,
+        currentLayout,
         detail: [capacity, media].filter(Boolean).join(" · "),
         health: displayStatus(health),
         label: asString(drive.display_label) || `Bay ${cleanBay}`
@@ -2499,6 +2545,10 @@ function localRaidInventoryBays(discovery: HpeStorageDiscovery | null | undefine
     })
     .filter((bay): bay is LocalRaidInventoryBay => Boolean(bay))
     .sort((a, b) => localRaidBaySortValue(a.bay) - localRaidBaySortValue(b.bay));
+}
+
+function localRaidResourcePath(value: Record<string, unknown>): string {
+  return asString(value["@odata.id"]).trim().replace(/\/+$/, "");
 }
 
 function localRaidBaySortValue(bay: string): number {
@@ -5825,7 +5875,7 @@ function LabResetRebuildPanel({
           { icon: <ShieldCheck size={16} />, kind: "custom", label: "Preview HPE RAID Factory Reset", onClick: async () => { await api.hpeRaidFactoryResetPreview(); } },
           { actionIds: ["raid.factory-reset-apply"], icon: <Ban size={16} />, kind: "apply", label: "Reset HPE RAID" },
           { actionIds: ["raid.reset-commit"], icon: <RefreshCw size={16} />, kind: "apply", label: "Power Commit HPE RAID" },
-          { actionIds: ["esxi.rebuild-install"], icon: <Ban size={16} />, kind: "apply", label: "Rebuild ESXi Host" },
+          { actionIds: ["esxi.rebuild-install"], icon: <Ban size={16} />, kind: "apply", label: "Boot ESXi Installer" },
           { actionIds: ["ilo.reset-server"], icon: <Ban size={16} />, kind: "apply", label: "Reset Server Power" },
           { actionIds: ["netapp.factory-reset-validate"], icon: <CheckCircle2 size={16} />, kind: "read", label: "Validate NetApp Factory Reset" }
         ]}
@@ -5851,7 +5901,7 @@ function resetRebuildFallbackActions(): WorkflowAction[] {
     resetRebuildFallbackAction("raid.reset-commit", "Reset / Commit", "raid", "reset", "destructive", false, true),
     resetRebuildFallbackAction("raid.apply", "Apply RAID", "raid", "apply", "destructive", false, true),
     resetRebuildFallbackAction("raid.validate", "Validate RAID", "raid", "verify", "read_only", true),
-    resetRebuildFallbackAction("esxi.rebuild-install", "Rebuild ESXi Host", "virtualization", "reset", "destructive", false, true),
+    resetRebuildFallbackAction("esxi.rebuild-install", "Boot ESXi Installer", "virtualization", "reset", "destructive", false, true),
     resetRebuildFallbackAction("esxi.management-validation", "ESXi Management Validation", "virtualization", "verify", "read_only", true),
     resetRebuildFallbackAction("ilo.reset-server", "Reset Server", "server", "reset", "destructive", false, true),
     resetRebuildFallbackAction("netapp.setup-apply", "Apply NetApp Setup", "storage", "apply", "write", false, true),
@@ -7012,7 +7062,9 @@ function MapDeviceEditor({
         </button>
       </div>
       <div className="map-drawer-body">
-        <DeviceCredentialsPanel groupId={CREDENTIAL_GROUP_BY_DEVICE_KIND[node.kind]} />
+        {node.kind !== "ilo" && (
+          <DeviceCredentialsPanel groupId={CREDENTIAL_GROUP_BY_DEVICE_KIND[node.kind]} />
+        )}
         {node.kind === "ilo" && (
           <IloAccessSettingsPanel
             initialHost={edit.iloInitial}
@@ -7180,7 +7232,7 @@ function IloAccessSettingsPanel({
   plannedHost: string;
 }) {
   const [settingsState, setSettingsState] = useState<IloAccessSettings | null>(null);
-  const [host, setHost] = useState(plannedHost || initialHost || "");
+  const [host, setHost] = useState(initialHost || plannedHost || "");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [verifyTls, setVerifyTls] = useState(false);
@@ -7189,7 +7241,7 @@ function IloAccessSettingsPanel({
   const [checking, setChecking] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const fallbackHost = plannedHost || initialHost || "";
+  const fallbackHost = initialHost || plannedHost || "";
 
   async function loadAccessSettings() {
     setLoading(true);
@@ -7289,16 +7341,31 @@ function IloAccessSettingsPanel({
 
   const openHost = host.trim() || fallbackHost;
   const proofStatus = asString(settingsState?.last_probe_status) || "not_checked";
-  const proofMatchesAccessHost = settingsState?.last_probe_target_matches_access_host === true;
-  const proofAllowsMap = statusIsAccessible(proofStatus) && proofMatchesAccessHost;
+  const proofMatchesAccessHost = (
+    settingsState?.last_probe_target_matches_access_host === true &&
+    Boolean(openHost) &&
+    openHost.trim().toLowerCase() === asString(settingsState.host).trim().toLowerCase()
+  );
+  const proofHasTargetFingerprint = settingsState?.last_probe_target_fingerprint_present === true;
+  const proofIsCurrent = settingsState?.last_probe_is_current === true;
+  const proofAllowsMap = (
+    statusIsAccessible(proofStatus) &&
+    proofMatchesAccessHost &&
+    proofHasTargetFingerprint &&
+    proofIsCurrent
+  );
   const proofTone = proofAllowsMap ? "ready" : proofStatus === "not_checked" ? "unknown" : "blocked";
   const proofMessage = proofAllowsMap
     ? "This exact iLO target has fresh proof, so the map may turn green."
     : proofStatus === "not_checked"
       ? "No iLO proof is bound to this target yet."
-      : proofMatchesAccessHost
-        ? "The last iLO check reached this target but did not complete successfully."
-        : "The last iLO proof is for a different or unknown target. The map stays locked.";
+      : !proofMatchesAccessHost
+        ? "The last iLO proof is for a different or unknown target. The map stays locked."
+        : !proofHasTargetFingerprint
+          ? "The last iLO check has no exact-target fingerprint. The map stays locked."
+          : !proofIsCurrent
+            ? "The last exact-target iLO proof is stale. Run the check again before trusting the map."
+            : "The last iLO check reached this target but did not complete successfully.";
 
   return (
     <section className="map-field-group map-ilo-access" aria-label="iLO access credentials">
@@ -7397,6 +7464,8 @@ function OverviewLabMap({
   address,
   features,
   health,
+  hpeStorageDiscovery,
+  iloAccessSettings,
   labProfileState,
   onReload,
   vcenterNetapp
@@ -7406,6 +7475,8 @@ function OverviewLabMap({
   address: LabAddressPlan;
   features: LabProfileFeatures | null;
   health?: HealthLike;
+  hpeStorageDiscovery: HpeStorageDiscovery | null;
+  iloAccessSettings: IloAccessSettings | null;
   labProfileState: LabProfileList | null;
   onReload: () => Promise<void> | void;
   vcenterNetapp: ProviderProbeResult | null;
@@ -7426,7 +7497,8 @@ function OverviewLabMap({
   const esxiStatus = topologyStatusFromAccess(accessRows, "ESXi");
   const netappStatus = topologyStatusFromAccess(accessRows, "NetApp");
   const vmStatus = topologyStatusFromAccess(accessRows, "VM inventory");
-  const localStorageTone = topologyTone(iloStatus);
+  const localStorageStatus = topologyLocalStorageStatus(hpeStorageDiscovery, iloAccessSettings);
+  const localStorageTone = topologyConnectionTone([iloStatus, localStorageStatus]);
   const localStoragePosition = MAP_NODE_LAYOUT.localStorage;
 
   const nodes: MapNodeModel[] = [
@@ -7437,7 +7509,7 @@ function OverviewLabMap({
     },
     {
       id: "ilo", kind: "ilo", title: "HPE iLO", subtitle: `${serverModelLabel} management`,
-      meta: displayAddress(address.ilo), status: iloStatus, tone: topologyTone(iloStatus),
+      meta: displayAddress(iloAccessSettings?.host || address.ilo), status: iloStatus, tone: topologyTone(iloStatus),
       ...MAP_NODE_LAYOUT.ilo
     },
     {
@@ -7468,12 +7540,12 @@ function OverviewLabMap({
 
   type MapLink = { from: string; to: string; status: TopologyNodeTone };
   const rawLinks: MapLink[] = [
-    { from: "cisco", to: "ilo", status: topologyTone(iloStatus) },
-    { from: "cisco", to: "esxi", status: topologyTone(esxiStatus) },
-    { from: "cisco", to: "vcenter", status: topologyTone(vmStatus, "created") },
-    { from: "esxi", to: "netapp", status: topologyTone(netappStatus) },
-    { from: "netapp", to: "vcenter", status: topologyTone(netappStatus) },
-    { from: "esxi", to: "vcenter", status: topologyTone(vmStatus, "created") }
+    { from: "cisco", to: "ilo", status: topologyConnectionTone([ciscoStatus, iloStatus]) },
+    { from: "cisco", to: "esxi", status: topologyConnectionTone([ciscoStatus, esxiStatus]) },
+    { from: "cisco", to: "vcenter", status: topologyConnectionTone([ciscoStatus, vmStatus]) },
+    { from: "esxi", to: "netapp", status: topologyConnectionTone([esxiStatus, netappStatus]) },
+    { from: "netapp", to: "vcenter", status: topologyConnectionTone([netappStatus, vmStatus]) },
+    { from: "esxi", to: "vcenter", status: topologyConnectionTone([esxiStatus, vmStatus]) }
   ];
   const links = rawLinks.filter((link) => byId.has(link.from) && byId.has(link.to));
 
@@ -7597,8 +7669,10 @@ function OverviewLabMap({
             activeProfile={activeProfile}
             address={address}
             features={features}
+            iloAccessHost={iloAccessSettings?.host ?? null}
             netappInScope={netappInScope}
             onClose={() => setSelectedId(null)}
+            onReload={onReload}
           />
         )}
       </div>
@@ -13872,6 +13946,30 @@ function topologyTone(status: string, readyTone: TopologyNodeTone = "ready"): To
   return "unknown";
 }
 
+function topologyConnectionTone(statuses: string[]): TopologyNodeTone {
+  const tones = statuses.map((status) => topologyTone(status));
+  if (tones.length > 0 && tones.every((tone) => tone === "ready" || tone === "created")) return "ready";
+  if (tones.some((tone) => tone === "warning")) return "warning";
+  return "offline";
+}
+
+function topologyLocalStorageStatus(
+  discovery: HpeStorageDiscovery | null,
+  iloAccessSettings: IloAccessSettings | null
+): string {
+  if (
+    !discovery ||
+    !iloAccessSettings?.last_probe_target_matches_access_host ||
+    !iloAccessSettings.last_probe_target_fingerprint_present ||
+    !discovery.last_probe_time ||
+    discovery.last_probe_time !== iloAccessSettings.last_probe_time
+  ) {
+    return "not_checked";
+  }
+  if (discovery.blockers.length > 0) return "blocked";
+  return discovery.storage_inventory_available ? "ready" : "not_checked";
+}
+
 function topologyLinkStatus(status: string, readyStatus: TopologyLink["status"] = "ready"): TopologyLink["status"] {
   const tone = topologyTone(status);
   if (tone === "ready") return readyStatus;
@@ -17805,11 +17903,13 @@ function overviewLabValues({
 
 function overviewAccessRows({
   address,
+  iloAccessSettings,
   providers,
   validation,
   vcenterNetapp
 }: {
   address: LabAddressPlan;
+  iloAccessSettings: IloAccessSettings | null;
   providers: ProviderStatus[];
   validation: LabValidationSummary | null;
   vcenterNetapp: ProviderProbeResult | null;
@@ -17822,7 +17922,7 @@ function overviewAccessRows({
   ) =>
     liveProviderStatus(providers, providerId, tokens, options) || liveValidationProblemStatus(validation, tokens) || fallback;
   const ciscoStatus = liveStatusFor(["cisco"], "cisco-ansible");
-  const iloStatus = liveStatusFor(["ilo", "hpe"], "ilo-redfish", "not_checked", { requireActiveProfileTarget: true });
+  const iloStatus = liveIloAccessStatus(providers, iloAccessSettings);
   const esxiStatus = liveStatusFor(["esxi"], "esxi-readonly");
   const netappStatus = liveStatusFor(["netapp", "storage"], "netapp-ontap");
   const vcenterStatus = isFreshLiveEvidence(vcenterNetapp)
@@ -17847,7 +17947,11 @@ function overviewAccessRows({
       item: "iLO",
       need: "Need successful iLO access check",
       status: iloStatus,
-      target: address.ilo ? `https://${address.ilo}` : "Not set up yet"
+      target: iloAccessSettings?.host
+        ? `https://${iloAccessSettings.host}`
+        : address.ilo
+          ? `https://${address.ilo}`
+          : "Not set up yet"
     }),
     accessRow({
       appSees: sourceLabelFromStatus(esxiStatus),
@@ -17885,6 +17989,21 @@ function overviewAccessRows({
       target: "vCenter inventory"
     })
   ];
+}
+
+function liveIloAccessStatus(
+  providers: ProviderStatus[],
+  settings: IloAccessSettings | null
+): string {
+  const provider = providers.find((candidate) => candidate.id === "ilo-redfish");
+  if (!provider || !isFreshLiveEvidence(provider) || !settings?.host) return "not_checked";
+  if (
+    settings.last_probe_target_matches_access_host !== true ||
+    settings.last_probe_target_fingerprint_present !== true
+  ) {
+    return "target_mismatch";
+  }
+  return asString(settings.last_probe_status) || provider.status || "not_checked";
 }
 
 function accessRow({

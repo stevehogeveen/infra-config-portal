@@ -5,6 +5,7 @@ import importlib.util
 import json
 import sys
 import types
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -58,6 +59,7 @@ from app.services.ilo_setup_apply import (
     CONFIRMATION_PHRASE as ILO_SETUP_CONFIRMATION_PHRASE,
     apply_ilo_setup,
 )
+from app.services.ilo_write_target import IloWriteTargetContext
 from app.services.hpe_raid import (
     _pending_next_safe_action,
     _pending_report_status,
@@ -2734,7 +2736,10 @@ def test_ilo_setup_apply_blocks_hostname_patch_in_local_readonly(
 
     result = apply_ilo_setup(
         db_session,
-        IloSetupApplyCreate(confirmation_phrase=ILO_SETUP_CONFIRMATION_PHRASE),
+        IloSetupApplyCreate(
+            confirmation_phrase=ILO_SETUP_CONFIRMATION_PHRASE,
+            ilo_host="192.168.1.11",
+        ),
     )
 
     assert result["status"] == "blocked"
@@ -2789,7 +2794,10 @@ def test_ilo_setup_apply_blocks_ip_changes_and_does_not_patch(
 
     result = apply_ilo_setup(
         db_session,
-        IloSetupApplyCreate(confirmation_phrase=ILO_SETUP_CONFIRMATION_PHRASE),
+        IloSetupApplyCreate(
+            confirmation_phrase=ILO_SETUP_CONFIRMATION_PHRASE,
+            ilo_host="192.168.1.11",
+        ),
     )
 
     assert result["status"] == "blocked"
@@ -3151,6 +3159,17 @@ def test_ilo_probe_tries_first_access_candidate_after_primary_network_failure(mo
 
 
 def test_ilo_local_lab_dangerous_actions_remain_blocked(monkeypatch) -> None:
+    clear_probe_results()
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "target_fingerprint": ilo_redfish_module.ilo_target_fingerprint(
+                "192.0.2.202"
+            ),
+        },
+    )
     _allow_local_lab_ilo(monkeypatch)
     adapter = IloRedfishAdapter(
         provider_mode="local-lab-readwrite",
@@ -3182,6 +3201,7 @@ def test_ilo_local_lab_dangerous_actions_remain_blocked(monkeypatch) -> None:
     assert "LAB_ALLOW_POWER_ACTIONS=true" in disabled_actions["ilo-power-action"].reason
     assert "LAB_ALLOW_FIRMWARE_UPDATES=true" in disabled_actions["ilo-firmware-update"].reason
     assert "LAB_ALLOW_FACTORY_RESET=true" in disabled_actions["ilo-factory-reset"].reason
+    clear_probe_results()
 
 
 def test_ilo_setup_apply_allows_hostname_patch_in_local_lab_readwrite(
@@ -3192,8 +3212,8 @@ def test_ilo_setup_apply_allows_hostname_patch_in_local_lab_readwrite(
         provider_mode="local-lab-readwrite",
         ilo_setup_apply_enabled=True,
         lab_apply_ack="YES",
-        lab_target_ack="ilo.lab.local",
-        ilo_test_host="ilo.lab.local",
+        lab_target_ack="192.168.1.11",
+        ilo_test_host="192.168.1.201",
         ilo_test_username="local-admin",
         ilo_test_password="local-password",
         ilo_test_verify_tls=False,
@@ -3204,6 +3224,42 @@ def test_ilo_setup_apply_allows_hostname_patch_in_local_lab_readwrite(
     monkeypatch.setattr(
         "app.services.ilo_setup_apply.current_lab_action_policy",
         lambda provider_mode=None: _lab_action_policy(provider_mode or "local-lab-readwrite"),
+    )
+    write_target = IloWriteTargetContext(
+        current_access_host="192.168.1.11",
+        target_fingerprint=ilo_redfish_module.ilo_target_fingerprint("192.168.1.11") or "",
+        identity_fingerprint_sha256="a" * 64,
+        evidence_digest_sha256="b" * 64,
+        evidence_checked_at=datetime.now(UTC),
+        target_source="operator_first_contact",
+    )
+    exact_config = IloRedfishConfig(
+        host="192.168.1.11",
+        username="local-admin",
+        password="local-password",
+        verify_tls=False,
+        timeout_seconds=3.0,
+        host_source="exact_write_target_context",
+    )
+    monkeypatch.setattr(
+        "app.services.ilo_setup_apply.resolve_ilo_write_target_context",
+        lambda host: (
+            (write_target, [])
+            if host == "192.168.1.11"
+            else (None, ["write target mismatch"])
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.ilo_setup_apply.exact_ilo_write_config",
+        lambda context: exact_config if context == write_target else None,
+    )
+    monkeypatch.setattr(
+        "app.services.ilo_setup_apply.refresh_ilo_write_target_context",
+        lambda context: (
+            (write_target, exact_config, [])
+            if context == write_target
+            else (None, None, ["write target mismatch"])
+        ),
     )
     patch_bodies: list[dict[str, object]] = []
     _install_fake_ilo_setup_apply_httpx_client(
@@ -3219,7 +3275,10 @@ def test_ilo_setup_apply_allows_hostname_patch_in_local_lab_readwrite(
 
     result = apply_ilo_setup(
         db_session,
-        IloSetupApplyCreate(confirmation_phrase=ILO_SETUP_CONFIRMATION_PHRASE),
+        IloSetupApplyCreate(
+            confirmation_phrase=ILO_SETUP_CONFIRMATION_PHRASE,
+            ilo_host="192.168.1.11",
+        ),
     )
 
     assert result["status"] == "ok"

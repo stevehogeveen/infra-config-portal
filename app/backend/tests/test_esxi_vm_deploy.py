@@ -286,6 +286,54 @@ def test_esxi_vm_deploy_validation_writes_vm_info_atomically(monkeypatch, tmp_pa
     assert not list(esxi_vm_deploy.CODEX_RUN_DIR.glob("*.tmp"))
 
 
+def test_esxi_vm_deploy_validation_requires_requested_power_state(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _redirect_reports(monkeypatch, tmp_path)
+    ovf = tmp_path / "template.ovf"
+    ovf.write_text("<Envelope />", encoding="utf-8")
+    _patch_settings(monkeypatch)
+    monkeypatch.setenv("VM_DEPLOY_OVF_PATH", str(ovf))
+    monkeypatch.setenv("VM_DEPLOY_POWER_ON", "true")
+    monkeypatch.setattr(esxi_vm_deploy, "_govc_binary", lambda: "/usr/bin/govc")
+    monkeypatch.setattr(
+        esxi_vm_deploy,
+        "_run_govc",
+        _govc_datastore_and_vm_present,
+    )
+
+    payload = esxi_vm_deploy.validate_esxi_vm_deploy(write_report=False)
+
+    assert payload["status"] == "blocked"
+    assert any("requested powered on" in blocker for blocker in payload["blockers"])
+
+
+def test_esxi_vm_deploy_validation_can_require_live_guest_readiness(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _redirect_reports(monkeypatch, tmp_path)
+    ovf = tmp_path / "template.ovf"
+    ovf.write_text("<Envelope />", encoding="utf-8")
+    _patch_settings(monkeypatch)
+    monkeypatch.setenv("VM_DEPLOY_OVF_PATH", str(ovf))
+    monkeypatch.setenv("VM_DEPLOY_POWER_ON", "true")
+    monkeypatch.setenv("VM_DEPLOY_REQUIRE_GUEST_READY", "true")
+    monkeypatch.setattr(esxi_vm_deploy, "_govc_binary", lambda: "/usr/bin/govc")
+    monkeypatch.setattr(
+        esxi_vm_deploy,
+        "_run_govc",
+        _govc_datastore_and_ready_vm_present,
+    )
+
+    payload = esxi_vm_deploy.validate_esxi_vm_deploy(write_report=False)
+
+    assert payload["status"] == "ready"
+    assert payload["vm_check"]["summary"]["power_state"] == "poweredOn"
+    assert payload["vm_check"]["summary"]["guest_state"] == "running"
+    assert payload["vm_check"]["summary"]["tools_running_status"] == "guestToolsRunning"
+    assert payload["vm_check"]["summary"]["guest_ip_present"] is True
+
+
 def test_esxi_vm_deploy_apply_cleans_temp_import_options(monkeypatch, tmp_path: Path) -> None:
     _redirect_reports(monkeypatch, tmp_path)
     ovf = tmp_path / "template.ovf"
@@ -532,6 +580,38 @@ def _govc_datastore_and_vm_present(args, *, env, timeout):
                                     "GuestFullName": "Other Linux",
                                 },
                                 "Runtime": {"PowerState": "poweredOff"},
+                            },
+                        }
+                    ]
+                }
+            ),
+            "stderr": "",
+        }
+    raise AssertionError(f"unexpected govc call: {args}")
+
+
+def _govc_datastore_and_ready_vm_present(args, *, env, timeout):
+    if args[:2] == ["datastore.info", "-json"]:
+        return _govc_datastore_present(args, env=env, timeout=timeout)
+    if args[:2] == ["vm.info", "-json"]:
+        return {
+            "return_code": 0,
+            "stdout": json.dumps(
+                {
+                    "VirtualMachines": [
+                        {
+                            "InventoryPath": "/ha-datacenter/vm/netapp-nfs-ovf-preview-vm",
+                            "Summary": {
+                                "Config": {
+                                    "Name": "netapp-nfs-ovf-preview-vm",
+                                    "GuestFullName": "Other Linux",
+                                },
+                                "Runtime": {"PowerState": "poweredOn"},
+                            },
+                            "Guest": {
+                                "GuestState": "running",
+                                "ToolsRunningStatus": "guestToolsRunning",
+                                "IpAddress": "192.0.2.44",
                             },
                         }
                     ]

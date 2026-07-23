@@ -1,12 +1,14 @@
 # Cisco Real-Lab Console Bootstrap Runbook
 
-Target for this run: `192.168.1.204/24` (`255.255.255.0`).
+Target for each run: the Cisco management IP, prefix, VLAN, gateway, DNS list,
+and NTP list from the active saved kit. The executor must not substitute a
+hard-coded address.
 
 Default behavior is safe. `PROVIDER_MODE=mock` performs no real console apply.
 Keep `CISCO_MGMT_CONFIGURED=false` until console bootstrap has configured
 management networking and SSH is intentionally enabled by a guarded workflow.
-Cisco first contact/bootstrap is still console. Ansible starts only after
-management SSH is configured at `192.168.1.204`, and is then used for show
+Cisco first contact/bootstrap is still console. Ansible starts only after the
+active kit's management SSH target is configured, and is then used for show
 commands, backup, validation, drift checks, and future repeatable config.
 
 ## Backend Startup Modes
@@ -207,44 +209,50 @@ confirmed privileged exec before any configuration commands are sent.
 ## Operator Flow
 
 1. Open `/providers`.
-2. Confirm Cisco Setup Readiness shows target `192.168.1.204/24`.
+2. Confirm Cisco Setup Readiness shows the exact active-kit target and prefix.
 3. Confirm `Management Configured` is `false`.
 4. Review console discovery and select one effective console path.
-5. Run Prompt Readiness only when `PROVIDER_MODE=local-readonly`,
-   `LAB_CLOSED_LOOP_ACK=YES`, and `LAB_READONLY_ACK=YES` are set.
+5. Run Prompt Readiness only in an acknowledged real-lab read mode. Newline-only
+   discovery is allowed in `local-readonly`; guarded bootstrap apply requires
+   `local-lab-readwrite`.
 6. Review setup wizard planning. It uses cached prompt readiness only.
 7. Fill Bootstrap Requirements with non-secret planning values.
 8. Review Console Bootstrap Plan and redacted command preview.
 9. Do not apply unless every backend gate passes and the operator enters:
 
 ```text
-APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.204
+APPLY CISCO CONSOLE BOOTSTRAP <active-kit-cisco-ip>
 ```
 
 ## Guarded Apply Gates
 
 Backend apply must block unless all of these are true:
 
-- `PROVIDER_MODE=local-readonly`
+- `PROVIDER_MODE=local-lab-readwrite`
 - `CISCO_CONSOLE_APPLY_ENABLED=true`
 - `LAB_APPLY_ACK=YES`
-- `LAB_TARGET_ACK=192.168.1.204`
-- exact confirmation phrase matches
+- `LAB_TARGET_ACK=<active-kit-cisco-ip>`
+- exact target-bound confirmation phrase matches
 - selected console path is ready
 - prompt readiness is recent
 - prompt state is `exec` or `setup-wizard`
 - bootstrap requirements are complete
-- planned IP is `192.168.1.204`
-- planned prefix is `/24`
+- planned IP, prefix, VLAN, gateway, DNS, and NTP values match the active kit
+- access ports are limited to `Gi1/0/1` plus ports explicitly configured by the
+  operator; detected ports are never reassigned automatically
 
-The current apply endpoint is a scaffold and records no serial writes. A blocked
-result means no console commands were sent.
+The guarded script can send the reviewed bootstrap commands when every gate
+passes. A blocked result means no console commands were sent. Bootstrap never
+contains erase, factory-reset, VLAN-database deletion, firmware, reload, or
+power operations.
 
 ## Success And Evidence
 
-Success for the scaffold means the plan is visible, blockers explain missing
-gates, and apply attempts return redacted summaries with
-`serial_writes_attempted=false`.
+Success means the plan was bound to the active kit, the reviewed serial-console
+target accepted only the fixed bootstrap commands, post-apply console evidence
+was collected, and management reachability was proven for the same target.
+`serial_writes_attempted=false` is success only for preview/refusal paths, never
+for a claimed completed apply.
 
 Collect sanitized evidence only:
 

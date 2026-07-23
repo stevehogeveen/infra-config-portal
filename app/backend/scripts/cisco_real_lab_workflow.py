@@ -27,6 +27,11 @@ from app.services.hpe_raid import REPO_ROOT
 from app.services.json_file_store import write_json_object, write_json_value, write_text_value
 from app.services.list_utils import unique_preserving_order
 from app.services.path_utils import display_path, path_exists
+from app.services.provider_profile_defaults import (
+    active_cisco_network_defaults,
+    first_configured,
+    first_configured_list,
+)
 
 REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-4h-lab-run-report.md"
 FIX_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-privileged-exec-fix-report.md"
@@ -685,23 +690,47 @@ def _read_privilege_level(conn: Any) -> int | None:
 
 
 def _bootstrap_plan(identity: dict[str, Any] | None = None) -> dict[str, Any]:
+    profile_defaults = active_cisco_network_defaults()
     hostname = settings.cisco_hostname or "lab-cisco-switch"
-    target_ip = settings.cisco_target_ip or LAB_CISCO_MANAGEMENT_IP
-    prefix = settings.cisco_management_prefix or "/24"
+    target_ip = first_configured(
+        profile_defaults.get("planned_management_ip"),
+        settings.cisco_target_ip,
+        LAB_CISCO_MANAGEMENT_IP,
+    )
+    prefix = first_configured(
+        profile_defaults.get("subnet_prefix"),
+        settings.cisco_management_prefix,
+        "/24",
+    ) or "/24"
     netmask = _netmask(prefix)
-    vlan = str(settings.cisco_management_vlan or "10")
+    vlan = first_configured(
+        profile_defaults.get("management_vlan"),
+        settings.cisco_management_vlan,
+        "10",
+    ) or "10"
     interface = settings.cisco_management_interface or f"Vlan{vlan}"
     domain_name = settings.cisco_domain_name or CISCO_DEFAULT_DOMAIN_NAME
     username = settings.cisco_test_username
     access_ports = _selected_or_detected_access_ports(identity or {})
+    gateway = first_configured(
+        profile_defaults.get("gateway"),
+        settings.cisco_management_gateway,
+    )
+    dns_servers = first_configured_list(
+        profile_defaults.get("dns_servers"),
+        list(settings.cisco_dns_servers),
+    )
+    ntp_servers = first_configured_list(profile_defaults.get("ntp_servers"))
     commands = [
         "terminal length 0",
         "configure terminal",
         f"hostname {hostname}",
         f"ip domain-name {domain_name}",
     ]
-    for dns_server in settings.cisco_dns_servers:
+    for dns_server in dns_servers:
         commands.append(f"ip name-server {dns_server}")
+    for ntp_server in ntp_servers:
+        commands.append(f"ntp server {ntp_server}")
     commands.extend(["lldp run", "no ip http server", "no ip http secure-server"])
     commands.extend([f"vlan {vlan}", " name LAB-MGMT"])
     commands.append(f"interface {interface}")
@@ -719,8 +748,8 @@ def _bootstrap_plan(identity: dict[str, Any] | None = None) -> dict[str, Any]:
                     " exit",
                 ]
             )
-    if settings.cisco_management_gateway:
-        commands.append(f"ip default-gateway {settings.cisco_management_gateway}")
+    if gateway:
+        commands.append(f"ip default-gateway {gateway}")
     if username and settings.cisco_test_password:
         commands.append(f"username {username} privilege 15 secret <redacted>")
     commands.extend(
@@ -741,16 +770,10 @@ def _bootstrap_plan(identity: dict[str, Any] | None = None) -> dict[str, Any]:
         ]
     )
     blockers = []
-    if target_ip != LAB_CISCO_MANAGEMENT_IP:
-        blockers.append(f"Cisco VLAN 10 bootstrap target must be {LAB_CISCO_MANAGEMENT_IP}.")
-    if prefix not in {"/24", "255.255.255.0"}:
-        blockers.append("Cisco VLAN 10 bootstrap requires a /24 management prefix.")
-    if interface.lower() != "vlan10":
-        blockers.append("Cisco VLAN 10 bootstrap requires interface Vlan10.")
     if not target_ip:
-        blockers.append("CISCO_TARGET_IP or ANSIBLE_CISCO_HOST is required for Cisco management IP.")
+        blockers.append("The active kit must define a Cisco management IP.")
     if not netmask:
-        blockers.append("CISCO_MANAGEMENT_PREFIX must be a valid prefix or netmask.")
+        blockers.append("The active kit must define a valid Cisco management prefix or netmask.")
     if not username or not settings.cisco_test_password:
         blockers.append("Cisco local admin username/password are required for SSH/SCP bootstrap.")
     return {
@@ -770,10 +793,12 @@ def _bootstrap_plan(identity: dict[str, Any] | None = None) -> dict[str, Any]:
             "is configured for show commands, backup, validation, drift checks, and future repeatable config"
         ),
         "ansible_control_host": settings.ansible_control_host,
-        "gateway_configured": bool(settings.cisco_management_gateway),
+        "gateway_configured": bool(gateway),
         "domain_configured": bool(domain_name),
         "domain_source": "env" if settings.cisco_domain_name else "default",
-        "dns_server_count": len(settings.cisco_dns_servers),
+        "dns_server_count": len(dns_servers),
+        "ntp_server_count": len(ntp_servers),
+        "profile_bound": bool(profile_defaults.get("planned_management_ip")),
         "ssh_key_generation": f"rsa general-keys label {CISCO_SSH_HOSTKEY_LABEL} modulus 2048",
         "ssh_keypair_name": CISCO_SSH_HOSTKEY_LABEL,
         "ssh_version": "2",
@@ -787,12 +812,10 @@ def _bootstrap_plan(identity: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 def _selected_or_detected_access_ports(identity: dict[str, Any]) -> list[str]:
+    del identity
     configured = _configured_access_ports()
     if configured:
         return _unique_ports([*CISCO_ALWAYS_ACCESS_PORTS, *configured])
-    detected = identity.get("detected_access_ports")
-    if isinstance(detected, list):
-        return _unique_ports([*CISCO_ALWAYS_ACCESS_PORTS, *[str(item) for item in detected if str(item).strip()]])
     return list(CISCO_ALWAYS_ACCESS_PORTS)
 
 
@@ -811,10 +834,9 @@ def _configured_access_ports() -> list[str]:
 
 
 def _access_port_source(identity: dict[str, Any]) -> str:
+    del identity
     if _configured_access_ports():
         return "always-access-plus-configured-env"
-    if identity.get("detected_access_ports"):
-        return "always-access-plus-detected-show-interfaces-status"
     return "always-access-default"
 
 
@@ -824,6 +846,17 @@ def _apply_bootstrap(conn: Any, plan: dict[str, Any]) -> dict[str, Any]:
         ActionCategory.NETWORK_CONFIG,
     )
     blockers = [*policy_blockers, *(plan.get("blockers") or [])]
+    target_ip = str(plan.get("management_ip") or "")
+    confirmation_phrase = f"APPLY CISCO CONSOLE BOOTSTRAP {target_ip}"
+    if not _env_flag("CISCO_CONSOLE_APPLY_ENABLED"):
+        blockers.append("CISCO_CONSOLE_APPLY_ENABLED=true is required.")
+    if os.getenv("LAB_APPLY_ACK") != "YES":
+        blockers.append("LAB_APPLY_ACK=YES is required.")
+    if not target_ip or os.getenv("LAB_TARGET_ACK") != target_ip:
+        blockers.append(f"LAB_TARGET_ACK={target_ip or '<active kit Cisco IP>'} is required.")
+    if os.getenv("CISCO_BOOTSTRAP_CONFIRM") != confirmation_phrase:
+        blockers.append(f'CISCO_BOOTSTRAP_CONFIRM="{confirmation_phrase}" is required.')
+    blockers = unique_preserving_order(blockers)
     if blockers:
         return {"status": "blocked", "serial_writes_attempted": False, "blockers": blockers}
     sent = []

@@ -473,7 +473,7 @@ def test_vlan10_bootstrap_plan_configures_required_lab_network(monkeypatch) -> N
     assert commands[-1] == "write memory"
 
 
-def test_vlan10_bootstrap_plan_uses_detected_access_ports(monkeypatch) -> None:
+def test_bootstrap_plan_does_not_reassign_detected_ports(monkeypatch) -> None:
     monkeypatch.delenv("CISCO_LAB_ACCESS_PORTS", raising=False)
     monkeypatch.delenv("CISCO_ACCESS_PORTS", raising=False)
     monkeypatch.delenv("CISCO_LAB_PORTS", raising=False)
@@ -491,14 +491,13 @@ def test_vlan10_bootstrap_plan_uses_detected_access_ports(monkeypatch) -> None:
 
     plan = workflow._bootstrap_plan({"detected_access_ports": ["Gi1/0/7"]})
 
-    assert plan["access_port_source"] == "always-access-plus-detected-show-interfaces-status"
+    assert plan["access_port_source"] == "always-access-default"
     assert plan["always_access_ports"] == ["Gi1/0/1"]
     assert "interface Gi1/0/1" in plan["redacted_commands"]
-    assert "interface Gi1/0/7" in plan["redacted_commands"]
-    assert "interface range Gi1/0/1,Gi1/0/7" not in plan["redacted_commands"]
+    assert "interface Gi1/0/7" not in plan["redacted_commands"]
 
 
-def test_vlan10_bootstrap_plan_keeps_first_port_access_even_when_detection_skips_it(monkeypatch) -> None:
+def test_bootstrap_plan_ignores_all_unapproved_detected_ports(monkeypatch) -> None:
     monkeypatch.delenv("CISCO_LAB_ACCESS_PORTS", raising=False)
     monkeypatch.delenv("CISCO_ACCESS_PORTS", raising=False)
     monkeypatch.delenv("CISCO_LAB_PORTS", raising=False)
@@ -517,11 +516,86 @@ def test_vlan10_bootstrap_plan_keeps_first_port_access_even_when_detection_skips
     plan = workflow._bootstrap_plan({"detected_access_ports": ["Gi1/0/2", "Gi1/0/3"]})
 
     assert "interface Gi1/0/1" in plan["redacted_commands"]
-    assert "interface Gi1/0/2" in plan["redacted_commands"]
-    assert "interface Gi1/0/3" in plan["redacted_commands"]
-    assert "interface range Gi1/0/1,Gi1/0/2,Gi1/0/3" not in plan["redacted_commands"]
+    assert "interface Gi1/0/2" not in plan["redacted_commands"]
+    assert "interface Gi1/0/3" not in plan["redacted_commands"]
     assert " switchport mode access" in plan["redacted_commands"]
     assert " switchport mode trunk" not in plan["redacted_commands"]
+
+
+def test_bootstrap_plan_uses_active_profile_network_defaults(monkeypatch) -> None:
+    monkeypatch.setattr(
+        workflow,
+        "active_cisco_network_defaults",
+        lambda: {
+            "planned_management_ip": "10.10.8.204",
+            "subnet_prefix": "/24",
+            "management_vlan": "108",
+            "gateway": "10.10.8.1",
+            "dns_servers": ["10.10.8.10", "10.10.8.11"],
+            "ntp_servers": ["10.10.8.12", "10.10.8.13"],
+        },
+    )
+    monkeypatch.setattr(
+        workflow,
+        "settings",
+        workflow.settings.__class__(
+            provider_mode="local-lab-readwrite",
+            cisco_target_ip="192.168.1.204",
+            cisco_management_prefix="/24",
+            cisco_test_username="admin",
+            cisco_test_password="secret",
+        ),
+    )
+
+    plan = workflow._bootstrap_plan()
+
+    assert plan["status"] == "ready"
+    assert plan["management_ip"] == "10.10.8.204"
+    assert plan["management_vlan"] == "108"
+    assert plan["management_interface"] == "Vlan108"
+    assert " ip address 10.10.8.204 255.255.255.0" in plan["redacted_commands"]
+    assert "ip default-gateway 10.10.8.1" in plan["redacted_commands"]
+    assert "ip name-server 10.10.8.10" in plan["redacted_commands"]
+    assert "ip name-server 10.10.8.11" in plan["redacted_commands"]
+    assert "ntp server 10.10.8.12" in plan["redacted_commands"]
+    assert "ntp server 10.10.8.13" in plan["redacted_commands"]
+
+
+def test_bootstrap_apply_rechecks_exact_profile_target_and_phrase(monkeypatch) -> None:
+    class AllowPolicy:
+        def action_blockers(self, *_args: Any) -> list[str]:
+            return []
+
+    sent: list[str] = []
+    plan = {
+        "management_ip": "10.10.8.204",
+        "blockers": [],
+        "redacted_commands": ["terminal length 0"],
+    }
+    monkeypatch.setattr(workflow, "current_lab_action_policy", lambda _mode: AllowPolicy())
+    monkeypatch.setattr(workflow, "_send", lambda _conn, command, **_kwargs: sent.append(command))
+    monkeypatch.setattr(workflow, "_read", lambda *_args, **_kwargs: "")
+
+    refused = workflow._apply_bootstrap(object(), plan)
+
+    assert refused["status"] == "blocked"
+    assert refused["serial_writes_attempted"] is False
+    assert sent == []
+    assert "LAB_TARGET_ACK=10.10.8.204 is required." in refused["blockers"]
+
+    monkeypatch.setenv("CISCO_CONSOLE_APPLY_ENABLED", "true")
+    monkeypatch.setenv("LAB_APPLY_ACK", "YES")
+    monkeypatch.setenv("LAB_TARGET_ACK", "10.10.8.204")
+    monkeypatch.setenv(
+        "CISCO_BOOTSTRAP_CONFIRM",
+        "APPLY CISCO CONSOLE BOOTSTRAP 10.10.8.204",
+    )
+
+    applied = workflow._apply_bootstrap(object(), plan)
+
+    assert applied["status"] == "completed"
+    assert applied["serial_writes_attempted"] is True
+    assert sent == ["terminal length 0"]
 
 
 def test_bootstrap_apply_waits_longer_for_keygen_and_save() -> None:

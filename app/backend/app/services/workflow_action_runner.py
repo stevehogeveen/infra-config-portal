@@ -85,6 +85,11 @@ from app.services.esxi_install_readiness import get_esxi_install_readiness
 from app.services.esxi_management_recovery import validate_esxi_post_recovery
 from app.services.esxi_iscsi_datastore import build_esxi_iscsi_datastore_preview, validate_esxi_iscsi_datastore
 from app.services.esxi_vm_deploy import apply_esxi_vm_deploy, build_esxi_vm_deploy_preview, validate_esxi_vm_deploy
+from app.services.esxi_vm_teardown import (
+    apply_esxi_vm_teardown,
+    build_esxi_vm_teardown_preview,
+    validate_esxi_vm_teardown,
+)
 from app.services.vcenter_netapp_readiness import (
     get_vcenter_attach_esxi_preview,
     get_vcenter_install_plan,
@@ -113,6 +118,20 @@ ILO_REACHABILITY_REPORT = CODEX_RUN_DIR / "ilo-real-run-report.md"
 ILO_REACHABILITY_JSON = CODEX_RUN_DIR / "ilo-real-run-redacted.json"
 HPE_RAID_DISCOVERY_REPORT = CODEX_RUN_DIR / "hpe-raid-discovery-report.md"
 HPE_RAID_PLAN_REPORT = CODEX_RUN_DIR / "hpe-raid-plan-report.md"
+ILO_WRITE_ACTION_IDS = frozenset(
+    {
+        "esxi.one-time-boot",
+        "esxi.rebuild-install",
+        "esxi.recover-management",
+        "esxi.virtual-media-insert",
+        "ilo.one-time-boot",
+        "ilo.reset-server",
+        "ilo.virtual-media-insert",
+        "raid.apply",
+        "raid.reset-commit",
+    }
+)
+ILO_EXACT_READ_ACTION_IDS = frozenset({"raid.discovery"})
 
 
 class WorkflowActionRunNotFoundError(LookupError):
@@ -130,6 +149,13 @@ def run_workflow_action(
         action,
         confirmation_phrase=_string_or_none(payload.get("confirmation_phrase")),
         confirmed_gates=_string_list(payload.get("confirmed_gates")),
+    )
+    blockers = _unique(
+        [
+            *blockers,
+            *_ilo_exact_read_request_blockers(action_id, payload),
+            *_ilo_write_request_blockers(action_id, payload),
+        ]
     )
     started_at = _now()
     run_id = f"workflow-action:{action_id}:{uuid.uuid4().hex[:12]}"
@@ -150,7 +176,14 @@ def run_workflow_action(
     if spec.kind == "api":
         result = _run_api_action(action, run_id, started_at, session, payload)
     else:
-        result = _run_command_action(action, run_id, started_at, spec.command, spec.timeout_seconds)
+        result = _run_command_action(
+            action,
+            run_id,
+            started_at,
+            spec.command,
+            spec.timeout_seconds,
+            request_env_overrides=_guarded_command_env_overrides(action_id, payload),
+        )
 
     reports = _existing_report_artifacts([*_string_list(action.get("reports")), *_string_list(spec.reports)])
     result["report_artifacts"] = _unique(
@@ -190,11 +223,14 @@ def _run_command_action(
     started_at: str,
     command: tuple[str, ...],
     timeout_seconds: int,
+    *,
+    request_env_overrides: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     completed: subprocess.CompletedProcess[str] | None = None
     stderr = ""
     stdout = ""
-    normalized_command, env_overrides = _normalize_inline_env_command(command)
+    normalized_command, inline_env_overrides = _normalize_inline_env_command(command)
+    env_overrides = {**inline_env_overrides, **(request_env_overrides or {})}
     try:
         if env_overrides:
             completed = _run_subprocess(normalized_command, timeout_seconds, env_overrides=env_overrides)
@@ -265,6 +301,11 @@ def _run_api_action(
             warnings=warnings,
         )
         if isinstance(action_payload, dict):
+            result["evidence_status"] = payload_status or None
+            result["evidence_checked_at"] = _string_or_none(
+                action_payload.get("checked_at")
+                or action_payload.get("finished_at")
+            )
             result["report_artifacts"] = _unique(
                 [
                     *_string_list(result.get("report_artifacts")),
@@ -322,7 +363,9 @@ def _api_action_payload(
     if action_id == "ilo.setup-plan-preview":
         return get_ilo_setup_plan_preview(session)
     if action_id == "raid.discovery":
-        return _write_hpe_raid_discovery_artifact()
+        return _write_hpe_raid_discovery_artifact(
+            _ilo_config_for_payload(payload, require_explicit_target=True)
+        )
     if action_id == "raid.plan":
         if session is None:
             raise WorkflowActionRunNotFoundError("RAID plan preview requires a database session.")
@@ -340,7 +383,10 @@ def _api_action_payload(
             raise WorkflowActionRunNotFoundError("RAID apply requires a database session.")
         return apply_hpe_raid_plan(
             session,
-            HpeRaidApplyCreate(confirmation_phrase=_string_or_none(payload.get("confirmation_phrase")) or ""),
+            HpeRaidApplyCreate(
+                confirmation_phrase=_string_or_none(payload.get("confirmation_phrase")) or "",
+                ilo_host=_string_or_none(payload.get("ilo_host")),
+            ),
             guarded_context=guarded_context,
         )
     if action_id == "raid.factory-reset-preview":
@@ -356,7 +402,10 @@ def _api_action_payload(
             guarded_context=guarded_context,
         )
     if action_id == "raid.reset-commit":
-        return reset_server_for_raid(guarded_context=guarded_context)
+        return reset_server_for_raid(
+            ilo_host=_string_or_none(payload.get("ilo_host")),
+            guarded_context=guarded_context,
+        )
     if action_id == "esxi.readiness":
         if session is None:
             raise WorkflowActionRunNotFoundError("ESXi readiness requires a database session.")
@@ -389,6 +438,15 @@ def _api_action_payload(
         return build_esxi_vm_deploy_preview()
     if action_id == "esxi.vm-deploy-apply":
         return apply_esxi_vm_deploy(guarded_context=guarded_context)
+    if action_id == "esxi.vm-teardown-preview":
+        return build_esxi_vm_teardown_preview(_configured_vm_teardown_name())
+    if action_id == "esxi.vm-teardown-apply":
+        return apply_esxi_vm_teardown(
+            _configured_vm_teardown_name(),
+            guarded_context=guarded_context,
+        )
+    if action_id == "esxi.vm-teardown-validate":
+        return validate_esxi_vm_teardown(_configured_vm_teardown_name())
     if action_id == "netapp.live-state":
         return run_netapp_live_state()
     if action_id == "netapp.console-autodiscovery":
@@ -525,35 +583,40 @@ def _write_ilo_reachability_artifacts(payload: dict[str, Any]) -> dict[str, Any]
     return sanitized
 
 
-def _ilo_config_for_payload(payload: dict[str, Any]) -> IloRedfishConfig:
+def _ilo_config_for_payload(
+    payload: dict[str, Any],
+    *,
+    require_explicit_target: bool = False,
+) -> IloRedfishConfig:
     config = IloRedfishConfig.from_settings()
-    requested_host = _string_or_none(payload.get("ilo_host") or payload.get("host"))
+    requested_host = _string_or_none(payload.get("ilo_host"))
     if not requested_host:
+        if require_explicit_target:
+            raise ValueError(
+                "An explicit current-access ilo_host IP is required for exact-target iLO reads."
+            )
         return config
 
-    fallback_hosts: list[str] = []
-    fallback_sources: list[str] = []
-    seen = {requested_host.casefold()}
-    for candidate in config.target_candidates:
-        host = _string_or_none(candidate.get("host"))
-        if not host or host.casefold() in seen:
-            continue
-        seen.add(host.casefold())
-        fallback_hosts.append(host)
-        fallback_sources.append(str(candidate.get("source") or "fallback"))
-
+    # An operator-entered first-contact target must be exact-target-only. Falling
+    # back to a saved profile could return a successful probe for a different
+    # iLO and incorrectly mark the requested address as reachable.
     return replace(
         config,
         host=requested_host,
         host_source="operator_first_contact",
-        fallback_hosts=tuple(fallback_hosts),
-        fallback_host_sources=tuple(fallback_sources),
+        fallback_hosts=(),
+        fallback_host_sources=(),
     )
 
 
-def _write_hpe_raid_discovery_artifact() -> dict[str, Any]:
-    probe = IloRedfishAdapter().probe()
-    discovery = get_hpe_storage_discovery()
+def _write_hpe_raid_discovery_artifact(
+    config: IloRedfishConfig,
+) -> dict[str, Any]:
+    probe = IloRedfishAdapter(config=config).probe()
+    discovery = get_hpe_storage_discovery(
+        probe=probe,
+        probe_time=_string_or_none(probe.get("checked_at")),
+    )
     payload = {
         "checked_at": _now(),
         "provider_id": "ilo-redfish",
@@ -745,7 +808,18 @@ def _api_stdout_payload(action_id: str, action_payload: Any) -> Any:
         "esxi.netapp-datastore-validate",
     }:
         return _compact_datastore_payload(payload)
-    if action_id in {"esxi.management-validation", "esxi.vm-deploy-preview", "esxi.vm-deploy-apply", "esxi.vm-deploy-validate"}:
+    if action_id in {
+        "esxi.vm-teardown-preview",
+        "esxi.vm-teardown-apply",
+        "esxi.vm-teardown-validate",
+    }:
+        return _compact_esxi_vm_teardown_payload(payload)
+    if action_id in {
+        "esxi.management-validation",
+        "esxi.vm-deploy-preview",
+        "esxi.vm-deploy-apply",
+        "esxi.vm-deploy-validate",
+    }:
         return _compact_esxi_payload(payload)
     if action_id == "cisco.current-intent-diff":
         return _compact_cisco_intent_payload(payload)
@@ -951,6 +1025,65 @@ def _compact_esxi_payload(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _compact_esxi_vm_teardown_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    target = payload.get("target") if isinstance(payload.get("target"), dict) else {}
+    binding = (
+        payload.get("target_binding")
+        if isinstance(payload.get("target_binding"), dict)
+        else {}
+    )
+    vm = payload.get("vm_evidence") if isinstance(payload.get("vm_evidence"), dict) else {}
+    apply_state = payload.get("apply") if isinstance(payload.get("apply"), dict) else {}
+    return {
+        "provider_id": payload.get("provider_id"),
+        "action": payload.get("action"),
+        "status": payload.get("status"),
+        "source_type": payload.get("source_type"),
+        "freshness": payload.get("freshness"),
+        "checked_at": payload.get("checked_at"),
+        "apply_enabled": payload.get("apply_enabled"),
+        "request": {
+            "vm_name": request.get("vm_name"),
+            "valid": request.get("valid"),
+            "scope": request.get("scope"),
+        },
+        "target": {
+            "configured_target": target.get("configured_target"),
+            "govc_target": target.get("govc_target"),
+            "targets_match": target.get("targets_match"),
+        },
+        "target_binding": {
+            "checked": binding.get("checked"),
+            "freshness": binding.get("freshness"),
+            "bound": binding.get("bound"),
+            "direct_esxi": binding.get("direct_esxi"),
+            "instance_fingerprint": binding.get("instance_fingerprint"),
+        },
+        "vm_evidence": {
+            "checked": vm.get("checked"),
+            "freshness": vm.get("freshness"),
+            "requested_name": vm.get("requested_name"),
+            "exists": vm.get("exists"),
+            "absence_confirmed": vm.get("absence_confirmed"),
+            "exact_match": vm.get("exact_match"),
+            "power_state": vm.get("power_state"),
+        },
+        "apply": {
+            "power_off_attempted": apply_state.get("power_off_attempted"),
+            "powered_off_proven": apply_state.get("powered_off_proven"),
+            "destroy_attempted": apply_state.get("destroy_attempted"),
+            "absence_validation_attempted": apply_state.get(
+                "absence_validation_attempted"
+            ),
+            "absence_confirmed": apply_state.get("absence_confirmed"),
+        },
+        "blockers": payload.get("blockers") or [],
+        "warnings": payload.get("warnings") or [],
+        "next_safe_action": payload.get("next_safe_action"),
+    }
+
+
 def _compact_datastore_payload(payload: dict[str, Any]) -> dict[str, Any]:
     current = payload.get("current_state") if isinstance(payload.get("current_state"), dict) else {}
     target = payload.get("target_state") if isinstance(payload.get("target_state"), dict) else {}
@@ -1016,6 +1149,68 @@ def _guarded_action_context(action_id: str, payload: dict[str, Any]) -> GuardedA
         confirmed_gates=tuple(confirmed_gates),
         confirmation_phrase=_string_or_none(payload.get("confirmation_phrase")),
     )
+
+
+def _configured_vm_teardown_name() -> str:
+    return (
+        _string_or_none(os.getenv("VM_TEARDOWN_VM_NAME"))
+        or _string_or_none(os.getenv("VM_DEPLOY_VM_NAME"))
+        or ""
+    )
+
+
+def _guarded_command_env_overrides(
+    action_id: str,
+    payload: dict[str, Any],
+) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    if action_id == "cisco.apply-bootstrap":
+        context = _guarded_action_context(action_id, payload)
+        allowed_names = {
+            "CISCO_CONSOLE_APPLY_ENABLED",
+            "LAB_APPLY_ACK",
+            "LAB_TARGET_ACK",
+        }
+        overrides.update(
+            {
+                key: value
+                for key, value in context.confirmed_gates
+                if key in allowed_names
+            }
+        )
+        if context.confirmation_phrase:
+            overrides["CISCO_BOOTSTRAP_CONFIRM"] = context.confirmation_phrase
+    if action_id in ILO_WRITE_ACTION_IDS:
+        ilo_host = _string_or_none(payload.get("ilo_host"))
+        if ilo_host:
+            overrides["ILO_WRITE_TARGET_HOST"] = ilo_host
+    return overrides
+
+
+def _ilo_write_request_blockers(
+    action_id: str,
+    payload: dict[str, Any],
+) -> list[str]:
+    if action_id not in ILO_WRITE_ACTION_IDS:
+        return []
+    if _string_or_none(payload.get("ilo_host")):
+        return []
+    return [
+        "An explicit current-access ilo_host IP is required before this iLO-backed action can run."
+    ]
+
+
+def _ilo_exact_read_request_blockers(
+    action_id: str,
+    payload: dict[str, Any],
+) -> list[str]:
+    if action_id not in ILO_EXACT_READ_ACTION_IDS:
+        return []
+    if _string_or_none(payload.get("ilo_host")):
+        return []
+    return [
+        "An explicit current-access ilo_host IP is required before this exact-target iLO read can run."
+    ]
 
 
 def _strip_optional_quotes(value: str) -> str:

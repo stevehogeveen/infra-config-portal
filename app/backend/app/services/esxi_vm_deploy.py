@@ -187,6 +187,26 @@ def validate_esxi_vm_deploy(*, write_report: bool = True) -> dict[str, Any]:
         blockers.append(f"Target datastore `{plan['datastore']}` is not visible to direct ESXi govc.")
     if not vm_info.get("exists"):
         blockers.append(f"VM `{plan['vm_name']}` is not visible to direct ESXi govc.")
+    vm_summary = vm_info.get("summary") if isinstance(vm_info.get("summary"), dict) else {}
+    power_state = str(vm_summary.get("power_state") or "").strip().lower()
+    if plan["power_on"] and power_state != "poweredon":
+        blockers.append(
+            f"VM `{plan['vm_name']}` was requested powered on, but current power state "
+            f"is `{vm_summary.get('power_state') or 'not proved'}`."
+        )
+    if plan["require_guest_ready"]:
+        guest_state = str(vm_summary.get("guest_state") or "").strip().lower()
+        tools_running_status = str(vm_summary.get("tools_running_status") or "").strip().lower()
+        if guest_state != "running":
+            blockers.append(
+                f"VM `{plan['vm_name']}` guest state is "
+                f"`{vm_summary.get('guest_state') or 'not proved'}`, not `running`."
+            )
+        if tools_running_status not in {"guesttoolsrunning", "running"}:
+            blockers.append(
+                f"VM `{plan['vm_name']}` guest-tools readiness is "
+                f"`{vm_summary.get('tools_running_status') or 'not proved'}`."
+            )
     payload = {
         "provider_id": PROVIDER_ID,
         "action": "vm-deploy-validation",
@@ -213,7 +233,7 @@ def validate_esxi_vm_deploy(*, write_report: bool = True) -> dict[str, Any]:
         "next_safe_action": (
             "Deploy only after the target datastore is visible and guarded apply flags are present."
             if blockers
-            else "Keep the VM powered off unless an operator explicitly enables power-on."
+            else "The VM is present and every requested power/guest-readiness check passed."
         ),
     }
     sanitized = _sanitize(payload)
@@ -228,6 +248,7 @@ def _deployment_plan() -> dict[str, Any]:
     network = os.getenv("VM_DEPLOY_NETWORK", "VM Network")
     vm_name = os.getenv("VM_DEPLOY_VM_NAME", "netapp-nfs-ovf-preview-vm")
     power_on = _env_flag("VM_DEPLOY_POWER_ON")
+    require_guest_ready = _env_flag("VM_DEPLOY_REQUIRE_GUEST_READY")
     return {
         "vm_name": vm_name,
         "ovf_path": _safe_path(ovf_path),
@@ -236,6 +257,7 @@ def _deployment_plan() -> dict[str, Any]:
         "network": network,
         "disk_provisioning": os.getenv("VM_DEPLOY_DISK_PROVISIONING", "thin"),
         "power_on": power_on,
+        "require_guest_ready": require_guest_ready,
         "target_is_netapp_nfs": datastore == settings.netapp_nfs_datastore_name,
         "netapp_nfs_datastore": settings.netapp_nfs_datastore_name,
         "netapp_nfs_lif": settings.netapp_nfs_lifs[0] if settings.netapp_nfs_lifs else None,
@@ -390,6 +412,7 @@ def _run_guarded_import(plan: dict[str, Any], target: dict[str, Any]) -> dict[st
         remove_file_best_effort(options_path)
 
     apply_state["govc_import_ovf_attempted"] = True
+    apply_state["vm_power_on_attempted"] = bool(plan["power_on"])
     apply_state["import_ovf_return_code"] = import_ovf["return_code"]
     if import_ovf["return_code"] != 0:
         blockers.append("govc import.ovf failed.")
@@ -674,11 +697,15 @@ def _vm_summary(stdout: str | None) -> dict[str, Any] | None:
     summary = vm.get("Summary") if isinstance(vm.get("Summary"), dict) else {}
     runtime = summary.get("Runtime") if isinstance(summary.get("Runtime"), dict) else {}
     config = summary.get("Config") if isinstance(summary.get("Config"), dict) else {}
+    guest = vm.get("Guest") if isinstance(vm.get("Guest"), dict) else {}
     return {
         "name": config.get("Name"),
         "path": vm.get("InventoryPath"),
         "power_state": runtime.get("PowerState"),
         "guest": config.get("GuestFullName"),
+        "guest_state": guest.get("GuestState"),
+        "tools_running_status": guest.get("ToolsRunningStatus"),
+        "guest_ip_present": bool(guest.get("IpAddress")),
     }
 
 
@@ -789,13 +816,40 @@ def _ssh_datastore_summary(stdout: Any, datastore_name: str) -> dict[str, Any] |
 
 def _ssh_vm_info(plan: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
     result = _run_esxi_ssh("vim-cmd vmsvc/getallvms", timeout=30)
-    exists = _ssh_vm_exists(result.get("stdout"), plan["vm_name"])
+    vm_id = _ssh_vm_id(result.get("stdout"), plan["vm_name"])
+    exists = vm_id is not None
+    power_state = None
+    power_result: dict[str, Any] | None = None
+    if vm_id is not None:
+        power_result = _run_esxi_ssh(f"vim-cmd vmsvc/power.getstate {vm_id}", timeout=30)
+        if power_result["return_code"] == 0:
+            power_output = str(power_result.get("stdout") or "").lower()
+            if "powered on" in power_output:
+                power_state = "poweredOn"
+            elif "powered off" in power_output:
+                power_state = "poweredOff"
     info = {
-        "checked": result["return_code"] == 0,
+        "checked": result["return_code"] == 0
+        and (power_result is None or power_result["return_code"] == 0),
         "exists": exists,
-        "return_code": result["return_code"],
-        "stderr": result.get("stderr"),
-        "summary": {"name": plan["vm_name"], "access_method": "ssh-vim-cmd"} if exists else None,
+        "return_code": (
+            power_result["return_code"] if power_result and power_result["return_code"] else result["return_code"]
+        ),
+        "stderr": (
+            power_result.get("stderr")
+            if power_result and power_result["return_code"]
+            else result.get("stderr")
+        ),
+        "summary": (
+            {
+                "name": plan["vm_name"],
+                "vm_id": vm_id,
+                "power_state": power_state,
+                "access_method": "ssh-vim-cmd",
+            }
+            if exists
+            else None
+        ),
         "access_method": "ssh-vim-cmd",
         "ssh_target": target.get("ssh_target"),
     }
@@ -804,7 +858,21 @@ def _ssh_vm_info(plan: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]
 
 
 def _ssh_vm_exists(stdout: Any, vm_name: str) -> bool:
-    return any(vm_name in line.split() for line in str(stdout or "").splitlines())
+    return _ssh_vm_id(stdout, vm_name) is not None
+
+
+def _ssh_vm_id(stdout: Any, vm_name: str) -> int | None:
+    for line in str(stdout or "").splitlines():
+        columns = line.split()
+        if len(columns) < 2 or columns[0].lower() == "vmid":
+            continue
+        if vm_name not in columns:
+            continue
+        try:
+            return int(columns[0])
+        except ValueError:
+            continue
+    return None
 
 
 def _required_flags(plan: dict[str, Any]) -> list[str]:
@@ -816,6 +884,8 @@ def _required_flags(plan: dict[str, Any]) -> list[str]:
     ]
     if plan["power_on"]:
         flags.append(f'VM_DEPLOY_POWER_ON_CONFIRM="{VM_DEPLOY_POWER_ON_CONFIRM_PHRASE}"')
+    if plan["require_guest_ready"]:
+        flags.append("VM_DEPLOY_REQUIRE_GUEST_READY=true")
     return flags
 
 
@@ -834,6 +904,10 @@ def _warnings(plan: dict[str, Any]) -> list[str]:
         "Preview and validation use read-only govc checks; apply requires explicit deploy flags.",
         "The VM is left powered off unless VM_DEPLOY_POWER_ON=true and its separate confirmation are provided.",
     ]
+    if plan["require_guest_ready"]:
+        warnings.append(
+            "Guest readiness requires powered-on state plus live guest-state and VMware Tools evidence."
+        )
     if plan["target_is_netapp_nfs"]:
         warnings.append("Selected datastore is the NetApp NFS datastore; deployment waits until ESXi can see it.")
     return warnings

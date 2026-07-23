@@ -108,9 +108,9 @@ function BuildPlan({ loading, onStart, plan }: { loading?: boolean; onStart: () 
       </div>
 
       <p className="lab-build-summary" aria-label="Plan summary">
-        <strong>{summary.total} checks</strong>
+        <strong>{summary.total} stages</strong>
         <span>{summary.approvalStops} {summary.approvalStops === 1 ? "needs" : "need"} approval</span>
-        <span>{summary.automaticSteps} automatic</span>
+        <span>{summary.automaticSteps} read-only</span>
       </p>
 
       {plan.blockers.length > 0 && (
@@ -134,7 +134,7 @@ function BuildPlan({ loading, onStart, plan }: { loading?: boolean; onStart: () 
             <div>
               <span>Step {summary.nextStep.order}</span>
               <strong>{summary.nextStep.label}</strong>
-              <small>{isSafeAutomaticStep(summary.nextStep) ? "Runs automatically" : "Pauses for your approval"}</small>
+              <small>{isSafeAutomaticStep(summary.nextStep) ? "Runs read-only automatically" : "Pauses for your approval"}</small>
             </div>
           </div>
         )}
@@ -168,7 +168,7 @@ function summarizeBuildPlan(plan: LabBuildPlan) {
   return {
     approvalStops,
     automaticSteps,
-    message: "Start the checks here. Guarded steps pause before anything touches hardware.",
+    message: "Network, iLO, and local storage are proven before Start Build. The run begins at the guarded ESXi installer boot.",
     nextStep: plan.steps[0] ?? null,
     total
   };

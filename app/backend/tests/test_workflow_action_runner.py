@@ -102,6 +102,41 @@ def test_api_action_serializes_dataclass_provider_status(monkeypatch, tmp_path: 
     assert list(tmp_path.glob("*.json"))
 
 
+def test_api_action_trace_preserves_underlying_readiness_status(monkeypatch) -> None:
+    action = {
+        "action_id": "cisco.current-intent-diff",
+        "label": "Test Readiness",
+        "stage": "test",
+        "stage_label": "Test",
+        "mode": "read_only",
+        "api_method": "GET",
+        "api_endpoint": "/test/readiness",
+        "reports": [],
+    }
+    monkeypatch.setattr(
+        workflow_action_runner,
+        "_api_action_payload",
+        lambda *_args, **_kwargs: {
+            "status": "warning",
+            "checked_at": "2026-07-23T12:00:00+00:00",
+            "blockers": [],
+            "warnings": ["Current state does not match intent."],
+        },
+    )
+
+    result = workflow_action_runner._run_api_action(
+        action,
+        "workflow-action:cisco.current-intent-diff:test",
+        "2026-07-23T12:00:00+00:00",
+        None,
+        {},
+    )
+
+    assert result["status"] == "completed"
+    assert result["evidence_status"] == "warning"
+    assert result["evidence_checked_at"] == "2026-07-23T12:00:00+00:00"
+
+
 def test_ilo_reachability_action_writes_live_artifacts(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
     monkeypatch.setattr(workflow_action_runner, "CODEX_RUN_DIR", tmp_path)
@@ -133,11 +168,264 @@ def test_ilo_reachability_action_writes_live_artifacts(monkeypatch, tmp_path: Pa
     result = run_workflow_action("ilo.reachability", payload={"ilo_host": "10.10.8.110"})
 
     assert result["status"] == "completed"
+    assert result["evidence_status"] == "ok"
+    assert result["evidence_checked_at"] == "2026-07-01T01:10:00+00:00"
     assert configs[-1].host == "10.10.8.110"
     assert configs[-1].host_source == "operator_first_contact"
+    assert configs[-1].fallback_hosts == ()
+    assert configs[-1].fallback_host_sources == ()
     assert (tmp_path / "ilo-real-run-report.md").exists()
     assert (tmp_path / "ilo-real-run-redacted.json").exists()
     assert any(str(path).endswith("ilo-real-run-redacted.json") for path in result["report_artifacts"])
+    trace = workflow_action_run_store.workflow_action_run_trace(
+        "ilo.reachability",
+        result["run_id"],
+    )
+    assert trace is not None
+    assert trace["evidence_status"] == "ok"
+
+
+def test_ilo_reachability_route_preserves_exact_first_contact_target(
+    client: TestClient,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+    monkeypatch.setattr(workflow_action_runner, "CODEX_RUN_DIR", tmp_path)
+    monkeypatch.setattr(
+        workflow_action_runner,
+        "ILO_REACHABILITY_REPORT",
+        tmp_path / "ilo-real-run-report.md",
+    )
+    monkeypatch.setattr(
+        workflow_action_runner,
+        "ILO_REACHABILITY_JSON",
+        tmp_path / "ilo-real-run-redacted.json",
+    )
+    configs: list[object] = []
+
+    class FakeIloRedfishAdapter:
+        def __init__(self, config=None) -> None:  # noqa: ANN001
+            configs.append(config)
+
+        def probe(self) -> dict[str, object]:
+            return {
+                "provider_id": "ilo-redfish",
+                "status": "ok",
+                "checked_at": "2026-07-23T12:00:00+00:00",
+                "endpoint_detection": {"classification": "redfish_available"},
+                "blockers": [],
+                "warnings": [],
+            }
+
+    monkeypatch.setattr(workflow_action_runner, "IloRedfishAdapter", FakeIloRedfishAdapter)
+
+    response = client.post(
+        "/api/v1/workflows/actions/ilo.reachability/run",
+        json={"ilo_host": "10.10.8.110"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["evidence_status"] == "ok"
+    assert response.json()["evidence_checked_at"] == "2026-07-23T12:00:00+00:00"
+    assert configs
+    assert configs[-1].host == "10.10.8.110"
+    assert configs[-1].host_source == "operator_first_contact"
+    assert configs[-1].fallback_hosts == ()
+    assert configs[-1].fallback_host_sources == ()
+
+
+def test_raid_discovery_refuses_missing_exact_ilo_target_before_probe(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+
+    class FailIloRedfishAdapter:
+        def __init__(self, *_args, **_kwargs) -> None:
+            raise AssertionError("Missing exact iLO target must block before any probe.")
+
+    monkeypatch.setattr(workflow_action_runner, "IloRedfishAdapter", FailIloRedfishAdapter)
+
+    result = run_workflow_action("raid.discovery")
+
+    assert result["status"] == "blocked"
+    assert result["executed"] is False
+    assert any("explicit current-access ilo_host" in item for item in result["blockers"])
+
+
+def test_raid_discovery_uses_only_exact_first_contact_target(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+    monkeypatch.setattr(workflow_action_runner, "CODEX_RUN_DIR", tmp_path)
+    monkeypatch.setattr(
+        workflow_action_runner,
+        "HPE_RAID_DISCOVERY_REPORT",
+        tmp_path / "hpe-raid-discovery-report.md",
+    )
+    configs: list[object] = []
+    discovery_inputs: list[tuple[object, object]] = []
+    exact_probe = {
+        "provider_id": "ilo-redfish",
+        "status": "ok",
+        "checked_at": "2026-07-23T15:00:00+00:00",
+        "target_source": "operator_first_contact",
+        "target_fingerprint": "exact-first-contact-fingerprint",
+        "storage": {
+            "controllers": [{"Id": "0", "Model": "HPE Smart Array"}],
+            "physical_drives": [{"Id": "1I:1:1"}],
+            "logical_drives": [],
+        },
+        "blockers": [],
+        "warnings": [],
+        "not_attempted": ["storage controller write"],
+    }
+
+    class FakeIloRedfishAdapter:
+        def __init__(self, config=None) -> None:  # noqa: ANN001
+            configs.append(config)
+
+        def probe(self) -> dict[str, object]:
+            return exact_probe
+
+    def fake_storage_discovery(*, probe=None, probe_time=None):  # noqa: ANN001
+        discovery_inputs.append((probe, probe_time))
+        return SimpleNamespace(
+            storage_inventory_available=True,
+            blockers=[],
+            warnings=[],
+            next_safe_action="Review exact-target inventory.",
+            model_dump=lambda: {
+                "provider_id": "ilo-redfish",
+                "source": "exact iLO Redfish probe",
+                "last_probe_time": probe_time,
+                "storage_inventory_available": True,
+                "controllers": [{"Id": "0"}],
+                "physical_drives": [{"Id": "1I:1:1"}],
+                "logical_drives": [],
+                "blockers": [],
+                "warnings": [],
+                "next_safe_action": "Review exact-target inventory.",
+            },
+        )
+
+    monkeypatch.setattr(workflow_action_runner, "IloRedfishAdapter", FakeIloRedfishAdapter)
+    monkeypatch.setattr(
+        workflow_action_runner,
+        "get_hpe_storage_discovery",
+        fake_storage_discovery,
+    )
+
+    result = run_workflow_action(
+        "raid.discovery",
+        payload={"ilo_host": "192.168.1.11"},
+    )
+
+    assert result["status"] == "completed"
+    assert configs
+    assert configs[-1].host == "192.168.1.11"
+    assert configs[-1].host_source == "operator_first_contact"
+    assert configs[-1].fallback_hosts == ()
+    assert configs[-1].fallback_host_sources == ()
+    assert discovery_inputs == [(exact_probe, "2026-07-23T15:00:00+00:00")]
+    assert (tmp_path / "hpe-raid-discovery-report.md").exists()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"ilo_host": "https://10.10.8.110"},
+        {"ilo_host": "not-an-ip"},
+        {"host": "10.10.8.110"},
+        {"unknown_target": "10.10.8.110"},
+    ],
+)
+def test_workflow_action_route_rejects_invalid_or_unknown_target_payloads(
+    client: TestClient,
+    monkeypatch,
+    payload: dict[str, str],
+) -> None:
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("Invalid target payload must fail before the runner.")
+
+    monkeypatch.setattr("app.api.routes.run_workflow_action", fail_if_called)
+
+    response = client.post(
+        "/api/v1/workflows/actions/ilo.reachability/run",
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+
+def test_cisco_readonly_route_preserves_allowlisted_interface_commands(
+    client: TestClient,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+    captured: list[list[str] | None] = []
+
+    class FakeCiscoAnsibleAdapter:
+        def probe(self, extra_show_commands=None) -> dict[str, object]:  # noqa: ANN001
+            captured.append(extra_show_commands)
+            return {
+                "provider_id": "cisco-ansible",
+                "status": "ok",
+                "message": "Read-only Cisco SSH probe completed.",
+                "command_results": {},
+                "blockers": [],
+                "warnings": [],
+                "not_attempted": ["configure terminal", "write memory", "reload"],
+            }
+
+    monkeypatch.setattr(
+        "app.providers.cisco_ansible.CiscoAnsibleAdapter",
+        FakeCiscoAnsibleAdapter,
+    )
+    commands = [
+        "show interface Gi1/0/1",
+        "show running-config interface Gi1/0/1",
+    ]
+
+    response = client.post(
+        "/api/v1/workflows/actions/cisco.ssh-readonly-probe/run",
+        json={"cisco_commands": commands},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert captured == [commands]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "configure terminal",
+        "show running-config",
+        "show interface Gi1/0/49",
+        "show interface Gi1/0/1 | redirect flash:proof.txt",
+    ],
+)
+def test_cisco_readonly_route_rejects_arbitrary_commands(
+    client: TestClient,
+    monkeypatch,
+    command: str,
+) -> None:
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("Unapproved Cisco commands must fail before the runner.")
+
+    monkeypatch.setattr("app.api.routes.run_workflow_action", fail_if_called)
+
+    response = client.post(
+        "/api/v1/workflows/actions/cisco.ssh-readonly-probe/run",
+        json={"cisco_commands": [command]},
+    )
+
+    assert response.status_code == 422
 
 
 def test_cisco_ssh_readonly_probe_action_captures_show_command_evidence(monkeypatch, tmp_path: Path) -> None:
@@ -914,6 +1202,7 @@ def test_guarded_action_runs_with_exact_confirmation_and_gates(
         "raid.apply",
         db_session,
         payload={
+            "ilo_host": "192.168.1.11",
             "confirmation_phrase": "  APPLY HPE RAID PLAN  ",
             "confirmed_gates": [
                 " HPE_RAID_ALLOW_DESTRUCTIVE=true ",
@@ -933,6 +1222,246 @@ def test_guarded_action_runs_with_exact_confirmation_and_gates(
     assert context.gate_value("HPE_RAID_ALLOW_DESTRUCTIVE") == "true"
     assert context.confirmation_phrase == "APPLY HPE RAID PLAN"
     assert "Guarded workflow action completed" in result["summary"]
+
+
+def test_cisco_guarded_command_is_profile_bound_and_receives_request_local_gates(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+    monkeypatch.setattr(
+        workflow_registry,
+        "active_cisco_network_defaults",
+        lambda: {"planned_management_ip": "10.10.8.204"},
+    )
+
+    class AllowPolicy:
+        def action_blockers(self, action_id: str, category: object) -> list[str]:
+            return []
+
+    monkeypatch.setattr(workflow_registry, "current_lab_action_policy", lambda: AllowPolicy())
+
+    def get_unblocked_action(action_id: str) -> dict:
+        action = workflow_registry.get_workflow_action(action_id)
+        action["blockers"] = []
+        action["current_availability"] = "manual_command_required"
+        return action
+
+    captured: dict[str, object] = {}
+
+    def fake_run(
+        command: tuple[str, ...],
+        timeout_seconds: int,
+        *,
+        env_overrides: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        captured["command"] = command
+        captured["timeout_seconds"] = timeout_seconds
+        captured["env_overrides"] = env_overrides
+        return subprocess.CompletedProcess(command, 0, stdout="bootstrap complete", stderr="")
+
+    monkeypatch.setattr(workflow_action_runner, "get_workflow_action", get_unblocked_action)
+    monkeypatch.setattr(workflow_action_runner, "_run_subprocess", fake_run)
+
+    action = get_unblocked_action("cisco.apply-bootstrap")
+    assert action["required_confirmations"] == [
+        "APPLY CISCO CONSOLE BOOTSTRAP 10.10.8.204"
+    ]
+    assert "LAB_TARGET_ACK=10.10.8.204" in action["required_gates"]
+
+    result = run_workflow_action(
+        "cisco.apply-bootstrap",
+        payload={
+            "confirmation_phrase": "APPLY CISCO CONSOLE BOOTSTRAP 10.10.8.204",
+            "confirmed_gates": action["required_gates"],
+        },
+    )
+
+    assert result["status"] == "completed"
+    assert captured["command"] == ("make", "provider-lab-cisco-vlan10-bootstrap-apply")
+    assert captured["env_overrides"] == {
+        "CISCO_CONSOLE_APPLY_ENABLED": "true",
+        "LAB_APPLY_ACK": "YES",
+        "LAB_TARGET_ACK": "10.10.8.204",
+        "CISCO_BOOTSTRAP_CONFIRM": "APPLY CISCO CONSOLE BOOTSTRAP 10.10.8.204",
+    }
+
+
+def test_vm_teardown_guarded_runner_uses_configured_name_and_request_local_gates(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+    monkeypatch.setenv("VM_TEARDOWN_VM_NAME", "single-server-smoke-vm")
+    monkeypatch.setattr(
+        workflow_registry,
+        "settings",
+        SimpleNamespace(esxi_test_host="10.10.8.203"),
+    )
+
+    class AllowPolicy:
+        def action_blockers(self, action_id: str, category: object) -> list[str]:
+            return []
+
+    monkeypatch.setattr(workflow_registry, "current_lab_action_policy", lambda: AllowPolicy())
+
+    def get_unblocked_action(action_id: str) -> dict:
+        action = workflow_registry.get_workflow_action(action_id)
+        action["blockers"] = []
+        action["current_availability"] = "manual_command_required"
+        return action
+
+    captured: dict[str, object] = {}
+
+    def fake_apply(vm_name: str, *, guarded_context: object) -> dict:
+        captured["vm_name"] = vm_name
+        captured["context"] = guarded_context
+        return {
+            "provider_id": "esxi-readonly",
+            "action": "vm-teardown-apply",
+            "status": "completed",
+            "request": {"vm_name": vm_name, "valid": True},
+            "target": {"configured_target": "10.10.8.203"},
+            "target_binding": {"bound": True, "direct_esxi": True},
+            "vm_evidence": {"absence_confirmed": True},
+            "apply": {"destroy_attempted": True, "absence_confirmed": True},
+        }
+
+    monkeypatch.setattr(workflow_action_runner, "get_workflow_action", get_unblocked_action)
+    monkeypatch.setattr(workflow_action_runner, "apply_esxi_vm_teardown", fake_apply)
+
+    action = get_unblocked_action("esxi.vm-teardown-apply")
+    result = run_workflow_action(
+        "esxi.vm-teardown-apply",
+        payload={
+            "vm_name": "payload-must-not-change-scope",
+            "confirmation_phrase": "REMOVE ONE ESXI VM",
+            "confirmed_gates": action["required_gates"],
+        },
+    )
+
+    assert result["status"] == "completed"
+    assert result["executed"] is True
+    assert captured["vm_name"] == "single-server-smoke-vm"
+    context = captured["context"]
+    assert context.action_id == "esxi.vm-teardown-apply"
+    assert context.gate_value("VM_TEARDOWN_CONFIRM_VM_NAME") == "single-server-smoke-vm"
+    assert context.gate_value("VM_TEARDOWN_CONFIRM_ESXI_TARGET") == "10.10.8.203"
+    assert context.confirmation_phrase == "REMOVE ONE ESXI VM"
+
+
+@pytest.mark.parametrize(
+    ("action_id", "service_name", "service_action"),
+    [
+        (
+            "esxi.vm-teardown-preview",
+            "build_esxi_vm_teardown_preview",
+            "vm-teardown-preview",
+        ),
+        (
+            "esxi.vm-teardown-validate",
+            "validate_esxi_vm_teardown",
+            "vm-teardown-validation",
+        ),
+    ],
+)
+def test_vm_teardown_readonly_runners_use_only_the_configured_name(
+    monkeypatch,
+    tmp_path: Path,
+    action_id: str,
+    service_name: str,
+    service_action: str,
+) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+    monkeypatch.setenv("VM_TEARDOWN_VM_NAME", "single-server-smoke-vm")
+
+    def get_unblocked_action(requested_action_id: str) -> dict:
+        action = workflow_registry.get_workflow_action(requested_action_id)
+        action["blockers"] = []
+        action["current_availability"] = "available"
+        return action
+
+    captured: dict[str, object] = {}
+
+    def fake_readonly(vm_name: str) -> dict:
+        captured["vm_name"] = vm_name
+        return {
+            "provider_id": "esxi-readonly",
+            "action": service_action,
+            "status": "ready" if action_id.endswith("validate") else "preview_ready",
+            "request": {"vm_name": vm_name, "valid": True},
+            "target": {"configured_target": "10.10.8.203"},
+            "target_binding": {"bound": True, "direct_esxi": True},
+            "vm_evidence": {
+                "exists": not action_id.endswith("validate"),
+                "absence_confirmed": action_id.endswith("validate"),
+            },
+        }
+
+    monkeypatch.setattr(workflow_action_runner, "get_workflow_action", get_unblocked_action)
+    monkeypatch.setattr(workflow_action_runner, service_name, fake_readonly)
+
+    result = run_workflow_action(
+        action_id,
+        payload={"vm_name": "payload-must-not-change-scope"},
+    )
+
+    assert result["status"] == "completed"
+    assert result["executed"] is True
+    assert captured["vm_name"] == "single-server-smoke-vm"
+
+
+def test_vm_teardown_runner_refuses_mismatched_name_before_service_call(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+    monkeypatch.setenv("VM_TEARDOWN_VM_NAME", "single-server-smoke-vm")
+    monkeypatch.setattr(
+        workflow_registry,
+        "settings",
+        SimpleNamespace(esxi_test_host="10.10.8.203"),
+    )
+
+    class AllowPolicy:
+        def action_blockers(self, action_id: str, category: object) -> list[str]:
+            return []
+
+    monkeypatch.setattr(workflow_registry, "current_lab_action_policy", lambda: AllowPolicy())
+
+    def get_unblocked_action(action_id: str) -> dict:
+        action = workflow_registry.get_workflow_action(action_id)
+        action["blockers"] = []
+        action["current_availability"] = "manual_command_required"
+        return action
+
+    def fail_apply(*_args, **_kwargs):
+        raise AssertionError("Mismatched VM confirmation must not reach the service.")
+
+    monkeypatch.setattr(workflow_action_runner, "get_workflow_action", get_unblocked_action)
+    monkeypatch.setattr(workflow_action_runner, "apply_esxi_vm_teardown", fail_apply)
+
+    result = run_workflow_action(
+        "esxi.vm-teardown-apply",
+        payload={
+            "confirmation_phrase": "REMOVE ONE ESXI VM",
+            "confirmed_gates": [
+                "VM_TEARDOWN_APPLY=true",
+                "VM_TEARDOWN_ALLOW_DELETE=true",
+                "VM_TEARDOWN_ALLOW_POWER_OFF=true",
+                "LAB_ALLOW_POWER_ACTIONS=true",
+                "VM_TEARDOWN_CONFIRM_VM_NAME=some-other-vm",
+                "VM_TEARDOWN_CONFIRM_ESXI_TARGET=10.10.8.203",
+            ],
+        },
+    )
+
+    assert result["status"] == "blocked"
+    assert result["executed"] is False
+    assert any(
+        "VM_TEARDOWN_CONFIRM_VM_NAME=single-server-smoke-vm" in blocker
+        for blocker in result["blockers"]
+    )
 
 
 def test_guarded_action_ignores_unregistered_env_gates(
@@ -971,6 +1500,7 @@ def test_guarded_action_ignores_unregistered_env_gates(
         "raid.apply",
         db_session,
         payload={
+            "ilo_host": "192.168.1.11",
             "confirmation_phrase": "APPLY HPE RAID PLAN",
             "confirmed_gates": [
                 "HPE_RAID_ALLOW_DESTRUCTIVE=true",

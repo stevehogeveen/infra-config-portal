@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
+from app.providers.ilo_redfish import IloRedfishConfig, ilo_target_fingerprint
 from app.services import esxi_management_recovery
+from app.services.ilo_write_target import IloWriteTargetContext
 
 
 def _target_state() -> dict:
@@ -49,7 +52,7 @@ def _gates(*, asserted: bool) -> dict:
     }
 
 
-def test_recovery_still_blocks_on_redfish_auth_without_power_off_assertion(monkeypatch) -> None:
+def test_recovery_blocks_before_auth_checks_without_exact_target(monkeypatch) -> None:
     monkeypatch.setattr(esxi_management_recovery, "_target_state", _target_state)
     monkeypatch.setattr(
         esxi_management_recovery,
@@ -63,7 +66,7 @@ def test_recovery_still_blocks_on_redfish_auth_without_power_off_assertion(monke
 
     assert result["status"] == "blocked"
     assert result["apply"]["attempted"] is False
-    assert any("Redfish authorization is blocked" in item for item in result["blockers"])
+    assert any("explicit current-access ilo_host" in item for item in result["blockers"])
 
 
 def test_recovery_gates_accept_common_true_like_env_values(monkeypatch) -> None:
@@ -147,19 +150,33 @@ def test_recovery_gates_keep_scalar_policy_blocker_whole(monkeypatch) -> None:
     assert "p" not in gates["blockers"]
 
 
-def test_recovery_uses_operator_asserted_power_on_for_auth_blocked_off_host(monkeypatch) -> None:
-    monkeypatch.setattr(esxi_management_recovery, "_target_state", _target_state)
+def test_recovery_uses_exact_target_power_on_for_verified_off_host(monkeypatch) -> None:
+    _allow_exact_write_target(monkeypatch)
+    monkeypatch.setattr(
+        esxi_management_recovery,
+        "_target_state",
+        lambda *, ilo_host=None: _target_state(),
+    )
     monkeypatch.setattr(
         esxi_management_recovery,
         "_safe_system_state",
-        lambda: {"status_code": 401, "power_state": None, "boot": {}},
+        lambda *, config: {"status_code": 200, "power_state": "Off", "boot": {}},
     )
-    monkeypatch.setattr(esxi_management_recovery, "_safe_ilo_probe", _auth_blocked_probe)
+    monkeypatch.setattr(
+        esxi_management_recovery,
+        "_safe_ilo_probe",
+        lambda *, config: _auth_blocked_probe(),
+    )
     monkeypatch.setattr(esxi_management_recovery, "_recovery_gates", lambda: _gates(asserted=True))
 
     calls: list[bool] = []
 
-    def fake_power_on(target: dict, *, operator_asserted: bool = False) -> dict:
+    def fake_power_on(
+        target: dict,
+        *,
+        config,
+        operator_asserted: bool = False,
+    ) -> dict:
         calls.append(operator_asserted)
         return {
             "power_on_attempted": True,
@@ -176,9 +193,9 @@ def test_recovery_uses_operator_asserted_power_on_for_auth_blocked_off_host(monk
     result = esxi_management_recovery.recover_esxi_management(write_report=False)
 
     assert result["status"] == "recovered"
-    assert result["recovery_method"]["method"] == "operator_asserted_redfish_power_on"
+    assert result["recovery_method"]["method"] == "ilo_redfish_power_on"
     assert result["apply"]["attempted"] is True
-    assert calls == [True]
+    assert calls == [False]
 
 
 def test_report_paths_use_posix_separators(monkeypatch, tmp_path: Path) -> None:
@@ -236,3 +253,48 @@ def _redirect_reports(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(esxi_management_recovery, "RECOVERY_JSON", codex_runs / "esxi-reachability-remediation-redacted.json")
     monkeypatch.setattr(esxi_management_recovery, "VALIDATION_REPORT", codex_runs / "esxi-post-recovery-validation-report.md")
     monkeypatch.setattr(esxi_management_recovery, "VALIDATION_JSON", codex_runs / "esxi-post-recovery-validation-redacted.json")
+
+
+def _allow_exact_write_target(monkeypatch) -> IloWriteTargetContext:
+    host = "192.168.1.11"
+    context = IloWriteTargetContext(
+        current_access_host=host,
+        target_fingerprint=ilo_target_fingerprint(host) or "",
+        identity_fingerprint_sha256="a" * 64,
+        evidence_digest_sha256="b" * 64,
+        evidence_checked_at=datetime.now(UTC),
+        target_source="operator_first_contact",
+    )
+    config = IloRedfishConfig(
+        host=host,
+        username="operator",
+        password="secret",
+        verify_tls=False,
+        timeout_seconds=3.0,
+        host_source="exact_write_target_context",
+    )
+    monkeypatch.setenv("ILO_WRITE_TARGET_HOST", host)
+    monkeypatch.setattr(
+        esxi_management_recovery,
+        "resolve_ilo_write_target_context",
+        lambda requested_host: (
+            (context, [])
+            if requested_host == host
+            else (None, ["write target mismatch"])
+        ),
+    )
+    monkeypatch.setattr(
+        esxi_management_recovery,
+        "exact_ilo_write_config",
+        lambda resolved: config if resolved == context else None,
+    )
+    monkeypatch.setattr(
+        esxi_management_recovery,
+        "refresh_ilo_write_target_context",
+        lambda resolved: (
+            (context, config, [])
+            if resolved == context
+            else (None, None, ["write target mismatch"])
+        ),
+    )
+    return context

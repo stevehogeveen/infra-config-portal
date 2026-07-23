@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from app.core.config import settings
 from app.providers.action_policy import ActionCategory, current_lab_action_policy
 from app.services.control_actions import ACTIONS, ActionDefinition, REPO_ROOT
 from app.services.lab_profiles import active_lab_profile_context
 from app.services.list_utils import unique_preserving_order, unique_strings
 from app.services.path_utils import path_exists, path_mtime
+from app.services.provider_profile_defaults import active_cisco_network_defaults
 from app.services.workflow_action_allowlist import (
     workflow_action_guarded_run_support_blockers,
     workflow_action_run_blockers,
@@ -1103,7 +1106,94 @@ def _build_registry() -> dict[str, list[dict[str, Any]]]:
 def _workflow_action_seeds() -> list[WorkflowActionSeed]:
     seeds = [_seed_from_control_action(action) for action in ACTIONS]
     seeds.extend(EXTRA_ACTIONS)
+    seeds.extend(_vm_teardown_seeds())
     return _dedupe_seeds(seeds)
+
+
+def _vm_teardown_seeds() -> tuple[WorkflowActionSeed, ...]:
+    vm_name = (
+        os.getenv("VM_TEARDOWN_VM_NAME")
+        or os.getenv("VM_DEPLOY_VM_NAME")
+        or "<set VM_DEPLOY_VM_NAME>"
+    )
+    esxi_target = settings.esxi_test_host or "<set ESXI_TEST_HOST>"
+    endpoint_prefix = "/api/v1/workflows/actions"
+    reports = {
+        "preview": (
+            "artifacts/codex-runs/esxi-vm-teardown-preview-report.md",
+            "artifacts/codex-runs/esxi-vm-teardown-preview-redacted.json",
+        ),
+        "apply": (
+            "artifacts/codex-runs/esxi-vm-teardown-apply-report.md",
+            "artifacts/codex-runs/esxi-vm-teardown-apply-redacted.json",
+        ),
+        "validate": (
+            "artifacts/codex-runs/esxi-vm-teardown-validation-report.md",
+            "artifacts/codex-runs/esxi-vm-teardown-validation-redacted.json",
+        ),
+    }
+    return (
+        WorkflowActionSeed(
+            "esxi.vm-teardown-preview",
+            "Preview VM Removal",
+            "esxi",
+            "esxi",
+            "plan",
+            "read_only",
+            "Query the exact direct-ESXi VM target and preview its removal without power or delete operations.",
+            "api_endpoint",
+            api_endpoint=f"{endpoint_prefix}/esxi.vm-teardown-preview/run",
+            api_method="POST",
+            reports=reports["preview"],
+            required_credentials=("ESXi management credential reference with values redacted.",),
+            safety_notes=("Read-only govc identity and VM inventory queries only.",),
+        ),
+        WorkflowActionSeed(
+            "esxi.vm-teardown-apply",
+            "Remove One VM",
+            "esxi",
+            "esxi",
+            "reset",
+            "destructive",
+            "Power off and remove one exact VM after direct-HostAgent identity proof and explicit target-bound confirmations.",
+            "api_endpoint",
+            api_endpoint=f"{endpoint_prefix}/esxi.vm-teardown-apply/run",
+            api_method="POST",
+            required_mode="local-lab-readwrite",
+            required_gates=(
+                "VM_TEARDOWN_APPLY=true",
+                "VM_TEARDOWN_ALLOW_DELETE=true",
+                "VM_TEARDOWN_ALLOW_POWER_OFF=true",
+                "LAB_ALLOW_POWER_ACTIONS=true",
+                f"VM_TEARDOWN_CONFIRM_VM_NAME={vm_name}",
+                f"VM_TEARDOWN_CONFIRM_ESXI_TARGET={esxi_target}",
+            ),
+            required_confirmations=("REMOVE ONE ESXI VM",),
+            required_credentials=("ESXi management credential reference with values redacted.",),
+            reports=reports["apply"],
+            safety_notes=(
+                "The executor accepts only fixed govc VM-info, power-off, and destroy operations.",
+                "Datastore, host, disk, RAID, and network operations are outside this action.",
+            ),
+            policy_action_id="vm.teardown",
+            policy_category=ActionCategory.VM_DEPLOY,
+        ),
+        WorkflowActionSeed(
+            "esxi.vm-teardown-validate",
+            "Validate VM Is Absent",
+            "esxi",
+            "esxi",
+            "verify",
+            "read_only",
+            "Prove the exact VM is absent using fresh direct-ESXi HostAgent evidence.",
+            "api_endpoint",
+            api_endpoint=f"{endpoint_prefix}/esxi.vm-teardown-validate/run",
+            api_method="POST",
+            reports=reports["validate"],
+            required_credentials=("ESXi management credential reference with values redacted.",),
+            safety_notes=("Read-only target identity and VM absence queries only.",),
+        ),
+    )
 
 
 def _seed_from_control_action(action: ActionDefinition) -> WorkflowActionSeed:
@@ -1113,6 +1203,19 @@ def _seed_from_control_action(action: ActionDefinition) -> WorkflowActionSeed:
     endpoint_override = CONTROL_ACTION_API_ENDPOINTS.get(action.id)
     api_endpoint = endpoint_override[0] if endpoint_override else action.endpoint
     api_method = endpoint_override[1] if endpoint_override else action.method
+    required_gates = action.required_flags
+    required_confirmations = action.required_confirmations
+    if action.id == "cisco.apply-bootstrap":
+        target = str(
+            active_cisco_network_defaults().get("planned_management_ip")
+            or "<set Cisco management IP in Lab Defaults>"
+        )
+        required_gates = (
+            "CISCO_CONSOLE_APPLY_ENABLED=true",
+            "LAB_APPLY_ACK=YES",
+            f"LAB_TARGET_ACK={target}",
+        )
+        required_confirmations = (f"APPLY CISCO CONSOLE BOOTSTRAP {target}",)
     return WorkflowActionSeed(
         action_id=action.id,
         label=action.label,
@@ -1126,8 +1229,8 @@ def _seed_from_control_action(action: ActionDefinition) -> WorkflowActionSeed:
         api_endpoint=api_endpoint,
         api_method=api_method,
         required_mode=_required_mode_for_mode(mode),
-        required_gates=action.required_flags,
-        required_confirmations=action.required_confirmations,
+        required_gates=required_gates,
+        required_confirmations=required_confirmations,
         required_credentials=_credentials_for_provider_ids(action.provider_ids),
         safety_notes=_safety_notes_for_action(action, mode),
         inputs=tuple(

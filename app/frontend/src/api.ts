@@ -303,10 +303,10 @@ export const api = {
     apiRequest<HpeRaidPlanPreview>("/api/v1/providers/ilo-redfish/hpe-raid-plan-preview"),
   hpeRaidApplyPlan: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-apply-plan"),
-  applyHpeRaidPlan: (confirmation_phrase: string) =>
+  applyHpeRaidPlan: (confirmation_phrase: string, ilo_host: string) =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-apply", {
       method: "POST",
-      body: { confirmation_phrase }
+      body: { confirmation_phrase, ilo_host }
     }),
   hpeRaidFactoryResetPreview: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-factory-reset-preview"),
@@ -319,9 +319,10 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-pending"),
   hpeRaidResetPlan: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-reset-plan"),
-  resetHpeRaidServer: () =>
+  resetHpeRaidServer: (ilo_host: string) =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-reset", {
-      method: "POST"
+      method: "POST",
+      body: { ilo_host }
     }),
   validateHpeRaidAfterReset: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-validate-after-reset", {

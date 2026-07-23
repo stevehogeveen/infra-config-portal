@@ -44,6 +44,7 @@ from app.schemas import (
     FirmwareSummaryRead,
     HpeRaidApplyCreate,
     HpeRaidFactoryResetCreate,
+    HpeRaidResetCreate,
     HpeRaidIntentRead,
     HpeRaidIntentWrite,
     HpeRaidPlanPreviewRead,
@@ -61,6 +62,7 @@ from app.schemas import (
     IloSetupIntentWrite,
     IloSetupPlanPreviewRead,
     IloUpgradeReadinessRead,
+    IloWriteTargetRequest,
     LabCredentialsRead,
     LabCredentialsWrite,
     LabSafetySettingsRead,
@@ -1312,8 +1314,12 @@ def read_hpe_raid_reset_plan() -> ProviderProbeResultRead:
     "/providers/ilo-redfish/hpe-raid-reset",
     response_model=ProviderProbeResultRead,
 )
-def reset_hpe_raid_server_route() -> ProviderProbeResultRead:
-    return reset_server_for_raid()
+def reset_hpe_raid_server_route(
+    payload: HpeRaidResetCreate,
+) -> ProviderProbeResultRead:
+    return reset_server_for_raid(
+        ilo_host=payload.ilo_host,
+    )
 
 
 @router.post(
@@ -1364,8 +1370,12 @@ def run_esxi_vm_deploy_validate_route() -> ProviderProbeResultRead:
     "/providers/esxi-readonly/recover-management",
     response_model=ProviderProbeResultRead,
 )
-def run_esxi_recover_management_route() -> ProviderProbeResultRead:
-    return recover_esxi_management()
+def run_esxi_recover_management_route(
+    payload: IloWriteTargetRequest,
+) -> ProviderProbeResultRead:
+    return recover_esxi_management(
+        ilo_host=payload.ilo_host,
+    )
 
 
 @router.post(

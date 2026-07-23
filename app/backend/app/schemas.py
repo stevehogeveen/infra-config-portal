@@ -1098,6 +1098,8 @@ class IloAccessSettingsRead(BaseModel):
     updated_at: str | None = None
     last_probe_status: str = "not_checked"
     last_probe_time: str | None = None
+    last_probe_freshness: str = "not_checked"
+    last_probe_is_current: bool = False
     last_probe_message: str | None = None
     last_probe_target_source: str | None = None
     last_probe_target_matches_access_host: bool = False
@@ -1168,12 +1170,38 @@ class HpeRaidPlanPreviewRead(BaseModel):
     next_safe_action: str
 
 
-class HpeRaidApplyCreate(BaseModel):
+class IloWriteTargetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ilo_host: str = Field(max_length=80)
+
+    @field_validator("ilo_host", mode="before")
+    @classmethod
+    def strip_ilo_write_host(cls, value: str) -> str:
+        text = str(value).strip()
+        if not text:
+            raise ValueError("ilo_host is required")
+        return text
+
+    @field_validator("ilo_host")
+    @classmethod
+    def validate_ilo_write_host(cls, value: str) -> str:
+        try:
+            return str(ip_address(value))
+        except ValueError as exc:
+            raise ValueError("ilo_host must be an explicit IPv4 or IPv6 address") from exc
+
+
+class HpeRaidApplyCreate(IloWriteTargetRequest):
     confirmation_phrase: str
 
 
 class HpeRaidFactoryResetCreate(BaseModel):
     confirmation_phrase: str
+
+
+class HpeRaidResetCreate(IloWriteTargetRequest):
+    pass
 
 
 class IloSetupPlanSectionRead(BaseModel):
@@ -1204,7 +1232,7 @@ class IloSetupPlanPreviewRead(BaseModel):
     removable_warnings: list[str] = Field(default_factory=list)
 
 
-class IloSetupApplyCreate(BaseModel):
+class IloSetupApplyCreate(IloWriteTargetRequest):
     confirmation_phrase: str
     requested_actions: list[str] = Field(default_factory=list)
     destructive_action_requested: bool = False
@@ -2232,7 +2260,9 @@ class WorkflowActionRunRead(BaseModel):
     started_at: str
     finished_at: str
     checked_at: str
+    evidence_checked_at: str | None = None
     status: str
+    evidence_status: str | None = None
     source_type: Literal["live_probe", "live_cached", "historical_artifact", "test_fixture", "not_checked"] | str
     freshness: str
     not_mock: bool = True
@@ -2250,8 +2280,60 @@ class WorkflowActionRunRead(BaseModel):
 
 
 class WorkflowActionRunCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     confirmation_phrase: str | None = None
     confirmed_gates: list[str] = Field(default_factory=list)
+    cisco_commands: list[str] = Field(default_factory=list, max_length=4)
+    ilo_host: str | None = Field(default=None, max_length=80)
+
+    @field_validator("ilo_host", mode="before")
+    @classmethod
+    def strip_ilo_host(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("ilo_host")
+    @classmethod
+    def validate_ilo_host(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return str(ip_address(value))
+        except ValueError as exc:
+            raise ValueError("ilo_host must be an explicit IPv4 or IPv6 address") from exc
+
+    @field_validator("cisco_commands")
+    @classmethod
+    def validate_cisco_commands(cls, value: list[str]) -> list[str]:
+        commands: list[str] = []
+        for raw in value:
+            command = str(raw).strip()
+            interface_match = re.fullmatch(
+                r"show interface\s+Gi1/0/(?:[1-9]|[1-3][0-9]|4[0-8])",
+                command,
+                re.IGNORECASE,
+            )
+            running_match = re.fullmatch(
+                r"show running-config interface\s+Gi1/0/(?:[1-9]|[1-3][0-9]|4[0-8])",
+                command,
+                re.IGNORECASE,
+            )
+            if (
+                len(command) > 80
+                or (
+                    command.casefold() != "show interfaces status"
+                    and interface_match is None
+                    and running_match is None
+                )
+            ):
+                raise ValueError(
+                    "cisco_commands accepts only bounded read-only interface show commands"
+                )
+            commands.append(command)
+        return commands
 
 
 class LabBuildStepRead(BaseModel):

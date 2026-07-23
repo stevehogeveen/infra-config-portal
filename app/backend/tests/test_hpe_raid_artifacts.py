@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
 
+from app.providers.ilo_redfish import IloRedfishConfig, ilo_target_fingerprint
 from app.providers.probe_cache import clear_probe_results, record_probe_result
 from app.services import hpe_raid
+from app.services.ilo_write_target import IloWriteTargetContext
 from app.schemas import HpeRaidVolumeIntent
 
 
@@ -194,7 +197,140 @@ def test_hpe_storage_discovery_dedupes_duplicate_probe_inventory() -> None:
     assert len(discovery.controllers) == 1
     assert len(discovery.physical_drives) == 2
     assert len(discovery.logical_drives) == 1
+    assert {drive["selection_id"] for drive in discovery.physical_drives} == {
+        "1I:1:1",
+        "1I:1:2",
+    }
+    assert all(drive["raid_payload_compatible"] is True for drive in discovery.physical_drives)
     clear_probe_results()
+
+
+def test_hpe_storage_discovery_preserves_distinct_opaque_redfish_drive_resources() -> None:
+    probe = {
+        "provider_id": hpe_raid.PROVIDER_ID,
+        "status": "ok",
+        "storage": {
+            "physical_drives": [
+                {
+                    "@odata.id": f"/redfish/v1/Chassis/DE009000/Drives/{index}",
+                    "Id": str(index),
+                    "Name": "Physical Drive",
+                    "CapacityBytes": 1_200_000_000_000,
+                    "Status": {"Health": "OK", "State": "Enabled"},
+                }
+                for index in range(8)
+            ],
+        },
+    }
+
+    discovery = hpe_raid.get_hpe_storage_discovery(
+        probe=probe,
+        probe_time="2026-07-23T12:00:00+00:00",
+    )
+
+    assert discovery.storage_inventory_available is True
+    assert len(discovery.physical_drives) == 8
+    assert {drive["bay_id"] for drive in discovery.physical_drives} == {""}
+    assert len({drive["selection_id"] for drive in discovery.physical_drives}) == 8
+    assert len({drive["inventory_id"] for drive in discovery.physical_drives}) == 8
+    assert len({drive["display_label"] for drive in discovery.physical_drives}) == 8
+    assert {drive["identity_kind"] for drive in discovery.physical_drives} == {
+        "redfish_resource"
+    }
+    assert {drive["raid_payload_id"] for drive in discovery.physical_drives} == {None}
+    assert all(
+        drive["raid_payload_compatible"] is False
+        for drive in discovery.physical_drives
+    )
+    assert any(
+        "opaque resource IDs cannot be used" in warning
+        for warning in discovery.warnings
+    )
+    assert "resolve SmartStorage physical bay locations" in discovery.next_safe_action
+
+
+def test_hpe_storage_discovery_dedupes_same_opaque_redfish_resource() -> None:
+    drive = {
+        "@odata.id": "/redfish/v1/Chassis/DE009000/Drives/0",
+        "Id": "0",
+        "Name": "Physical Drive",
+    }
+
+    discovery = hpe_raid.get_hpe_storage_discovery(
+        probe={
+            "provider_id": hpe_raid.PROVIDER_ID,
+            "status": "ok",
+            "storage": {"physical_drives": [drive, dict(drive)]},
+        },
+    )
+
+    assert len(discovery.physical_drives) == 1
+    assert discovery.physical_drives[0]["selection_id"] == (
+        "redfish:/redfish/v1/Chassis/DE009000/Drives/0"
+    )
+
+
+def test_opaque_redfish_drive_ids_cannot_make_raid_plan_apply_ready(monkeypatch) -> None:
+    discovery = hpe_raid.get_hpe_storage_discovery(
+        probe={
+            "provider_id": hpe_raid.PROVIDER_ID,
+            "status": "ok",
+            "storage": {
+                "controllers": [{"Id": "0", "Name": "Smart Array"}],
+                "physical_drives": [
+                    {
+                        "@odata.id": f"/redfish/v1/Chassis/DE009000/Drives/{index}",
+                        "Id": str(index),
+                        "CapacityBytes": 1_200_000_000_000,
+                        "Status": {"Health": "OK", "State": "Enabled"},
+                    }
+                    for index in range(2)
+                ],
+            },
+        },
+    )
+    intent = SimpleNamespace(
+        controller_ref="0",
+        wipe_existing_logical_drives=True,
+        volumes=[
+            SimpleNamespace(
+                name="ESXi-OS",
+                raid_level="RAID1",
+                drive_bays=["0", "1"],
+                spare_bays=[],
+                bootable=True,
+            )
+        ],
+    )
+
+    validation = hpe_raid._validate_intent(intent, discovery)
+    recommendation = hpe_raid._recommended_local_storage_layout(discovery)
+    monkeypatch.setattr(hpe_raid, "current_lab_action_policy", lambda _mode=None: _AllowPolicy())
+    monkeypatch.setattr(hpe_raid, "firmware_gate_blockers", lambda _label: [])
+    monkeypatch.setenv("HPE_RAID_ALLOW_DESTRUCTIVE", "true")
+    apply_blockers = hpe_raid._apply_blockers(
+        SimpleNamespace(
+            blockers=validation["blockers"],
+            desired_intent=intent,
+            current_layout=discovery,
+        ),
+        confirmation_phrase=hpe_raid.CONFIRMATION_PHRASE,
+    )
+
+    assert any(
+        "only opaque Redfish resource IDs" in blocker
+        for blocker in validation["blockers"]
+    )
+    assert any(
+        "only opaque Redfish resource IDs" in blocker
+        for blocker in apply_blockers
+    )
+    assert recommendation["status"] == "blocked"
+    assert recommendation["usable_drive_count"] == 0
+    assert any(
+        "ControllerPort:Box:Bay" in blocker
+        for blocker in recommendation["blockers"]
+    )
 
 
 def test_reset_reports_write_atomically(monkeypatch, tmp_path: Path) -> None:
@@ -294,6 +430,7 @@ def test_reset_plan_uses_power_on_when_server_is_off(monkeypatch) -> None:
 
 def test_reset_server_for_raid_powers_on_when_server_is_off(monkeypatch, tmp_path: Path) -> None:
     _redirect_artifacts(monkeypatch, tmp_path)
+    _allow_exact_write_target(monkeypatch)
     monkeypatch.setattr(hpe_raid, "current_lab_action_policy", lambda _mode=None: _AllowPolicy())
     monkeypatch.setattr(hpe_raid, "firmware_gate_blockers", lambda _label: [])
     monkeypatch.setenv("HPE_RAID_ALLOW_RESET", "true")
@@ -308,10 +445,10 @@ def test_reset_server_for_raid_powers_on_when_server_is_off(monkeypatch, tmp_pat
     )
     reset_types: list[str] = []
 
-    def fake_observation(*, allow_errors: bool = False) -> dict:
+    def fake_observation(*, config=None, allow_errors: bool = False) -> dict:
         return next(observations)
 
-    def fake_reset(reset_type: str) -> dict:
+    def fake_reset(reset_type: str, *, config) -> dict:
         reset_types.append(reset_type)
         return {
             "method": "POST",
@@ -323,6 +460,11 @@ def test_reset_server_for_raid_powers_on_when_server_is_off(monkeypatch, tmp_pat
 
     monkeypatch.setattr(hpe_raid, "_server_reset_observation", fake_observation)
     monkeypatch.setattr(hpe_raid, "_post_system_reset", fake_reset)
+    monkeypatch.setattr(
+        hpe_raid,
+        "_target_bound_reset_preconditions",
+        lambda *_args: ({"reset_required": True}, []),
+    )
 
     result = hpe_raid.reset_server_for_raid()
 
@@ -334,6 +476,7 @@ def test_reset_server_for_raid_powers_on_when_server_is_off(monkeypatch, tmp_pat
 
 def test_reset_server_for_raid_gracefully_restarts_when_server_is_on(monkeypatch, tmp_path: Path) -> None:
     _redirect_artifacts(monkeypatch, tmp_path)
+    _allow_exact_write_target(monkeypatch)
     monkeypatch.setattr(hpe_raid, "current_lab_action_policy", lambda _mode=None: _AllowPolicy())
     monkeypatch.setattr(hpe_raid, "firmware_gate_blockers", lambda _label: [])
     monkeypatch.setenv("HPE_RAID_ALLOW_RESET", "true")
@@ -348,11 +491,15 @@ def test_reset_server_for_raid_gracefully_restarts_when_server_is_on(monkeypatch
     )
     reset_types: list[str] = []
 
-    monkeypatch.setattr(hpe_raid, "_server_reset_observation", lambda *, allow_errors=False: next(observations))
+    monkeypatch.setattr(
+        hpe_raid,
+        "_server_reset_observation",
+        lambda *, config=None, allow_errors=False: next(observations),
+    )
     monkeypatch.setattr(
         hpe_raid,
         "_post_system_reset",
-        lambda reset_type: reset_types.append(reset_type)
+        lambda reset_type, *, config: reset_types.append(reset_type)
         or {
             "method": "POST",
             "path": "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset/",
@@ -360,6 +507,11 @@ def test_reset_server_for_raid_gracefully_restarts_when_server_is_on(monkeypatch
             "request": {"ResetType": reset_type},
             "response": {},
         },
+    )
+    monkeypatch.setattr(
+        hpe_raid,
+        "_target_bound_reset_preconditions",
+        lambda *_args: ({"reset_required": True}, []),
     )
 
     result = hpe_raid.reset_server_for_raid()
@@ -469,6 +621,51 @@ def _redirect_artifacts(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(hpe_raid, "AFTER_RESET_VALIDATION_REPORT", codex_runs / "hpe-raid-after-reset-validation-report.md")
     monkeypatch.setattr(hpe_raid, "FACTORY_RESET_PLAN_REPORT", codex_runs / "hpe-raid-factory-reset-plan-report.md")
     monkeypatch.setattr(hpe_raid, "FACTORY_RESET_APPLY_REPORT", codex_runs / "hpe-raid-factory-reset-apply-report.md")
+
+
+def _allow_exact_write_target(monkeypatch) -> IloWriteTargetContext:
+    host = "192.168.1.11"
+    context = IloWriteTargetContext(
+        current_access_host=host,
+        target_fingerprint=ilo_target_fingerprint(host) or "",
+        identity_fingerprint_sha256="a" * 64,
+        evidence_digest_sha256="b" * 64,
+        evidence_checked_at=datetime.now(UTC),
+        target_source="operator_first_contact",
+    )
+    config = IloRedfishConfig(
+        host=host,
+        username="operator",
+        password="secret",
+        verify_tls=False,
+        timeout_seconds=3.0,
+        host_source="exact_write_target_context",
+    )
+    monkeypatch.setenv("ILO_WRITE_TARGET_HOST", host)
+    monkeypatch.setattr(
+        hpe_raid,
+        "resolve_ilo_write_target_context",
+        lambda requested_host: (
+            (context, [])
+            if requested_host == host
+            else (None, ["write target mismatch"])
+        ),
+    )
+    monkeypatch.setattr(
+        hpe_raid,
+        "exact_ilo_write_config",
+        lambda resolved: config if resolved == context else None,
+    )
+    monkeypatch.setattr(
+        hpe_raid,
+        "refresh_ilo_write_target_context",
+        lambda resolved: (
+            (context, config, [])
+            if resolved == context
+            else (None, None, ["write target mismatch"])
+        ),
+    )
+    return context
 
 
 class _AllowPolicy:

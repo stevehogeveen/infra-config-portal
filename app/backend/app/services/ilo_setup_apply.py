@@ -26,6 +26,13 @@ from app.providers.probe_cache import record_probe_result
 from app.providers.redaction import redact_sensitive
 from app.schemas import IloSetupApplyCreate
 from app.services.ilo_readiness import get_ilo_setup_intent
+from app.services.ilo_write_target import (
+    compact_ilo_write_target,
+    exact_ilo_write_config,
+    refresh_ilo_write_target_context,
+    requested_ilo_write_host,
+    resolve_ilo_write_target_context,
+)
 from app.services.list_utils import unique_preserving_order, unique_strings
 
 APPLY_PROVIDER_ID = "ilo-redfish-setup-apply"
@@ -48,8 +55,12 @@ BLOCKED_ACTIONS = [
 ]
 
 
-def build_ilo_setup_apply_plan(session: Session) -> dict[str, Any]:
-    config = IloRedfishConfig.from_settings()
+def build_ilo_setup_apply_plan(
+    session: Session,
+    *,
+    config: IloRedfishConfig | None = None,
+) -> dict[str, Any]:
+    config = config or IloRedfishConfig.from_settings()
     intent = get_ilo_setup_intent(session)
     hostname = intent.network.hostname
     blockers: list[str] = []
@@ -134,16 +145,32 @@ def build_ilo_setup_apply_plan(session: Session) -> dict[str, Any]:
 
 
 def apply_ilo_setup(session: Session, payload: IloSetupApplyCreate) -> dict[str, Any]:
-    config = IloRedfishConfig.from_settings()
-    plan = build_ilo_setup_apply_plan(session)
-    blockers = list(plan["blockers"])
-    blockers.extend(_environment_gate_blockers(config, confirmation_phrase=payload.confirmation_phrase))
+    requested_host = requested_ilo_write_host(payload.ilo_host)
+    write_target, target_blockers = resolve_ilo_write_target_context(requested_host)
+    config = exact_ilo_write_config(write_target) if write_target is not None else None
+    planning_config = config or IloRedfishConfig.from_settings()
+    plan = build_ilo_setup_apply_plan(session, config=planning_config)
+    blockers = [*target_blockers, *plan["blockers"]]
+    blockers.extend(
+        _environment_gate_blockers(
+            planning_config,
+            confirmation_phrase=payload.confirmation_phrase,
+        )
+    )
     if payload.destructive_action_requested or _requests_blocked_action(payload.requested_actions):
         blockers.append("Requested action includes a blocked or destructive iLO operation.")
+    if not blockers and write_target is not None:
+        refreshed_target, refreshed_config, refresh_blockers = (
+            refresh_ilo_write_target_context(write_target)
+        )
+        blockers.extend(refresh_blockers)
+        if refreshed_target is not None and refreshed_config is not None:
+            write_target = refreshed_target
+            config = refreshed_config
 
     if blockers:
         return _record_result(
-            config,
+            planning_config,
             {
                 "provider_id": APPLY_PROVIDER_ID,
                 "status": "blocked",
@@ -152,10 +179,12 @@ def apply_ilo_setup(session: Session, payload: IloSetupApplyCreate) -> dict[str,
                 "patch_count": 0,
                 "blockers": unique_preserving_order(blockers),
                 "warnings": plan["warnings"],
+                "write_target": compact_ilo_write_target(write_target),
                 "checked_at": datetime.now(UTC).isoformat(),
             },
         )
 
+    assert config is not None
     intent = get_ilo_setup_intent(session)
     desired_hostname = intent.network.hostname
     assert desired_hostname is not None
@@ -248,6 +277,7 @@ def apply_ilo_setup(session: Session, payload: IloSetupApplyCreate) -> dict[str,
             "requests": requests,
             "blockers": blockers,
             "warnings": plan["warnings"],
+            "write_target": compact_ilo_write_target(write_target),
             "checked_at": datetime.now(UTC).isoformat(),
         },
         extra_redactions=[desired_hostname],

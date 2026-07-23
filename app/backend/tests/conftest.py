@@ -54,16 +54,21 @@ os.environ.update(TEST_RUNTIME_ENV)
 from app import models  # noqa: E402,F401
 from app.core.database import Base, get_session  # noqa: E402
 from app.main import app  # noqa: E402
+from app.providers import probe_cache  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def isolate_local_lab_state(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+def isolate_local_lab_state(monkeypatch: pytest.MonkeyPatch, tmp_path) -> Generator[None, None, None]:
     monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
     monkeypatch.setenv("CONTROL_ACCESS_STORE", str(tmp_path / "control-access.json"))
     monkeypatch.setenv("FIRMWARE_FILE_SELECTION_STORE", str(tmp_path / "firmware-file-selections.json"))
+    monkeypatch.setattr(probe_cache, "CACHE_DIR", tmp_path / "provider-probe-cache")
+    probe_cache._PROBE_RESULTS.clear()
     for key, value in TEST_RUNTIME_ENV.items():
         monkeypatch.setenv(key, value)
     monkeypatch.delenv("LAB_ENVIRONMENT", raising=False)
+    yield
+    probe_cache._PROBE_RESULTS.clear()
 
 
 async def _run_sync_with_asyncio_executor(

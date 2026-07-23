@@ -74,6 +74,9 @@ def test_registry_contains_expected_provider_actions() -> None:
         "esxi.vm-deploy-preview",
         "esxi.vm-deploy-apply",
         "esxi.vm-deploy-validate",
+        "esxi.vm-teardown-preview",
+        "esxi.vm-teardown-apply",
+        "esxi.vm-teardown-validate",
         "esxi.iscsi-datastore-preview",
         "esxi.iscsi-datastore-validate",
         "netapp.serial-console-discovery",
@@ -120,6 +123,39 @@ def test_destructive_actions_are_marked_correctly() -> None:
     assert actions["esxi.rebuild-install"]["mode"] == "destructive"
     assert "HPE_RAID_ALLOW_FACTORY_RESET=true" in actions["raid.factory-reset-apply"]["required_gates"]
     assert "LAB_ALLOW_POWER_ACTIONS=true" in actions["raid.reset-commit"]["required_gates"]
+
+
+def test_vm_teardown_action_is_bound_to_configured_name_and_esxi_target(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("VM_TEARDOWN_VM_NAME", "single-server-smoke-vm")
+    monkeypatch.setattr(
+        workflow_registry,
+        "settings",
+        SimpleNamespace(esxi_test_host="10.10.8.203"),
+    )
+
+    actions = {
+        action["action_id"]: action
+        for action in workflow_registry.list_workflow_actions()
+    }
+    preview = actions["esxi.vm-teardown-preview"]
+    apply = actions["esxi.vm-teardown-apply"]
+    validate = actions["esxi.vm-teardown-validate"]
+
+    assert preview["mode"] == "read_only"
+    assert apply["mode"] == "destructive"
+    assert validate["mode"] == "read_only"
+    assert apply["required_confirmations"] == ["REMOVE ONE ESXI VM"]
+    assert "VM_TEARDOWN_CONFIRM_VM_NAME=single-server-smoke-vm" in apply[
+        "required_gates"
+    ]
+    assert "VM_TEARDOWN_CONFIRM_ESXI_TARGET=10.10.8.203" in apply[
+        "required_gates"
+    ]
+    assert preview["ui_run_supported"] is True
+    assert apply["guarded_run_supported"] is True
+    assert validate["ui_run_supported"] is True
 
 
 def test_action_reports_are_linked_to_actions_and_traces() -> None:

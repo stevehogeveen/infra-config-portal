@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,7 +12,9 @@ import pytest
 
 from app.core.config import settings
 from app.providers.action_policy import ActionCategory
+from app.providers.ilo_redfish import IloRedfishConfig, ilo_target_fingerprint
 from app.services import esxi_boot_workflow, esxi_install_readiness, hpe_raid
+from app.services.ilo_write_target import IloWriteTargetContext
 
 
 @pytest.fixture(autouse=True)
@@ -19,6 +22,47 @@ def _isolate_esxi_media_env(monkeypatch) -> None:
     monkeypatch.delenv("ESXI_INSTALL_ISO", raising=False)
     monkeypatch.delenv("ESXI_ISO_PATH", raising=False)
     monkeypatch.delenv("ESXI_MEDIA_BASE_URL", raising=False)
+    host = "192.168.1.11"
+    context = IloWriteTargetContext(
+        current_access_host=host,
+        target_fingerprint=ilo_target_fingerprint(host) or "",
+        identity_fingerprint_sha256="a" * 64,
+        evidence_digest_sha256="b" * 64,
+        evidence_checked_at=datetime.now(UTC),
+        target_source="operator_first_contact",
+    )
+    config = IloRedfishConfig(
+        host=host,
+        username="operator",
+        password="secret",
+        verify_tls=False,
+        timeout_seconds=3.0,
+        host_source="exact_write_target_context",
+    )
+    monkeypatch.setenv("ILO_WRITE_TARGET_HOST", host)
+    monkeypatch.setattr(
+        esxi_boot_workflow,
+        "resolve_ilo_write_target_context",
+        lambda requested_host: (
+            (context, [])
+            if requested_host == host
+            else (None, ["write target mismatch"])
+        ),
+    )
+    monkeypatch.setattr(
+        esxi_boot_workflow,
+        "exact_ilo_write_config",
+        lambda resolved: config if resolved == context else None,
+    )
+    monkeypatch.setattr(
+        esxi_boot_workflow,
+        "refresh_ilo_write_target_context",
+        lambda resolved: (
+            (context, config, [])
+            if resolved == context
+            else (None, None, ["write target mismatch"])
+        ),
+    )
 
 
 def test_prepare_esxi_media_url_keeps_scalar_firmware_blocker_whole(monkeypatch, tmp_path: Path) -> None:
@@ -67,11 +111,19 @@ def test_eject_virtual_media_posts_eject_action_and_writes_report(monkeypatch, t
         "_latest_virtual_media_path",
         lambda: "/redfish/v1/Managers/1/VirtualMedia/2/",
     )
+    monkeypatch.setattr(
+        esxi_boot_workflow,
+        "_bound_virtual_media_path",
+        lambda _target: (
+            "/redfish/v1/Managers/1/VirtualMedia/2/",
+            [],
+        ),
+    )
 
     get_calls: list[str] = []
     post_calls: list[tuple[str, dict]] = []
 
-    def fake_get(path: str) -> dict:
+    def fake_get(path: str, *, config=None) -> dict:
         get_calls.append(path)
         if len(get_calls) == 1:
             return {
@@ -103,7 +155,7 @@ def test_eject_virtual_media_posts_eject_action_and_writes_report(monkeypatch, t
             },
         }
 
-    def fake_post(path: str, payload: dict) -> dict:
+    def fake_post(path: str, payload: dict, *, config=None) -> dict:
         post_calls.append((path, payload))
         return {"method": "POST", "path": path, "status_code": 200, "request": payload, "response": {}}
 
@@ -169,8 +221,20 @@ def test_eject_virtual_media_writes_report_when_before_state_unreachable(monkeyp
     )
     monkeypatch.setattr(
         esxi_boot_workflow,
+        "_bound_virtual_media_path",
+        lambda _target: (
+            "/redfish/v1/Managers/1/VirtualMedia/2/",
+            [],
+        ),
+    )
+    monkeypatch.setattr(
+        esxi_boot_workflow,
         "_safe_get",
-        lambda _path: {"status_code": None, "error_class": "ConnectTimeout", "error": "timed out"},
+        lambda _path, *, config=None: {
+            "status_code": None,
+            "error_class": "ConnectTimeout",
+            "error": "timed out",
+        },
     )
 
     result = esxi_boot_workflow.eject_esxi_virtual_media()
@@ -303,7 +367,7 @@ def test_insert_virtual_media_writes_state_atomically(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(
         esxi_boot_workflow,
         "prepare_esxi_media_url",
-        lambda: {
+        lambda *, config=None: {
             "status": "ready",
             "selected_iso": {"name": "esxi.iso"},
             "media_url": "http://127.0.0.1:8088/esxi.iso",
@@ -314,12 +378,12 @@ def test_insert_virtual_media_writes_state_atomically(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(
         esxi_boot_workflow,
         "_select_virtual_media_device",
-        lambda: {"path": "/redfish/v1/Managers/1/VirtualMedia/2/"},
+        lambda *, config: {"path": "/redfish/v1/Managers/1/VirtualMedia/2/"},
     )
     monkeypatch.setattr(
         esxi_boot_workflow,
         "_get_redfish_resource",
-        lambda _path: {
+        lambda _path, *, config=None: {
             "status_code": 200,
             "body": {
                 "Inserted": True,
@@ -331,7 +395,11 @@ def test_insert_virtual_media_writes_state_atomically(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(
         esxi_boot_workflow,
         "_post_virtual_media_action",
-        lambda device, media_url: {"status_code": 200, "device": device, "media_url": media_url},
+        lambda device, media_url, *, config: {
+            "status_code": 200,
+            "device": device,
+            "media_url": media_url,
+        },
     )
 
     result = esxi_boot_workflow.insert_esxi_virtual_media()
@@ -350,7 +418,7 @@ def test_one_time_boot_writes_boot_snapshots_atomically(monkeypatch, tmp_path: P
     monkeypatch.setattr(
         esxi_boot_workflow,
         "_get_redfish_resource",
-        lambda _path: {
+        lambda _path, *, config=None: {
             "status_code": 200,
             "body": {
                 "Boot": {
@@ -364,7 +432,7 @@ def test_one_time_boot_writes_boot_snapshots_atomically(monkeypatch, tmp_path: P
     monkeypatch.setattr(
         esxi_boot_workflow,
         "_patch_system_boot",
-        lambda payload: {"status_code": 200, "request": payload},
+        lambda payload, *, config: {"status_code": 200, "request": payload},
     )
 
     result = esxi_boot_workflow.set_esxi_one_time_boot()
@@ -474,13 +542,20 @@ def test_reset_for_installer_boot_powers_on_when_server_is_off(monkeypatch, tmp_
     monkeypatch.setattr(
         esxi_boot_workflow,
         "insert_esxi_virtual_media",
-        lambda: {"status": "inserted", "device": {"path": "/redfish/v1/Managers/1/VirtualMedia/2/"}},
+        lambda *, write_target=None: {
+            "status": "inserted",
+            "device": {"path": "/redfish/v1/Managers/1/VirtualMedia/2/"},
+        },
     )
-    monkeypatch.setattr(esxi_boot_workflow, "set_esxi_one_time_boot", lambda: {"status": "set"})
+    monkeypatch.setattr(
+        esxi_boot_workflow,
+        "set_esxi_one_time_boot",
+        lambda *, write_target=None: {"status": "set"},
+    )
 
     reset_types: list[str] = []
 
-    def fake_reset(reset_type: str) -> dict:
+    def fake_reset(reset_type: str, *, config) -> dict:
         reset_types.append(reset_type)
         return {
             "method": "POST",
@@ -490,7 +565,7 @@ def test_reset_for_installer_boot_powers_on_when_server_is_off(monkeypatch, tmp_
             "response": {},
         }
 
-    def fake_safe_get(path: str) -> dict:
+    def fake_safe_get(path: str, *, config=None) -> dict:
         if path == esxi_boot_workflow.SYSTEM_PATH:
             return {
                 "status_code": 200,
@@ -509,7 +584,11 @@ def test_reset_for_installer_boot_powers_on_when_server_is_off(monkeypatch, tmp_
     monkeypatch.setattr(
         esxi_boot_workflow,
         "_wait_for_ilo",
-        lambda *, require_powered=False: {"reachable": True, "power_state": "On", "require_powered": require_powered},
+        lambda *, require_powered=False, config: {
+            "reachable": True,
+            "power_state": "On",
+            "require_powered": require_powered,
+        },
     )
     monkeypatch.setattr(esxi_boot_workflow, "_installer_detection", lambda *_args: {"status": "detected", "warnings": []})
 

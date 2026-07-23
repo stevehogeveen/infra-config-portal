@@ -12,6 +12,7 @@ from app.services import lab_build_engine
 from app.schemas import LabBuildPlanRead, LabBuildRunRead
 from app.services.lab_build_engine import (
     BuildStepDefinition,
+    LabBuildPlanError,
     LabBuildRunStateError,
     LabBuildStepRetryError,
     get_lab_build_run,
@@ -91,6 +92,60 @@ def isolate_build_runs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("LAB_BUILD_RUN_DIR", str(tmp_path / "lab-build-runs"))
 
 
+def _allow_default_build_start(
+    monkeypatch: pytest.MonkeyPatch,
+    context: dict[str, Any],
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    now = datetime.now(UTC)
+    profile = context["active_profile"]
+    fingerprint = lab_build_engine.lab_profile_context_fingerprint(context)
+    evidence_statuses = {
+        "cisco.current-intent-diff": "ready",
+        "ilo.reachability": "ok",
+        "raid.validate": "succeeded",
+    }
+    checked_times = {
+        "cisco.current-intent-diff": now.replace(microsecond=0),
+        "ilo.reachability": now.replace(microsecond=0),
+        "raid.validate": now,
+    }
+    traces = {
+        action_id: {
+            "run_id": f"workflow-action:{action_id}:test",
+            "action_id": action_id,
+            "status": "completed",
+            "evidence_status": evidence_status,
+            "evidence_checked_at": checked_times[action_id].isoformat(),
+            "checked_at": checked_times[action_id].isoformat(),
+            "finished_at": checked_times[action_id].isoformat(),
+            "source_type": "live_probe",
+            "freshness": "current",
+            "not_mock": True,
+            "executed": True,
+            "blockers": [],
+            "warnings": [],
+            "lab_profile_id": str(profile["id"]),
+            "lab_profile_fingerprint": fingerprint,
+        }
+        for action_id, evidence_status in evidence_statuses.items()
+    }
+    access = {
+        "host": "192.168.1.11",
+        "username_configured": True,
+        "password_configured": True,
+        "last_probe_status": "ok",
+        "last_probe_time": checked_times["ilo.reachability"].isoformat(),
+        "last_probe_target_matches_access_host": True,
+    }
+    monkeypatch.setattr(
+        lab_build_engine,
+        "latest_workflow_action_run_trace",
+        lambda action_id: traces.get(action_id),
+    )
+    monkeypatch.setattr(lab_build_engine, "read_ilo_access_settings", lambda: access)
+    return traces, access
+
+
 def test_build_plan_topologically_orders_declared_capabilities() -> None:
     definitions = (_definitions()[2], _definitions()[0], _definitions()[1])
 
@@ -99,6 +154,137 @@ def test_build_plan_topologically_orders_declared_capabilities() -> None:
     assert [step["step_id"] for step in plan["steps"]] == ["first", "second", "third"]
     assert plan["status"] == "ready"
     assert LabBuildPlanRead.model_validate(plan).kit_name == "Toronto lab kit"
+
+
+def test_default_plan_starts_with_an_honest_installer_boundary() -> None:
+    plan = get_lab_build_plan(context=_context())
+    steps = plan["steps"]
+    installer_boot = steps[0]
+    management_validation = next(step for step in steps if step["step_id"] == "hypervisor")
+
+    assert plan["status"] == "blocked"
+    assert len(plan["blockers"]) == 3
+    assert installer_boot["order"] == 1
+    assert installer_boot["step_id"] == "esxi-installer-boot"
+    assert installer_boot["label"] == "Boot the ESXi installer"
+    assert installer_boot["action_id"] == "esxi.rebuild-install"
+    assert installer_boot["action_mode"] == "destructive"
+    assert installer_boot["depends_on"] == []
+    assert "does not install or configure ESXi" in installer_boot["description"]
+    assert installer_boot["provides"] == ["esxi-installer-boot-requested"]
+    assert "hypervisor" not in installer_boot["provides"]
+    assert management_validation["action_id"] == "esxi.management-validation"
+    assert management_validation["action_mode"] == "read_only"
+    assert management_validation["depends_on"] == ["esxi-installer-boot-requested"]
+    assert management_validation["provides"] == ["hypervisor"]
+
+
+def test_default_plan_accepts_current_profile_and_target_bound_setup_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context()
+    _allow_default_build_start(monkeypatch, context)
+
+    plan = get_lab_build_plan(context=context)
+
+    assert plan["status"] == "ready"
+    assert plan["blockers"] == []
+    assert plan["steps"][0]["step_id"] == "esxi-installer-boot"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("lab_profile_fingerprint", "wrong-profile"),
+        ("evidence_status", "warning"),
+        ("evidence_checked_at", "2020-01-01T00:00:00+00:00"),
+    ],
+)
+def test_default_plan_rejects_unbound_nonready_or_stale_network_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: str,
+) -> None:
+    context = _context()
+    traces, _access = _allow_default_build_start(monkeypatch, context)
+    traces["cisco.current-intent-diff"][field] = value
+
+    plan = get_lab_build_plan(context=context)
+
+    assert plan["status"] == "blocked"
+    assert any("switch's initial setup" in blocker for blocker in plan["blockers"])
+
+
+def test_default_plan_rejects_ilo_proof_for_a_different_access_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context()
+    _traces, access = _allow_default_build_start(monkeypatch, context)
+    access["last_probe_target_matches_access_host"] = False
+
+    plan = get_lab_build_plan(context=context)
+
+    assert plan["status"] == "blocked"
+    assert any("iLO first contact" in blocker for blocker in plan["blockers"])
+
+
+def test_first_changing_step_remains_installer_boot_when_shared_storage_is_enabled() -> None:
+    context = _context()
+    context["enabled_features"] = {
+        "netapp_enabled": True,
+        "vcenter_enabled": False,
+        "storage_protocol": "nfs",
+    }
+
+    plan = get_lab_build_plan(context=context)
+    changing_steps = [
+        step for step in plan["steps"] if step["action_mode"] not in {"read_only", "report_only"}
+    ]
+    storage_system = next(step for step in plan["steps"] if step["step_id"] == "storage-system")
+
+    assert changing_steps[0]["step_id"] == "esxi-installer-boot"
+    assert storage_system["depends_on"] == ["hypervisor"]
+
+
+def test_build_starts_at_installer_boot_without_rerunning_setup_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context()
+    _allow_default_build_start(monkeypatch, context)
+    calls: list[str] = []
+
+    def runner(action_id: str, _session: Any, _payload: Any) -> dict[str, Any]:
+        calls.append(action_id)
+        return {
+            "run_id": f"run:{action_id}",
+            "status": "completed",
+            "summary": "complete",
+            "blockers": [],
+            "warnings": [],
+        }
+
+    run = start_lab_build(context=context, action_runner=runner)
+    installer_boot = next(step for step in run["steps"] if step["step_id"] == "esxi-installer-boot")
+
+    assert calls == []
+    assert run["status"] == "waiting"
+    assert run["current_step_id"] == "esxi-installer-boot"
+    assert installer_boot["order"] == 1
+    assert installer_boot["status"] == "waiting"
+    assert installer_boot["summary"] == "operator_approval_required"
+    assert "existing confirmation and safety gates" in installer_boot["technical_details"]
+
+
+def test_start_rechecks_setup_evidence_after_plan_was_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context()
+    traces, _access = _allow_default_build_start(monkeypatch, context)
+    assert get_lab_build_plan(context=context)["status"] == "ready"
+    traces["raid.validate"]["evidence_status"] = "failed"
+
+    with pytest.raises(LabBuildPlanError, match="local-storage initial setup"):
+        start_lab_build(context=context, action_runner=_completed_runner)
 
 
 def test_iscsi_datastore_plan_is_explicitly_manual_and_read_only() -> None:
