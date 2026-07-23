@@ -1262,6 +1262,44 @@ def test_ilo_setup_compare_time_and_dns_reports_match_and_mismatch(
     clear_probe_results()
 
 
+def test_ilo_setup_compare_snmp_enabled_reports_match_and_mismatch(
+    client: TestClient,
+) -> None:
+    clear_probe_results()
+    client.put(
+        "/api/v1/providers/ilo-redfish/setup-intent",
+        json={"snmp": {"enabled": True}},
+    )
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "time_and_dns": {
+                "status": "ok",
+                "timezone": None,
+                "ntp_servers": [],
+                "ntp_protocol_enabled": None,
+                "domain_name": None,
+                "dns_servers": [],
+                "snmp_protocol_enabled": False,
+            },
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/setup-compare")
+
+    assert response.status_code == 200
+    snmp_section = {section["id"]: section for section in response.json()["sections"]}["snmp"]
+    enabled_row = next(row for row in snmp_section["rows"] if row["field"] == "enabled")
+    assert enabled_row["status"] == "mismatch"
+    assert enabled_row["desired"] == "enabled"
+    assert enabled_row["discovered"] == "disabled"
+    clear_probe_results()
+
+
 def test_ilo_report_preview_empty_intent(client: TestClient) -> None:
     clear_probe_results()
 

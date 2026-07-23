@@ -1355,6 +1355,13 @@ def _manager_time_and_dns_settings(
             np_hpe = np_oem.get("Hpe") if isinstance(np_oem.get("Hpe"), dict) else {}
             raw_dns = np_hpe.get("DNSServers")
             dns_servers = raw_dns if isinstance(raw_dns, list) else []
+            snmp = (
+                network_protocol.get("SNMP") if isinstance(network_protocol.get("SNMP"), dict) else {}
+            )
+            raw_snmp_enabled = snmp.get("ProtocolEnabled")
+            snmp_protocol_enabled = raw_snmp_enabled if isinstance(raw_snmp_enabled, bool) else None
+        else:
+            snmp_protocol_enabled = None
 
         return {
             "status": "ok",
@@ -1363,6 +1370,7 @@ def _manager_time_and_dns_settings(
             "ntp_protocol_enabled": ntp_protocol_enabled,
             "domain_name": domain_name,
             "dns_servers": dns_servers,
+            "snmp_protocol_enabled": snmp_protocol_enabled,
         }
     except (RedfishJsonDecodeError, httpx.HTTPError) as exc:
         return {"status": "unavailable", "message": f"Time/DNS settings read failed: {exc}"}

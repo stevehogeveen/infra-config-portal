@@ -637,11 +637,14 @@ def get_ilo_setup_compare(session: Session) -> IloSetupCompareReportRead:
             "snmp",
             "SNMP",
             [
-                _compare_unknown(
+                _compare_discovered_row(
                     "snmp",
                     "enabled",
                     "Enabled",
                     _snmp_enabled_compare_desired(intent),
+                    _optional_bool_label(
+                        time_and_dns.get("snmp_protocol_enabled") if time_and_dns else None
+                    ),
                 ),
                 _compare_unknown(
                     "snmp",
