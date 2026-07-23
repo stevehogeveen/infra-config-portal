@@ -531,6 +531,7 @@ def get_ilo_setup_compare(session: Session) -> IloSetupCompareReportRead:
     network_identity = _discovered_network_identity()
     discovered_license_status = _discovered_license_status()
     time_and_dns = _discovered_time_and_dns()
+    discovered_usernames = _discovered_local_usernames()
     sections = [
         _compare_section(
             "network",
@@ -590,12 +591,12 @@ def get_ilo_setup_compare(session: Session) -> IloSetupCompareReportRead:
             "users",
             "Users",
             [
-                _compare_unknown(
+                _compare_discovered_list_row(
                     "users",
                     "desired_local_usernames",
                     "Desired Local Usernames",
-                    "configured" if intent.users else None,
-                    sensitive=True,
+                    [user.username_label for user in intent.users],
+                    discovered_usernames,
                 ),
                 _compare_unknown(
                     "users",
@@ -1513,6 +1514,21 @@ def _discovered_time_and_dns() -> dict[str, Any] | None:
     if not isinstance(time_and_dns, dict) or time_and_dns.get("status") != "ok":
         return None
     return time_and_dns
+
+
+def _discovered_local_usernames() -> list[str] | None:
+    probe_result, _ = get_probe_result(PROVIDER_ID)
+    if not isinstance(probe_result, dict) or probe_result.get("status") != "ok":
+        return None
+    local_users = probe_result.get("local_users")
+    if not isinstance(local_users, list):
+        return None
+    usernames = [
+        str(user["username"])
+        for user in local_users
+        if isinstance(user, dict) and user.get("username")
+    ]
+    return usernames
 
 
 def _discovered_license_status() -> str | None:

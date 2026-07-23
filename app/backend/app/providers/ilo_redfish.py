@@ -331,6 +331,7 @@ class IloRedfishAdapter:
             "network_identity": {"status": "not_checked"},
             "time_and_dns": {"status": "not_checked"},
             "licenses": [],
+            "local_users": [],
             "storage": {
                 "status": "not_checked",
                 "controllers": [],
@@ -1306,6 +1307,47 @@ def _populate_inventory_result(
     result["network_identity"] = _manager_network_identity(client, base_url, root, requests)
     result["time_and_dns"] = _manager_time_and_dns_settings(client, base_url, root, requests)
     result["licenses"] = _manager_license_summaries(client, base_url, root, requests)
+    result["local_users"] = _account_service_users(client, base_url, root, requests)
+
+
+def _account_service_users(
+    client: httpx.Client,
+    base_url: str,
+    root: dict[str, Any],
+    requests: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    account_service_path = _odata_id(root.get("AccountService"))
+    if not account_service_path:
+        return []
+    try:
+        service = _get_json(client, base_url, account_service_path, requests)
+        accounts_path = _odata_id(service.get("Accounts"))
+        if not accounts_path:
+            return []
+        collection = _get_json(client, base_url, accounts_path, requests)
+        members = collection.get("Members", [])
+        if not isinstance(members, list):
+            return []
+        users: list[dict[str, Any]] = []
+        for member in members[:20]:
+            path = _odata_id(member)
+            if not path:
+                continue
+            payload = _get_json(client, base_url, path, requests)
+            username = payload.get("UserName")
+            if not username:
+                continue
+            users.append(
+                {
+                    "@odata.id": path,
+                    "username": username,
+                    "role": payload.get("RoleId"),
+                    "enabled": payload.get("Enabled"),
+                }
+            )
+        return users
+    except (RedfishJsonDecodeError, httpx.HTTPError):
+        return []
 
 
 def _manager_time_and_dns_settings(

@@ -1300,6 +1300,48 @@ def test_ilo_setup_compare_snmp_enabled_reports_match_and_mismatch(
     clear_probe_results()
 
 
+def test_ilo_setup_compare_local_usernames_reports_match_and_mismatch(
+    client: TestClient,
+) -> None:
+    clear_probe_results()
+    client.put(
+        "/api/v1/providers/ilo-redfish/setup-intent",
+        json={
+            "users": [
+                {"username_label": "operator-one", "role": "readonly"},
+                {"username_label": "operator-two", "role": "admin"},
+            ]
+        },
+    )
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "local_users": [
+                {"username": "operator-one", "role": "ReadOnly", "enabled": True},
+                {"username": "operator-three", "role": "Administrator", "enabled": True},
+            ],
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/setup-compare")
+
+    assert response.status_code == 200
+    users_section = {section["id"]: section for section in response.json()["sections"]}["users"]
+    row = next(
+        row for row in users_section["rows"] if row["field"] == "desired_local_usernames"
+    )
+    assert row["status"] == "mismatch"
+    assert row["desired"] == "configured"
+    assert row["discovered"] == "differs from saved intent"
+    assert "operator-one" not in response.text
+    assert "operator-three" not in response.text
+    clear_probe_results()
+
+
 def test_ilo_report_preview_empty_intent(client: TestClient) -> None:
     clear_probe_results()
 
