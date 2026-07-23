@@ -1205,6 +1205,63 @@ def test_ilo_setup_compare_license_status_reports_match(client: TestClient) -> N
     clear_probe_results()
 
 
+def test_ilo_setup_compare_time_and_dns_reports_match_and_mismatch(
+    client: TestClient,
+) -> None:
+    clear_probe_results()
+    client.put(
+        "/api/v1/providers/ilo-redfish/setup-intent",
+        json={
+            "time": {"timezone": "UTC", "ntp_servers": ["ntp1.lab.example", "ntp2.lab.example"]},
+            "dns_domain": {
+                "domain_name": "lab.example",
+                "dns_servers": ["10.0.0.53"],
+            },
+        },
+    )
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "time_and_dns": {
+                "status": "ok",
+                "timezone": "UTC",
+                "ntp_servers": ["ntp2.lab.example", "ntp1.lab.example"],
+                "ntp_protocol_enabled": True,
+                "domain_name": "example.com",
+                "dns_servers": ["10.0.0.53"],
+            },
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/setup-compare")
+
+    assert response.status_code == 200
+    sections = {section["id"]: section for section in response.json()["sections"]}
+    time_section = sections["time"]
+    dns_section = sections["dns_domain"]
+    time_rows = {row["field"]: row for row in time_section["rows"]}
+    dns_rows = {row["field"]: row for row in dns_section["rows"]}
+
+    assert time_rows["timezone"]["status"] == "match"
+    assert time_rows["timezone"]["discovered"] == "UTC"
+
+    assert time_rows["ntp_servers"]["status"] == "match"
+    assert time_rows["ntp_servers"]["desired"] == "configured"
+    assert time_rows["ntp_servers"]["discovered"] == "matches saved intent"
+
+    assert dns_rows["domain_name"]["status"] == "mismatch"
+    assert dns_rows["domain_name"]["discovered"] == "differs from saved intent"
+    assert "example.com" not in response.text
+    assert "lab.example" not in response.text
+
+    assert dns_rows["dns_servers"]["status"] == "match"
+    clear_probe_results()
+
+
 def test_ilo_report_preview_empty_intent(client: TestClient) -> None:
     clear_probe_results()
 

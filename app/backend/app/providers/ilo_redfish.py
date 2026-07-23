@@ -329,6 +329,7 @@ class IloRedfishAdapter:
             "firmware": [],
             "network_adapters": [],
             "network_identity": {"status": "not_checked"},
+            "time_and_dns": {"status": "not_checked"},
             "licenses": [],
             "storage": {
                 "status": "not_checked",
@@ -1303,7 +1304,78 @@ def _populate_inventory_result(
         requests,
     )
     result["network_identity"] = _manager_network_identity(client, base_url, root, requests)
+    result["time_and_dns"] = _manager_time_and_dns_settings(client, base_url, root, requests)
     result["licenses"] = _manager_license_summaries(client, base_url, root, requests)
+
+
+def _manager_time_and_dns_settings(
+    client: httpx.Client,
+    base_url: str,
+    root: dict[str, Any],
+    requests: list[dict[str, Any]],
+) -> dict[str, Any]:
+    managers_path = _odata_id(root.get("Managers"))
+    if not managers_path:
+        return {"status": "not_supported", "message": "Service root does not expose Managers."}
+    try:
+        collection = _get_json(client, base_url, managers_path, requests)
+        members = collection.get("Members", [])
+        manager_path = _odata_id(members[0]) if isinstance(members, list) and members else None
+        if not manager_path:
+            return {"status": "not_available", "message": "No manager resource was found."}
+        manager = _get_json(client, base_url, manager_path, requests)
+
+        oem = manager.get("Oem") if isinstance(manager.get("Oem"), dict) else {}
+        hpe_oem = oem.get("Hpe") if isinstance(oem.get("Hpe"), dict) else {}
+        time_zone = hpe_oem.get("TimeZone") if isinstance(hpe_oem.get("TimeZone"), dict) else {}
+        timezone = time_zone.get("Name")
+
+        ntp_servers: list[str] = []
+        ntp_protocol_enabled: bool | None = None
+        domain_name: str | None = None
+        dns_servers: list[str] = []
+
+        network_protocol_path = _odata_id(manager.get("NetworkProtocol"))
+        if network_protocol_path:
+            network_protocol = _get_json(client, base_url, network_protocol_path, requests)
+            ntp = (
+                network_protocol.get("NTP") if isinstance(network_protocol.get("NTP"), dict) else {}
+            )
+            raw_servers = ntp.get("NTPServers")
+            ntp_servers = raw_servers if isinstance(raw_servers, list) else []
+            raw_enabled = ntp.get("ProtocolEnabled")
+            ntp_protocol_enabled = raw_enabled if isinstance(raw_enabled, bool) else None
+            domain_name = _derive_domain_name(
+                network_protocol.get("HostName"),
+                network_protocol.get("FQDN"),
+            )
+            np_oem = (
+                network_protocol.get("Oem") if isinstance(network_protocol.get("Oem"), dict) else {}
+            )
+            np_hpe = np_oem.get("Hpe") if isinstance(np_oem.get("Hpe"), dict) else {}
+            raw_dns = np_hpe.get("DNSServers")
+            dns_servers = raw_dns if isinstance(raw_dns, list) else []
+
+        return {
+            "status": "ok",
+            "timezone": timezone,
+            "ntp_servers": ntp_servers,
+            "ntp_protocol_enabled": ntp_protocol_enabled,
+            "domain_name": domain_name,
+            "dns_servers": dns_servers,
+        }
+    except (RedfishJsonDecodeError, httpx.HTTPError) as exc:
+        return {"status": "unavailable", "message": f"Time/DNS settings read failed: {exc}"}
+
+
+def _derive_domain_name(hostname: Any, fqdn: Any) -> str | None:
+    if not isinstance(fqdn, str) or not fqdn:
+        return None
+    if isinstance(hostname, str) and hostname and fqdn.startswith(f"{hostname}."):
+        return fqdn[len(hostname) + 1 :]
+    if "." in fqdn:
+        return fqdn.split(".", 1)[1]
+    return None
 
 
 def _manager_network_identity(

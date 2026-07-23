@@ -530,6 +530,7 @@ def get_ilo_setup_compare(session: Session) -> IloSetupCompareReportRead:
     intent = get_ilo_setup_intent(session)
     network_identity = _discovered_network_identity()
     discovered_license_status = _discovered_license_status()
+    time_and_dns = _discovered_time_and_dns()
     sections = [
         _compare_section(
             "network",
@@ -771,13 +772,19 @@ def get_ilo_setup_compare(session: Session) -> IloSetupCompareReportRead:
                     "Use DHCP-Supplied Time Settings",
                     _optional_bool_label(intent.time.use_dhcp_supplied_time_settings),
                 ),
-                _compare_unknown("time", "timezone", "Timezone", intent.time.timezone),
-                _compare_unknown(
+                _compare_discovered_row(
+                    "time",
+                    "timezone",
+                    "Timezone",
+                    intent.time.timezone,
+                    time_and_dns.get("timezone") if time_and_dns else None,
+                ),
+                _compare_discovered_list_row(
                     "time",
                     "ntp_servers",
                     "NTP Server Placeholders",
-                    "configured" if intent.time.ntp_servers else None,
-                    sensitive=True,
+                    intent.time.ntp_servers,
+                    time_and_dns.get("ntp_servers") if time_and_dns else None,
                 ),
                 _compare_unknown(
                     "time",
@@ -791,19 +798,20 @@ def get_ilo_setup_compare(session: Session) -> IloSetupCompareReportRead:
             "dns_domain",
             "DNS / Domain",
             [
-                _compare_unknown(
+                _compare_discovered_row(
                     "dns_domain",
                     "domain_name",
                     "Domain Name",
                     intent.dns_domain.domain_name,
+                    time_and_dns.get("domain_name") if time_and_dns else None,
                     sensitive=True,
                 ),
-                _compare_unknown(
+                _compare_discovered_list_row(
                     "dns_domain",
                     "dns_servers",
                     "DNS Server Placeholders",
-                    "configured" if intent.dns_domain.dns_servers else None,
-                    sensitive=True,
+                    intent.dns_domain.dns_servers,
+                    time_and_dns.get("dns_servers") if time_and_dns else None,
                 ),
             ],
         ),
@@ -1494,6 +1502,16 @@ def _discovered_vlan_label(network_identity: dict[str, Any] | None) -> str | Non
     return str(vlan_id) if vlan_id is not None else "enabled"
 
 
+def _discovered_time_and_dns() -> dict[str, Any] | None:
+    probe_result, _ = get_probe_result(PROVIDER_ID)
+    if not isinstance(probe_result, dict):
+        return None
+    time_and_dns = probe_result.get("time_and_dns")
+    if not isinstance(time_and_dns, dict) or time_and_dns.get("status") != "ok":
+        return None
+    return time_and_dns
+
+
 def _discovered_license_status() -> str | None:
     probe_result, _ = get_probe_result(PROVIDER_ID)
     if not isinstance(probe_result, dict):
@@ -1550,6 +1568,65 @@ def _compare_discovered_row(
             ("matches saved intent" if matches else "differs from saved intent")
             if sensitive
             else str(discovered)
+        ),
+        status="match" if matches else "mismatch",
+        next_safe_action=(
+            "No action needed; discovered value matches saved intent."
+            if matches
+            else "Review the mismatch before any guarded iLO apply workflow is designed."
+        ),
+    )
+
+
+def _compare_discovered_list_row(
+    section: str,
+    field: str,
+    label: str,
+    desired: list[str] | None,
+    discovered: list[str] | None,
+    *,
+    sensitive: bool = True,
+) -> IloSetupCompareRowRead:
+    desired_values = [value for value in (desired or []) if value and str(value).strip()]
+    discovered_values = [value for value in (discovered or []) if value and str(value).strip()]
+
+    if not desired_values:
+        return _compare_row(
+            section,
+            field,
+            label,
+            desired="missing",
+            discovered="unknown"
+            if not discovered_values
+            else ("configured" if sensitive else ", ".join(discovered_values)),
+            status="desired_missing",
+            next_safe_action="Save desired intent locally before comparing this field.",
+        )
+    if not discovered_values:
+        return _compare_row(
+            section,
+            field,
+            label,
+            desired="configured" if sensitive else ", ".join(desired_values),
+            discovered="unknown",
+            status="discovered_unknown",
+            next_safe_action=(
+                "Run an explicit read-only discovery path when available; do not treat unknown "
+                "discovery as a mismatch."
+            ),
+        )
+    matches = {str(v).strip().casefold() for v in desired_values} == {
+        str(v).strip().casefold() for v in discovered_values
+    }
+    return _compare_row(
+        section,
+        field,
+        label,
+        desired="configured" if sensitive else ", ".join(desired_values),
+        discovered=(
+            ("matches saved intent" if matches else "differs from saved intent")
+            if sensitive
+            else ", ".join(discovered_values)
         ),
         status="match" if matches else "mismatch",
         next_safe_action=(
