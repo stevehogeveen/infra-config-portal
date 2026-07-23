@@ -11,7 +11,6 @@ from app.core.config import settings
 from app.core.database import get_session
 from app.models import AuditEvent
 from app.providers.cisco_ansible import CiscoAnsibleAdapter
-from app.providers.cisco_console import CiscoConsoleAdapter
 from app.providers.esxi_readonly import EsxiReadonlyAdapter
 from app.providers.ilo_redfish import IloRedfishAdapter
 from app.providers.mock import MockSourceOfTruthAdapter
@@ -32,6 +31,9 @@ from app.schemas import (
     CiscoBootstrapRequirementsUpdate,
     CiscoConsoleBootstrapApplyCreate,
     CiscoConsoleBootstrapPlanRead,
+    CiscoConsoleIdentityCandidatesRead,
+    CiscoConsoleIdentityVerifyCreate,
+    CiscoConsoleIdentityVerifyRead,
     CiscoSetupReadinessRead,
     CiscoSetupWizardPlanRead,
     ControlAccessConfigRead,
@@ -119,6 +121,10 @@ from app.services.cisco_bootstrap_requirements import (
 from app.services.cisco_console_bootstrap import (
     apply_cisco_console_bootstrap,
     build_cisco_console_bootstrap_plan,
+)
+from app.services.cisco_console_identity import (
+    list_cisco_console_identity_candidates,
+    verify_cisco_console_identity,
 )
 from app.services.lifecycle import (
     ExecutionPreflightError,
@@ -1059,12 +1065,38 @@ def apply_cisco_console_bootstrap_route(
     return apply_cisco_console_bootstrap(payload.model_dump())
 
 
+@router.get(
+    "/providers/cisco-console/identity-candidates",
+    response_model=CiscoConsoleIdentityCandidatesRead,
+)
+def read_cisco_console_identity_candidates() -> CiscoConsoleIdentityCandidatesRead:
+    return CiscoConsoleIdentityCandidatesRead.model_validate(
+        list_cisco_console_identity_candidates()
+    )
+
+
+@router.post(
+    "/providers/cisco-console/verify-identity",
+    response_model=CiscoConsoleIdentityVerifyRead,
+)
+def verify_cisco_console_identity_route(
+    payload: CiscoConsoleIdentityVerifyCreate,
+) -> CiscoConsoleIdentityVerifyRead:
+    return CiscoConsoleIdentityVerifyRead.model_validate(
+        verify_cisco_console_identity(
+            port=payload.port,
+            baud=payload.baud,
+            candidate_fingerprint=payload.candidate_fingerprint,
+        )
+    )
+
+
 @router.post(
     "/providers/cisco-console/prompt-readiness",
     response_model=ProviderProbeResultRead,
 )
 def cisco_console_prompt_readiness() -> ProviderProbeResultRead:
-    return _run_provider_probe("cisco-console", CiscoConsoleAdapter().prompt_readiness)
+    return _legacy_cisco_console_scan_blocked()
 
 
 @router.post("/providers/{provider_id}/probe", response_model=ProviderProbeResultRead)
@@ -1072,12 +1104,34 @@ def probe_provider(provider_id: str) -> ProviderProbeResultRead:
     if provider_id == "ilo-redfish":
         return _run_provider_probe(provider_id, IloRedfishAdapter().probe)
     if provider_id == "cisco-console":
-        return _run_provider_probe(provider_id, CiscoConsoleAdapter().probe)
+        return _legacy_cisco_console_scan_blocked()
     if provider_id == "cisco-ansible":
         return _run_provider_probe(provider_id, CiscoAnsibleAdapter().probe)
     if provider_id == "esxi-readonly":
         return _run_provider_probe(provider_id, EsxiReadonlyAdapter().probe)
     raise HTTPException(status_code=404, detail="Provider probe not found")
+
+
+def _legacy_cisco_console_scan_blocked() -> ProviderProbeResultRead:
+    candidates = list_cisco_console_identity_candidates()
+    candidate_blockers = list(candidates.get("blockers") or [])
+    return ProviderProbeResultRead.model_validate(
+        {
+            **candidates,
+            "status": "blocked",
+            "message": (
+                "Automatic Cisco console scanning is retired. Open Cisco setup, choose the "
+                "exact physical cable and baud, then run the explicit read-only identity check."
+            ),
+            "blockers": [
+                "An exact operator-pinned console candidate is required before serial contact.",
+                *candidate_blockers,
+            ],
+            "action": "identity-selection-required",
+            "legacy_auto_scan_disabled": True,
+            "serial_ports_opened": 0,
+        }
+    )
 
 
 @router.get(

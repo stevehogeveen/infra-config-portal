@@ -57,6 +57,44 @@ def test_read_only_action_can_run_and_save_trace(
     )["run_id"] == result["run_id"]
 
 
+def test_cisco_discover_console_only_refreshes_passive_candidates(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+    calls: list[str] = []
+
+    def passive_candidates() -> dict[str, object]:
+        calls.append("listed")
+        return {
+            "provider_id": "cisco-console",
+            "status": "ready",
+            "message": "Choose one exact cable in Cisco setup.",
+            "checked_at": "2026-07-23T18:00:00+00:00",
+            "candidates": [{"port": "COM5", "candidate_fingerprint": "a" * 64}],
+            "warnings": [],
+            "blockers": [],
+        }
+
+    monkeypatch.setattr(
+        workflow_action_runner,
+        "list_cisco_console_identity_candidates",
+        passive_candidates,
+    )
+    monkeypatch.setattr(
+        workflow_action_runner,
+        "_run_subprocess",
+        lambda *_args, **_kwargs: pytest.fail("passive candidate refresh must not run a command"),
+    )
+
+    result = run_workflow_action("cisco.discover-console")
+
+    assert calls == ["listed"]
+    assert result["status"] == "completed"
+    assert result["executed"] is True
+    assert "COM5" in result["stdout_summary"]
+
+
 def test_api_action_serializes_dataclass_provider_status(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
     monkeypatch.setattr(workflow_action_runner, "CODEX_RUN_DIR", tmp_path)

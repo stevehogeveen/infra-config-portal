@@ -985,17 +985,14 @@ def _action(
 ACTIONS: tuple[ActionDefinition, ...] = (
     _action(
         "cisco.discover-console",
-        "Discover Console",
+        "Refresh Console Cables",
         "cisco",
         "Cisco Control",
-        "Find usable local/TCP console candidates and classify access without sending config.",
+        "List attached serial adapters without opening a port. Identity verification requires an explicit cable and baud in Cisco setup.",
         "read-only",
-        command="make provider-lab-serial-console-discovery",
-        method="POST",
-        endpoint="/api/v1/providers/cisco-console/prompt-readiness",
-        report="artifacts/codex-runs/serial-console-discovery-report.md",
+        method="GET",
+        endpoint="/api/v1/providers/cisco-console/identity-candidates",
         provider_ids=("cisco-console",),
-        required_flags=("LAB_READONLY_ACK=YES for live probes",),
     ),
     _action(
         "cisco.reclaim-console",

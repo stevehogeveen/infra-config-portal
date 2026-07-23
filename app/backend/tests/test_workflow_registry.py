@@ -374,6 +374,10 @@ def test_safe_read_only_registry_actions_are_ui_runnable() -> None:
     assert actions["full-lab.repair"]["ui_run_supported"] is True
     assert actions["full-lab.handoff-report"]["ui_run_supported"] is True
     assert actions["reports.summary"]["ui_run_supported"] is True
+    assert actions["cisco.discover-console"]["api_endpoint"] == (
+        "/api/v1/providers/cisco-console/identity-candidates"
+    )
+    assert actions["cisco.discover-console"]["api_method"] == "GET"
     assert actions["ilo.baseline-preview"]["ui_run_supported"] is True
     assert actions["ilo.baseline-preview"]["api_endpoint"] == "/api/v1/providers/hpe-ilo/baseline-preview"
     assert actions["netapp.component-firmware-inventory"]["ui_run_supported"] is True

@@ -13922,3 +13922,100 @@ Steve restored the laptop connection and authorized the planned read-only rechec
 
 Next safe prerequisite is still the explicit operator-pinned Cisco COM identity collector. Do not
 run the current multi-candidate console auto-discovery with Cisco and NetApp consoles attached.
+
+---
+
+## 2026-07-23T18:47:33Z - CODEX (explicit Cisco cable identity; legacy auto-scan retired)
+
+Claude/CXO: the operator-pinned Cisco console prerequisite is now implemented and verified in code.
+Steve reports that only the Cisco console cable is physically attached for this pass. No serial port
+was opened and no console or hardware command was sent while implementing or validating this slice.
+
+### Baud facts and the identity rule
+
+- Cisco Catalyst 9300 console default is 9600 baud, 8 data bits, no parity, 1 stop bit, no flow
+  control:
+  https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst9300/hardware/install/b_c9300_hig/Configuring-a-switch.html
+- Current NetApp AFF/FAS serial console guidance is 115200 baud, 8-N-1. The value is `115200`, not
+  `112500`:
+  https://kb.netapp.com/on-prem/ontap/OHW/OHW-KBs/What_baud_rate_do_NetApp_controller_serial_console_connections_support
+- Baud is a selection hint, not device proof. Older NetApp platforms can use 9600, and Cisco console
+  speed can be reconfigured. The app therefore never labels a cable Cisco or NetApp from baud alone.
+
+### Passive local inventory
+
+- The passive candidates endpoint currently sees:
+  - `COM3`: Intel Active Management Technology SOL, plain serial transport, no stable USB binding
+    metadata. It may be displayed, but exact verification fails closed before opening it.
+  - `COM5`: Prolific USB-to-Serial, VID:PID `067B:2303`, USB location `1-6`, with an opaque
+    application fingerprint. Windows reports no unique adapter serial.
+- Enumeration uses operating-system metadata only. It does not open either port.
+- The external Cisco cable is expected to be `COM5` from this physical setup, but the app does not
+  turn that expectation into proof.
+
+### Exact operator experience
+
+- Open `http://127.0.0.1:5175/network`.
+- The canonical Cisco workspace now puts **Console first contact / Choose the physical Cisco cable**
+  directly below device identity, before configuration and deeper diagnostics.
+- Each candidate has an explicit **This is the Cisco cable** button. Nothing is preselected, even
+  when only one USB serial adapter is present.
+- Verification remains disabled until the operator pins one candidate and one baud. The default is
+  9600, with 115200 available as an explicit alternative.
+- For this connection, the next operator action is to choose the `COM5` card, leave 9600 selected,
+  then click **Verify Cisco identity - read-only**.
+- The UI states the exact contact boundary before that click: opening the selected serial port may
+  clear old buffered bytes; one blank CR/LF may be sent and could advance a device already waiting
+  for blank/default input; after a safe prompt, the app may send only fixed read-only `show version`
+  and, when needed, `show inventory`.
+- It never supplies credentials, non-empty setup answers, Ctrl-C/Ctrl-Z, break, pager input,
+  configuration commands, or a fallback port/baud.
+- A NetApp/ONTAP/LOADER/node prompt, login/setup/config state, pager, bootloader, mixed output,
+  incomplete response, or stack/multiple-chassis ambiguity blocks verification.
+- Raw console output and chassis serials are never returned to the browser. The chassis serial is
+  represented only by a SHA-256 fingerprint.
+- Changing the active profile, candidate fingerprint, or baud invalidates the browser result.
+
+### Backend and retired legacy paths
+
+- Passive inventory:
+  `GET /api/v1/providers/cisco-console/identity-candidates`.
+- Exact identity check:
+  `POST /api/v1/providers/cisco-console/verify-identity` with only `port`, `baud`, and the current
+  candidate fingerprint.
+- Verification re-enumerates and exact-matches the selected port/fingerprint before opening it. A
+  missing, moved, changed, or weakly bound adapter blocks with zero serial ports opened. It never
+  scans another port or baud.
+- Legacy `cisco.discover-console` is now **Refresh Console Cables**, a passive GET to the candidates
+  endpoint. It no longer invokes the old multi-port/multi-baud Make target or prompt scanner.
+- Direct legacy `prompt-readiness` and generic `cisco-console/probe` routes now return
+  `identity-selection-required`, `legacy_auto_scan_disabled=true`, and `serial_ports_opened=0`.
+- Broad live firmware refresh no longer falls back to serial console inventory when Cisco management
+  SSH is not configured.
+- Console identity alone does not turn the map or a network line green. Green still requires current
+  live management reachability evidence bound to the active target.
+
+### Verification evidence
+
+- New exact identity service and security regressions: 40 passed; Ruff passed.
+- Legacy discovery/probe/firmware retirement group: 49 passed.
+- Full workflow-registry file: 21 passed.
+- Broader backend API/new-path run: 126 passed with one unrelated existing iLO apply expectation
+  failure (`422` schema rejection versus the test's expected `200`); full backend is not claimed
+  green.
+- Frontend production build: passed (existing large-chunk warning only).
+- Focused Cisco first-contact, canonical workspace, and mobile overflow E2E: 4 passed.
+- Full frontend Playwright suite after repairing one stale topology line-count assertion:
+  **111 passed**.
+- The actual `/network` page was visually inspected at the live UI. It shows both candidates, no
+  preselection, disabled Verify, and `Needs review`; no local screenshot artifact was saved.
+- No COM port, switch, NetApp controller, iLO, RAID, firmware, power, storage protocol, or other
+  hardware write path was touched in this slice.
+
+### Review request
+
+Please approve the explicit pinned-console first-contact pattern: Steve identifies the physical cable,
+the app binds that choice to exact OS metadata and baud, then high-confidence Cisco IOS/IOS XE output
+proves identity. The immediate live step is intentionally left for Steve to initiate from `COM5` at
+9600 after reading the one-blank-CR/LF warning. Destructive gates and the iSCSI read-only boundary
+remain unchanged.

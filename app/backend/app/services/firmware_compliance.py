@@ -502,14 +502,11 @@ def _refresh_live_inventory() -> None:
     if settings.provider_mode != "local-lab-readwrite":
         return
     from app.providers.cisco_ansible import CiscoAnsibleAdapter
-    from app.providers.cisco_console import CiscoConsoleAdapter
     from app.providers.ilo_redfish import IloRedfishAdapter
 
     IloRedfishAdapter(provider_mode="local-lab-readwrite").probe()
     if settings.cisco_mgmt_configured:
         CiscoAnsibleAdapter(provider_mode="local-lab-readwrite").probe()
-    else:
-        CiscoConsoleAdapter(provider_mode="local-lab-readwrite").firmware_inventory()
 
 
 def _classify_component(

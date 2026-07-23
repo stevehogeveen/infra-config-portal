@@ -72,6 +72,32 @@ def test_compliant_firmware_passes(monkeypatch, firmware_settings) -> None:
     assert "\\" not in result["reports"]["summary"]
 
 
+def test_live_firmware_refresh_never_falls_back_to_legacy_console_scan(
+    monkeypatch,
+    firmware_settings,
+) -> None:
+    from app.providers.cisco_console import CiscoConsoleAdapter
+    from app.providers.ilo_redfish import IloRedfishAdapter
+
+    firmware_settings.cisco_mgmt_configured = False
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        IloRedfishAdapter,
+        "probe",
+        lambda _self: calls.append("ilo") or {"provider_id": "ilo-redfish", "status": "ok"},
+    )
+    monkeypatch.setattr(
+        CiscoConsoleAdapter,
+        "firmware_inventory",
+        lambda _self: pytest.fail("firmware refresh must not invoke legacy serial scanning"),
+    )
+
+    fc._refresh_live_inventory()
+
+    assert calls == ["ilo"]
+
+
 def test_firmware_report_paths_use_posix_separators(tmp_path) -> None:
     assert fc._rel(tmp_path / "artifacts" / "codex-runs" / "report.md") == "artifacts/codex-runs/report.md"
 

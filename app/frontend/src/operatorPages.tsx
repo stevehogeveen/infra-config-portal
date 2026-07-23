@@ -39,6 +39,9 @@ import {
 import type {
   AiChangeRequest,
   AuditEvent,
+  CiscoConsoleIdentityCandidate,
+  CiscoConsoleIdentityCandidates,
+  CiscoConsoleIdentityResult,
   FirmwareFileCandidate,
   FirmwareFileSelections,
   FirmwareSummary,
@@ -1233,8 +1236,10 @@ function networkSwitchBadgeStatus(label: "Ready" | "Blocked" | "Not checked"): S
 }
 
 function networkSwitchAccessLabel(ciscoReadiness: ProviderProbeResult | null, consoleState: Record<string, unknown>): "Console ready" | "SSH ready" | "Needs sign-in" | "Not checked" {
-  const consoleStatus = asString(consoleState.status).toLowerCase();
-  if (["ready", "ok", "detected", "connected", "present"].includes(consoleStatus)) return "Console ready";
+  const consoleIdentityVerified =
+    asBoolean(consoleState.identity_verified) &&
+    asString(consoleState.detected_vendor).toLowerCase() === "cisco";
+  if (consoleIdentityVerified) return "Console ready";
   if (asBoolean(ciscoReadiness?.management_configured)) return "SSH ready";
   if (!ciscoReadiness) return "Not checked";
   const text = [
@@ -8046,6 +8051,251 @@ function LabTopologyMap({
   );
 }
 
+function CiscoConsoleIdentityPanel({
+  activeProfile
+}: {
+  activeProfile: LabProfile | null;
+}) {
+  const [candidateState, setCandidateState] = useState<CiscoConsoleIdentityCandidates | null>(null);
+  const [selectedFingerprint, setSelectedFingerprint] = useState("");
+  const [selectedBaud, setSelectedBaud] = useState(9600);
+  const [identityResult, setIdentityResult] = useState<CiscoConsoleIdentityResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [verifying, setVerifying] = useState(false);
+  const [error, setError] = useState("");
+  const profileIdentity = `${activeProfile?.id ?? "none"}:${activeProfile?.version ?? 0}:${activeProfile?.updated_at ?? ""}`;
+  const candidates = candidateState?.candidates ?? [];
+  const selectedCandidate = candidates.find((candidate) => candidate.candidate_fingerprint === selectedFingerprint) ?? null;
+  const verified = identityResult?.identity_verified === true && identityResult.detected_vendor === "cisco";
+  const detectedNetapp = identityResult?.detected_vendor === "netapp";
+
+  async function loadCandidates() {
+    setLoading(true);
+    setError("");
+    try {
+      const nextCandidates = await api.ciscoConsoleIdentityCandidates();
+      setCandidateState(nextCandidates);
+      if (
+        selectedFingerprint &&
+        !nextCandidates.candidates.some((candidate) => candidate.candidate_fingerprint === selectedFingerprint)
+      ) {
+        setSelectedFingerprint("");
+        setIdentityResult(null);
+      }
+    } catch (err) {
+      setCandidateState(null);
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let ignore = false;
+    setCandidateState(null);
+    setSelectedFingerprint("");
+    setSelectedBaud(9600);
+    setIdentityResult(null);
+    setError("");
+    setLoading(true);
+    api.ciscoConsoleIdentityCandidates()
+      .then((nextCandidates) => {
+        if (!ignore) {
+          setCandidateState(nextCandidates);
+        }
+      })
+      .catch((err) => {
+        if (!ignore) {
+          setError(errorMessage(err));
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [profileIdentity]);
+
+  function chooseCandidate(candidate: CiscoConsoleIdentityCandidate) {
+    const baud = candidate.recommended_bauds.includes(9600)
+      ? 9600
+      : candidate.recommended_bauds[0] ?? 9600;
+    setSelectedFingerprint(candidate.candidate_fingerprint);
+    setSelectedBaud(baud);
+    setIdentityResult(null);
+    setError("");
+  }
+
+  async function verifyIdentity() {
+    if (!selectedCandidate) return;
+    setVerifying(true);
+    setIdentityResult(null);
+    setError("");
+    try {
+      const result = await api.verifyCiscoConsoleIdentity({
+        baud: selectedBaud,
+        candidate_fingerprint: selectedCandidate.candidate_fingerprint,
+        port: selectedCandidate.port
+      });
+      setIdentityResult(result);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  return (
+    <section className="cisco-console-identity" aria-label="Cisco console first contact">
+      <div className="cisco-console-identity-head">
+        <div>
+          <p className="operator-kicker">Console first contact</p>
+          <h4>Choose the physical Cisco cable</h4>
+          <span>
+            The app opens only the adapter you pin, at only the baud you choose. It never falls through to another console.
+          </span>
+        </div>
+        <StatusBadge
+          label={verified ? "Cisco verified" : detectedNetapp ? "Wrong console" : selectedCandidate ? "Cable pinned" : "Choose cable"}
+          status={verified ? "ready" : detectedNetapp ? "blocked" : selectedCandidate ? "plan-only" : "not-configured"}
+        />
+      </div>
+
+      <div className="cisco-console-baud-note">
+        <EthernetPort size={16} />
+        <span>
+          <strong>Cisco default: 9600</strong>
+          <small>Modern NetApp: 115200. Baud is a clue; the vendor response is the proof.</small>
+        </span>
+      </div>
+
+      <div className="cisco-console-candidate-bar">
+        <span>{loading ? "Reading attached adapters" : `${candidates.length} serial adapter${candidates.length === 1 ? "" : "s"} found`}</span>
+        <button disabled={loading || verifying} onClick={() => void loadCandidates()} type="button">
+          <RefreshCw size={14} />
+          Refresh cables
+        </button>
+      </div>
+
+      {!loading && candidates.length === 0 && (
+        <p className="cisco-console-empty">
+          No serial adapters are visible. Reconnect the Cisco console cable, then refresh.
+        </p>
+      )}
+
+      {candidates.length > 0 && (
+        <div className="cisco-console-candidates" aria-label="Attached console adapters">
+          {candidates.map((candidate) => {
+            const selected = candidate.candidate_fingerprint === selectedFingerprint;
+            const usbSerial = candidate.transport.includes("usb");
+            return (
+              <article className={selected ? "is-selected" : ""} key={candidate.candidate_fingerprint}>
+                <div>
+                  <strong>{candidate.port}</strong>
+                  <StatusBadge
+                    label={candidate.recommended ? "USB console" : usbSerial ? "USB serial" : "System serial"}
+                    status={candidate.recommended ? "safe-to-run" : "plan-only"}
+                  />
+                </div>
+                <span>{candidate.description || "Serial adapter"}</span>
+                <dl>
+                  <div>
+                    <dt>VID:PID</dt>
+                    <dd>{candidate.vid_pid || "Unavailable"}</dd>
+                  </div>
+                  <div>
+                    <dt>USB location</dt>
+                    <dd>{candidate.usb_location || "Unavailable"}</dd>
+                  </div>
+                  <div>
+                    <dt>Adapter serial</dt>
+                    <dd>{candidate.serial_present ? "Detected and redacted" : "Unavailable"}</dd>
+                  </div>
+                </dl>
+                <button
+                  aria-pressed={selected}
+                  className={selected ? "is-selected" : ""}
+                  onClick={() => chooseCandidate(candidate)}
+                  type="button"
+                >
+                  {selected ? "Cisco cable selected" : "This is the Cisco cable"}
+                </button>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="cisco-console-verify">
+        <label>
+          <span>Expected console baud</span>
+          <select
+            disabled={!selectedCandidate || verifying}
+            onChange={(event) => {
+              setSelectedBaud(Number(event.target.value));
+              setIdentityResult(null);
+            }}
+            value={selectedBaud}
+          >
+            <option value={9600}>9600 — Cisco default</option>
+            <option value={115200}>115200 — modern NetApp / changed Cisco</option>
+          </select>
+        </label>
+        <button disabled={!selectedCandidate || verifying} onClick={() => void verifyIdentity()} type="button">
+          <ShieldCheck size={15} />
+          {verifying ? "Verifying exact console" : "Verify Cisco identity — read-only"}
+        </button>
+        <small>
+          Opening a serial port may clear old buffered text. Verification sends one blank CR/LF, which can advance a
+          device already waiting for input, then at most fixed read-only show version / show inventory commands. It
+          never sends credentials, non-empty wizard answers, config, Ctrl-C, break, or a fallback scan.
+        </small>
+      </div>
+
+      {identityResult && (
+        <div className={`cisco-console-result ${verified ? "is-verified" : "is-blocked"}`} role="status">
+          <div>
+            {verified ? <CheckCircle2 size={18} /> : <Ban size={18} />}
+            <span>
+              <strong>
+                {verified ? "This adapter is verified as Cisco" : detectedNetapp ? "NetApp console detected — stopped safely" : "Cisco identity was not proven"}
+              </strong>
+              <small>{identityResult.message}</small>
+            </span>
+          </div>
+          <dl>
+            <div>
+              <dt>Port / baud</dt>
+              <dd>{identityResult.port || selectedCandidate?.port} / {identityResult.baud || selectedBaud}</dd>
+            </div>
+            <div>
+              <dt>Model</dt>
+              <dd>{identityResult.model || "Not proven"}</dd>
+            </div>
+            <div>
+              <dt>Software</dt>
+              <dd>{identityResult.software_version || "Not proven"}</dd>
+            </div>
+            <div>
+              <dt>Serial proof</dt>
+              <dd>{identityResult.serial_fingerprint || "Not retained"}</dd>
+            </div>
+            <div>
+              <dt>Read-only commands</dt>
+              <dd>{identityResult.commands_attempted?.join(", ") || "None"}</dd>
+            </div>
+          </dl>
+        </div>
+      )}
+
+      {error && <p className="operator-action-message error">{error}</p>}
+    </section>
+  );
+}
+
 type CiscoWorkspaceAction = {
   detail: string;
   icon: ReactNode;
@@ -10251,6 +10501,10 @@ function LabDesignComposer({
                 )}
               </div>
             </div>
+
+            {workspaceOnly && selectedPart.id === "switch" && (
+              <CiscoConsoleIdentityPanel activeProfile={activeProfile} />
+            )}
 
             {!workspaceOnly && (
               <div className="design-device-hero" aria-label={`${selectedPart.label} interactive faceplate`}>
@@ -14499,7 +14753,7 @@ function NetworkReferencePanel({
   onLabSafetyUpdated: () => Promise<void>;
 }) {
   const counts = workspaceCounts(networkRows);
-  const networkStatus = asString(ciscoReadiness?.status) || (address.cisco_management ? "ready" : "not_configured_yet");
+  const networkStatus = asString(ciscoReadiness?.status) || (address.cisco_management ? "not_checked" : "not_configured_yet");
   const managementConfigured = asBoolean(ciscoReadiness?.management_configured);
   const consoleStatus = asString(consoleState.status) || "not_checked";
   const ciscoFirmware = firmwareVersion(firmwareSummaries, "cisco");

@@ -7,6 +7,9 @@ import type {
   CiscoBootstrapRequirements,
   CiscoBootstrapRequirementsUpdate,
   CiscoConsoleBootstrapPlan,
+  CiscoConsoleIdentityCandidates,
+  CiscoConsoleIdentityResult,
+  CiscoConsoleIdentityVerifyRequest,
   CiscoSetupReadiness,
   CiscoSetupWizardPlan,
   ControlAccessConfig,
@@ -353,6 +356,14 @@ export const api = {
     }),
   ciscoConsoleBootstrapPlan: () =>
     apiRequest<CiscoConsoleBootstrapPlan>("/api/v1/providers/cisco/console-bootstrap/plan"),
+  ciscoConsoleIdentityCandidates: () =>
+    apiRequest<CiscoConsoleIdentityCandidates>("/api/v1/providers/cisco-console/identity-candidates"),
+  verifyCiscoConsoleIdentity: (payload: CiscoConsoleIdentityVerifyRequest) =>
+    apiRequest<CiscoConsoleIdentityResult>("/api/v1/providers/cisco-console/verify-identity", {
+      method: "POST",
+      body: payload,
+      timeoutMs: 30000
+    }),
   netappPlanPreview: () =>
     apiRequest<NetAppPlanPreview>("/api/v1/providers/netapp-ontap/plan-preview"),
   netappConsoleReadiness: () =>

@@ -2376,17 +2376,27 @@ def test_cisco_setup_readiness_inherits_env_dns_when_profile_dns_absent(
     assert payload["ethernet_readiness"]["dns_servers"] == ["192.0.2.53", "192.0.2.54"]
 
 
-def test_cisco_prompt_readiness_endpoint_blocks_in_mock_mode(client: TestClient) -> None:
-    response = client.post("/api/v1/providers/cisco-console/prompt-readiness")
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/providers/cisco-console/prompt-readiness",
+        "/api/v1/providers/cisco-console/probe",
+    ],
+)
+def test_legacy_cisco_console_probe_endpoints_require_explicit_identity_selection(
+    client: TestClient,
+    path: str,
+) -> None:
+    response = client.post(path)
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["provider_id"] == "cisco-console"
-    assert payload["action"] == "prompt-readiness"
+    assert payload["action"] == "identity-selection-required"
     assert payload["status"] == "blocked"
-    assert "local-readonly" in payload["message"]
-    assert "safe show commands" in payload["not_attempted"]
-    assert payload["prompt_ready"] is False
+    assert payload["legacy_auto_scan_disabled"] is True
+    assert payload["serial_ports_opened"] == 0
+    assert "exact physical cable and baud" in payload["message"]
 
 
 def test_cisco_setup_wizard_plan_endpoint_returns_safe_unknown_preview(

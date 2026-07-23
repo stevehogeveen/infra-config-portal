@@ -13,7 +13,6 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.providers.cisco_console import CiscoConsoleAdapter
 from app.providers.esxi_readonly import EsxiReadonlyAdapter
 from app.providers.ilo_redfish import IloRedfishAdapter, IloRedfishConfig
 from app.providers.redaction import redact_sensitive
@@ -43,6 +42,7 @@ from app.services.lab_profiles import (
 from app.services.lab_validation import get_lab_validation_summary
 from app.services.cisco_setup_readiness import get_cisco_setup_readiness
 from app.services.cisco_current_intent import get_cisco_current_intent_diff
+from app.services.cisco_console_identity import list_cisco_console_identity_candidates
 from app.services.ilo_readiness import get_ilo_setup_plan_preview
 from app.services.json_file_store import write_json_object, write_text_value
 from app.services.list_utils import unique_preserving_order, unique_strings
@@ -338,7 +338,7 @@ def _api_action_payload(
 ) -> Any:
     payload = payload or {}
     if action_id == "cisco.discover-console":
-        return CiscoConsoleAdapter().prompt_readiness()
+        return list_cisco_console_identity_candidates()
     if action_id == "cisco.setup-readiness":
         return get_cisco_setup_readiness()
     if action_id == "cisco.ssh-readonly-probe":

@@ -278,7 +278,7 @@ CATEGORY_BY_CONTROL_ACTION = {
 }
 
 CONTROL_ACTION_API_ENDPOINTS: dict[str, tuple[str, str]] = {
-    "cisco.discover-console": ("/api/v1/providers/cisco-console/prompt-readiness", "POST"),
+    "cisco.discover-console": ("/api/v1/providers/cisco-console/identity-candidates", "GET"),
     "cisco.firmware-inventory": ("/api/v1/lab/firmware-inventory", "GET"),
     "ilo.firmware-inventory": ("/api/v1/lab/firmware-inventory", "GET"),
     "esxi.installer-boot-detection": ("/api/v1/providers/ilo-redfish/esxi-install-readiness", "GET"),

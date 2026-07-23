@@ -364,6 +364,47 @@ export type ProviderProbeResult = {
   [key: string]: unknown;
 };
 
+export type CiscoConsoleIdentityCandidate = {
+  port: string;
+  candidate_fingerprint: string;
+  description: string | null;
+  manufacturer: string | null;
+  transport: "serial" | "system_serial" | "usb-serial" | "usb_serial";
+  vid_pid: string | null;
+  usb_location: string | null;
+  serial_present: boolean;
+  recommended_bauds: number[];
+  recommended: boolean;
+};
+
+export type CiscoConsoleIdentityCandidates = {
+  provider_id: string;
+  status: string;
+  message: string;
+  checked_at: string | null;
+  candidates: CiscoConsoleIdentityCandidate[];
+};
+
+export type CiscoConsoleIdentityVerifyRequest = {
+  port: string;
+  baud: number;
+  candidate_fingerprint: string;
+};
+
+export type CiscoConsoleIdentityResult = ProviderProbeResult & {
+  port?: string;
+  baud?: number;
+  candidate_fingerprint?: string;
+  detected_vendor?: "cisco" | "netapp" | "unknown";
+  identity_verified?: boolean;
+  prompt_state?: string;
+  model?: string | null;
+  software_version?: string | null;
+  serial_fingerprint?: string | null;
+  commands_attempted?: string[];
+  read_only?: boolean;
+};
+
 export type LabValidationBlocker = {
   problem: string;
   source: string;

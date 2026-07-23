@@ -24,14 +24,9 @@ ALLOWED_WORKFLOW_ACTION_RUNNERS: dict[str, WorkflowActionExecutionSpec] = {
     "cisco.discover-console": WorkflowActionExecutionSpec(
         action_id="cisco.discover-console",
         kind="api",
-        label="Run Check",
-        api_endpoint="/api/v1/providers/cisco-console/prompt-readiness",
-        api_method="POST",
-        registry_command="make provider-lab-serial-console-discovery",
-        reports=(
-            "artifacts/codex-runs/serial-console-discovery-report.md",
-            "artifacts/codex-runs/serial-console-discovery-redacted.json",
-        ),
+        label="Refresh Console Cables",
+        api_endpoint="/api/v1/providers/cisco-console/identity-candidates",
+        api_method="GET",
     ),
     "cisco.privilege-check": WorkflowActionExecutionSpec(
         action_id="cisco.privilege-check",

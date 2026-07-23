@@ -1075,10 +1075,13 @@ test("overview map does not mark configured providers reachable without live evi
   await page.goto("/overview");
 
   const topology = page.getByRole("region", { name: "Lab topology" });
-  const linkCount = await topology.locator(".overview-link").count();
-  expect(linkCount, "overview map renders connection lines").toBeGreaterThan(0);
+  await expect
+    .poll(() => topology.locator(".overview-link").count(), {
+      message: "overview map renders connection lines"
+    })
+    .toBeGreaterThan(0);
   await expect(topology.locator(".overview-link.is-reachable")).toHaveCount(0);
-  await expect(topology.locator(".overview-link.is-unreachable")).toHaveCount(linkCount);
+  await expect(topology.locator(".overview-link:not(.is-unreachable)")).toHaveCount(0);
 });
 
 test("overview map ignores stale positive iLO validation when provider access is not checked", async ({ page }) => {
@@ -2225,6 +2228,84 @@ test("network default opens canonical Cisco workspace and hides retired network 
   await expect(page.getByLabel("Switch Access")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Network details']")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Apply Bootstrap/i })).toHaveCount(0);
+});
+
+test("network console first contact pins one exact cable before read-only identity verification", async ({ page }) => {
+  const unsafeDiscoveryRequests: string[] = [];
+  page.on("request", (request) => {
+    if (/prompt-readiness|discover-console|providers\/cisco-console\/probe/.test(request.url())) {
+      unsafeDiscoveryRequests.push(request.url());
+    }
+  });
+
+  await page.goto("/network");
+
+  const panel = page.getByLabel("Cisco console first contact");
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("heading", { name: "Choose the physical Cisco cable" })).toBeVisible();
+  await expect(panel).toContainText("Cisco default: 9600");
+  await expect(panel).toContainText("Modern NetApp: 115200");
+  await expect(panel.getByRole("button", { name: "This is the Cisco cable" })).toHaveCount(2);
+  await expect(panel.getByRole("button", { name: /Verify Cisco identity/i })).toBeDisabled();
+
+  const prolific = panel.locator("article", { hasText: "COM5" });
+  await expect(prolific).toContainText("Prolific USB-to-Serial");
+  await expect(prolific).toContainText("067B:2303");
+  await expect(prolific).toContainText("USB port 1-6");
+  await prolific.getByRole("button", { name: "This is the Cisco cable" }).click();
+
+  await expect(prolific.getByRole("button", { name: "Cisco cable selected" })).toBeVisible();
+  await expect(panel.getByRole("button", { name: /Verify Cisco identity/i })).toBeEnabled();
+  const verifyResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/providers/cisco-console/verify-identity") &&
+    response.request().method() === "POST"
+  );
+  await panel.getByRole("button", { name: /Verify Cisco identity/i }).click();
+  const requestPayload = (await verifyResponse).request().postDataJSON() as Record<string, unknown>;
+
+  expect(requestPayload).toEqual({
+    baud: 9600,
+    candidate_fingerprint: "candidate-prolific-com5",
+    port: "COM5"
+  });
+  await expect(panel).toContainText("This adapter is verified as Cisco");
+  await expect(panel).toContainText("C9300-48P");
+  await expect(panel).toContainText("show version, show inventory");
+  expect(unsafeDiscoveryRequests).toEqual([]);
+});
+
+test("network console first contact fails closed when the pinned cable answers as NetApp", async ({ page }) => {
+  await page.route("**/api/v1/providers/cisco-console/verify-identity", (route) => json(route, {
+    baud: 115200,
+    blockers: ["The selected console answered as NetApp, not Cisco."],
+    candidate_fingerprint: "candidate-prolific-com5",
+    checked_at: checkedAt,
+    commands_attempted: [],
+    detected_vendor: "netapp",
+    identity_verified: false,
+    message: "NetApp ONTAP console signature detected. No Cisco commands were sent.",
+    model: null,
+    port: "COM5",
+    prompt_state: "ontap_prompt",
+    provider_id: "cisco-console",
+    read_only: true,
+    serial_fingerprint: null,
+    software_version: null,
+    status: "blocked",
+    warnings: []
+  }));
+  await page.goto("/network");
+
+  const panel = page.getByLabel("Cisco console first contact");
+  const prolific = panel.locator("article", { hasText: "COM5" });
+  await prolific.getByRole("button", { name: "This is the Cisco cable" }).click();
+  await panel.getByLabel("Expected console baud").selectOption("115200");
+  await panel.getByRole("button", { name: /Verify Cisco identity/i }).click();
+
+  await expect(panel).toContainText("NetApp console detected — stopped safely");
+  await expect(panel).toContainText("No Cisco commands were sent");
+  await expect(panel).toContainText("Wrong console");
+  await expect(panel).not.toContainText("This adapter is verified as Cisco");
 });
 
 test("lab defaults keeps all DNS NTP and SNMP values visible without advanced or expected-device clutter", async ({ page }) => {
@@ -3629,6 +3710,13 @@ async function installApiMocks(page: Page) {
     if (url.pathname === "/api/v1/providers/cisco/setup-readiness") {
       return json(route, ciscoSetupReadiness());
     }
+    if (url.pathname === "/api/v1/providers/cisco-console/identity-candidates") {
+      return json(route, ciscoConsoleIdentityCandidates());
+    }
+    if (url.pathname === "/api/v1/providers/cisco-console/verify-identity") {
+      const payload = request.postDataJSON() as { baud?: number; candidate_fingerprint?: string; port?: string };
+      return json(route, ciscoConsoleIdentityVerified(payload));
+    }
     if (url.pathname === "/api/v1/providers/cisco-ansible/probe") {
       return json(route, ciscoSshProbe());
     }
@@ -4921,6 +5009,63 @@ function ciscoSetupReadiness() {
     setup_wizard_plan: null,
     ssh_scp_readiness: { apply_enabled: false, planned_only: false, summary: "SSH and SCP are ready." },
     state_boundaries: {},
+    warnings: []
+  };
+}
+
+function ciscoConsoleIdentityCandidates() {
+  return {
+    checked_at: checkedAt,
+    message: "Two serial endpoints are present. Choose the physical Cisco cable before verification.",
+    provider_id: "cisco-console",
+    status: "not_checked",
+    candidates: [
+      {
+        candidate_fingerprint: "candidate-intel-com3",
+        description: "Intel(R) Active Management Technology - SOL",
+        manufacturer: "Intel",
+        port: "COM3",
+        recommended: false,
+        recommended_bauds: [9600, 115200],
+        serial_present: false,
+        transport: "system_serial",
+        usb_location: null,
+        vid_pid: null
+      },
+      {
+        candidate_fingerprint: "candidate-prolific-com5",
+        description: "Prolific USB-to-Serial Comm Port",
+        manufacturer: "Prolific",
+        port: "COM5",
+        recommended: true,
+        recommended_bauds: [9600, 115200],
+        serial_present: false,
+        transport: "usb_serial",
+        usb_location: "USB port 1-6",
+        vid_pid: "067B:2303"
+      }
+    ]
+  };
+}
+
+function ciscoConsoleIdentityVerified(payload: { baud?: number; candidate_fingerprint?: string; port?: string }) {
+  return {
+    baud: payload.baud ?? 9600,
+    blockers: [],
+    candidate_fingerprint: payload.candidate_fingerprint ?? "candidate-prolific-com5",
+    checked_at: checkedAt,
+    commands_attempted: ["show version", "show inventory"],
+    detected_vendor: "cisco",
+    identity_verified: true,
+    message: "Fresh Cisco IOS XE identity proof matched the selected adapter.",
+    model: "C9300-48P",
+    port: payload.port ?? "COM5",
+    prompt_state: "privileged_exec",
+    provider_id: "cisco-console",
+    read_only: true,
+    serial_fingerprint: "sha256:67ab…c912",
+    software_version: "17.15.05",
+    status: "ready",
     warnings: []
   };
 }

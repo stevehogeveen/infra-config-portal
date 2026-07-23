@@ -1590,6 +1590,93 @@ class CiscoConsoleBootstrapApplyCreate(BaseModel):
     destructive_action_requested: bool = False
 
 
+class CiscoConsoleIdentityCandidateRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    port: str
+    candidate_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    description: str | None = None
+    manufacturer: str | None = None
+    transport: Literal["serial", "usb-serial"]
+    vid_pid: str | None = Field(default=None, pattern=r"^[0-9A-F]{4}:[0-9A-F]{4}$")
+    usb_location: str | None = None
+    serial_present: bool
+    recommended_bauds: list[int] = Field(default_factory=list)
+    recommended: bool = False
+
+
+class CiscoConsoleIdentityCandidatesRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str
+    status: str
+    message: str
+    checked_at: str
+    candidates: list[CiscoConsoleIdentityCandidateRead] = Field(default_factory=list)
+    allowed_bauds: list[int] = Field(default_factory=list)
+    baud_is_identity_proof: Literal[False] = False
+    raw_identifiers_redacted: Literal[True] = True
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CiscoConsoleIdentityVerifyCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    port: str = Field(min_length=1, max_length=260)
+    baud: Literal[9600, 115200]
+    candidate_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("port")
+    @classmethod
+    def validate_explicit_serial_port(cls, value: str) -> str:
+        port = value.strip()
+        if any(ord(character) < 32 for character in port):
+            raise ValueError("port must not contain control characters")
+        if "://" in port:
+            raise ValueError("port must be a local serial device, not a network endpoint")
+        if not (
+            re.fullmatch(r"(?i)COM[1-9][0-9]{0,3}", port)
+            or re.fullmatch(r"(?i)\\\\\.\\COM[1-9][0-9]{0,3}", port)
+            or port.startswith("/dev/")
+        ):
+            raise ValueError("port must be an exact COM device or /dev serial path")
+        return port
+
+
+class CiscoConsoleIdentityVerifyRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str
+    status: str
+    message: str
+    checked_at: str
+    port: str
+    baud: int
+    candidate_fingerprint: str
+    detected_vendor: Literal["cisco", "netapp", "unknown"]
+    identity_verified: bool
+    prompt_state: str
+    model: str | None = None
+    software_version: str | None = None
+    serial_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    read_only: Literal[True] = True
+    verification_method: Literal[
+        "none",
+        "signed-exec",
+        "show-version-discriminator",
+    ] = "none"
+    baud_is_identity_proof: Literal[False] = False
+    raw_output_redacted: Literal[True] = True
+    raw_identifiers_redacted: Literal[True] = True
+    commands_attempted: list[Literal["show version", "show inventory"]] = Field(
+        default_factory=list
+    )
+    not_attempted: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class NetAppPlanPreviewRead(BaseModel):
     provider_id: str
     mode: str
