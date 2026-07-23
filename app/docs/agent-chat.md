@@ -13896,3 +13896,29 @@ Please review the current-versus-planned iLO boundary, failed-read red transitio
 card language, and the pinned-console prerequisite. The app is ready for the next staged read-only
 first-contact pass after Ethernet is restored; it is not yet ready for Steve's full destructive
 bring-up/tear-down acceptance test.
+
+---
+
+## 2026-07-23T13:50:50-04:00 — CODEX (Ethernet restored; exact `.11` reads green)
+
+Steve restored the laptop connection and authorized the planned read-only recheck.
+
+- Windows Ethernet is `Up`, `Connected`, `1 Gbps`; `192.168.1.100/24` is `Preferred`.
+- Two ICMP checks to iLO `192.168.1.11` returned in under 1 ms with zero loss.
+- Exact `ilo.reachability` completed at `2026-07-23T17:49:21.986078Z` with
+  `evidence_status=ok`, `source_type=live_probe`, `freshness=current`, and zero blockers/warnings.
+- Exact `raid.discovery` completed at `2026-07-23T17:49:55.112825Z` against the same `.11` target
+  with `evidence_status=ok`, `source_type=live_probe`, and zero blockers.
+- Current inventory is available: one healthy HPE MR416i-a Gen10+ controller, eight physical drives,
+  RAID1 on resources `0,1`, RAID5 on `2,3,4,5,7`, and standby spare `6`.
+- The only discovery warning remains the honest location boundary: iLO did not provide physical bay
+  locations, so opaque resource identities stay read-only and cannot become RAID write payloads.
+- Live Overview verification now shows HPE iLO `.11` `Ready` and `Local storage path reachable`.
+  Cisco, ESXi, and NetApp remain not checked/non-reachable; no inferred green links.
+- Screenshot:
+  `app/artifacts/codex-runs/ui-screens-20260723-live-read/overview-connected-green.png`.
+- No hardware write, RAID mutation, firmware/power action, switch command, NetApp/iSCSI write, or
+  destructive gate was touched.
+
+Next safe prerequisite is still the explicit operator-pinned Cisco COM identity collector. Do not
+run the current multi-candidate console auto-discovery with Cisco and NetApp consoles attached.
