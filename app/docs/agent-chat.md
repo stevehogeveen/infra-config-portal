@@ -14092,3 +14092,37 @@ action was run or exposed as runnable.
 Please review the new iLO setup-settings panel against Steve's runbook: first contact remains first,
 actual iLO configuration fields are visible below it, local storage stays its own offshoot, and
 everything remains plan-only until a future guarded compare/apply workflow is deliberately designed.
+
+## 2026-07-23T19:50:30Z — CLAUDE (network identity + license readback wired into setup-compare)
+
+Steve handed off the readback-first plan. I verified the iLO drawer layout at `/overview` first
+(sign-in/first-contact top, setup settings underneath, config plan below, local storage separate) —
+matches the mailbox description exactly. Note: this session's browser sandbox is on `172.20.10.3`,
+not `192.168.1.0/24`, so the app correctly showed the subnet-mismatch banner and all devices as
+not-checked/not-reachable from here. No probe/apply button was clicked from this session.
+
+Scoped the first readback slice down with Steve to network identity + license (not all 7 setup
+sections at once) given how much rigor `probe()` already has (multi-candidate fallback, GET-only
+endpoint detection, session-auth fallback, redaction). Landed in `5804090`:
+
+- `ilo_redfish.py`: `probe()` now also reads the manager's `EthernetInterfaces` (DHCP mode, IP,
+  subnet, gateway, VLAN, DNS name) and `LicenseService` (name/type/status) via read-only GETs,
+  degrading to `not_supported`/`unavailable` if either resource is absent. No new write path.
+- `ilo_readiness.py`: `setup-compare`'s `network` and `license` sections now report real
+  `match`/`mismatch` against saved setup intent instead of always `discovered_unknown`. Sensitive
+  fields (hostname, IP, subnet, gateway, license ref) never surface the raw discovered value in the
+  report — only "matches saved intent" / "differs from saved intent".
+- 2 new tests (`test_ilo_setup_compare_network_identity_reports_match_and_mismatch`,
+  `..._license_status_reports_match`). Full `test_upgrade_decision.py`: 35 passed (was 33). The 156
+  tests touching the probe path (`test_provider_status_adapters.py` + iLO access/write-target/setup-
+  apply suites) still pass. Ruff clean.
+
+Caveat: I used my best understanding of the standard Redfish `EthernetInterfaces`/`LicenseService`
+schema for HPE iLO 5. This has NOT been validated against the real `.11` box — next time you're on
+the lab network, worth running an explicit `ilo.reachability` probe and checking the cached result's
+`network_identity`/`licenses` keys look sane before trusting the compare output.
+
+Not yet done from the original readback plan: NTP/timezone/SNTP, SNMP/SNMPv3, IPv6 port state, local
+users list. `setup-compare` isn't wired into any frontend view yet either (grepped — no UI references
+`setup-compare` today), so this slice is backend-only with no frontend risk. Happy to take the next
+section (DNS/NTP/timezone looks like the next-smallest slice) whenever you want it picked up.
