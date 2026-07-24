@@ -14187,3 +14187,44 @@ Next direction is Steve's call: (a) attempt the IPv6/SNMP OEM field mapping desp
 (would need real hardware or your Redfish OEM docs to validate against), or (b) move on to designing
 the guarded iLO apply workflow (readdress `.11`→`.201`) now that readback covers the fields with
 confident mappings, or (c) something else entirely.
+
+## 2026-07-24T19:47:04Z — CLAUDE (real hardware session: ESXi already live, VM deploy launched)
+
+Steve connected this session to the real lab network (`192.168.1.100`/`192.168.1.23`) and gave iLO
+creds (administrator/P@ssw0rd at `.201` — note `.201` is now the live iLO, `.11` no longer answers)
+and pre-authorized RAID rebuild + ESXi install for a full "set up a VM in its entirety" run, accepting
+the known bay-location-mapping risk from the earlier RAID-write blocker.
+
+**Before touching anything destructive, ran a real read-only `ilo.reachability` probe against `.201`.**
+Two things changed the whole plan:
+1. **The bay-location blocker is resolved** — `SmartStorage/ArrayControllers/0/DiskDrives/{n}` now
+   returns real physical bay location (`ControllerPort:Box:Bay`, e.g. `1I:1:1` through `2I:1:8`),
+   contradicting the earlier finding that iLO didn't expose it. Worth revisiting the RAID-apply design
+   with this in mind next time RAID writes come up for real.
+2. **RAID and ESXi are already built and healthy** — existing RAID1 "ESXi-OS" (500GB, drives 0-1) and
+   RAID6 "VM-Datastore" (3.6TB, drives 2-6, spare 7) logical volumes, both `Status.Health: OK`. System
+   `EthernetInterfaces` are named `vmnic0-3` (ESXi's own naming), and `192.168.1.203` answered HTTPS
+   with `WWW-Authenticate: Basic realm="VMware HTTP server"` — confirmed via `govc`: ESXi host is live,
+   with an existing `netapp_nfs_ds01` NFS datastore (959GB free, backed by `192.168.1.230`) and several
+   pre-existing VMs (`win2022-01`, `netapp-nfs-ovf-preview-vm`, `grand-operation-test-vm`,
+   `destructive-restore-proof-vm-20260615`).
+
+Given that, I did **not** wipe/rebuild RAID or reinstall ESXi — there was nothing broken to fix, and
+doing so would have destroyed a working host for no reason. Pivoted to the actual remaining task:
+deploy a new VM onto the existing, healthy ESXi host via this app's real `esxi-readonly` vm-deploy
+workflow (`/vm-deploy-preview` → `/vm-deploy-apply`, `app/services/esxi_vm_deploy.py`) — this is
+additive, not destructive, and fits inside what was authorized.
+
+Setup: installed `govc` (official `vmware/govmomi` v0.55.1 release, with Steve's explicit permission)
+since it wasn't on PATH and this app's deploy code shells out to it. Added `VM_DEPLOY_*` env vars to
+`.env.local.real-lab` (VM name `win2022-agent-01` — picked to avoid colliding with the existing VMs
+above; datastore `netapp_nfs_ds01`; network `VM Network`; using the existing
+`DepOps_W2K22_Template_VMware7.0_Feb2025-1.0` OVF already staged in `artifacts/Media/OVF_Templates/`).
+`ESXI_TEST_HOST`/`PROVIDER_MODE`/`LAB_ACKNOWLEDGE_*`/`LAB_ALLOW_*` were already correctly set from
+earlier work. Ran `/vm-deploy-preview` first: `status: preview_ready`, OVF present, datastore exists,
+zero blockers. Deploy apply (`VM_DEPLOY_APPLY=true` + confirm phrase + power-on) is running now against
+the real host — will report the outcome once the OVF import (9.7GB disk) completes.
+
+Backend note: started a second uvicorn instance on port 8003 with the real-lab env rather than
+touching the existing process on 8002, since I couldn't be sure who else was using it and didn't want
+to kill someone else's session.
