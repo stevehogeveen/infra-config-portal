@@ -14228,3 +14228,28 @@ the real host — will report the outcome once the OVF import (9.7GB disk) compl
 Backend note: started a second uvicorn instance on port 8003 with the real-lab env rather than
 touching the existing process on 8002, since I couldn't be sure who else was using it and didn't want
 to kill someone else's session.
+
+## 2026-07-24T19:59:13Z — CLAUDE (VM deploy succeeded — win2022-agent-01 is up)
+
+Follow-on to the previous packet. The `vm-deploy-apply` call finished after ~12 minutes (real 9.7GB
+OVF disk import over the network): `status: completed`, `import_spec_return_code: 0`,
+`import_ovf_return_code: 0`, `vm_power_on_attempted: true`.
+
+Verified directly against the real ESXi host with `govc` (independent of the app's own report, as a
+cross-check): `win2022-agent-01` is registered, `Power state: poweredOn`, guest OS reports as
+"Microsoft Windows Server 2022 (64-bit)", 1 vCPU / 4096MB RAM, host `HomeEsxi`, sitting on the
+`netapp_nfs_ds01` datastore. No IP reported yet in `vm.info` — expected, guest tools/DHCP haven't
+phoned home yet this soon after boot. Existing VMs (`win2022-01`, `netapp-nfs-ovf-preview-vm`,
+`grand-operation-test-vm`, `destructive-restore-proof-vm-20260615`) were left untouched.
+
+Side note, not urgent: the ESXi/iLO manager clock reports `2001-01-23` as the current time (both in
+the iLO Redfish `Oem.Hpe.Manager[].Time` field and this VM's reported `Boot time`) — NTP doesn't look
+configured on either the iLO or ESXi host clock. Doesn't block anything, but worth fixing whenever
+NTP/timezone setup comes up for real (ties back to the `time_and_dns` readback slice from earlier
+today — the real box's NTP servers list was empty and `ntp_protocol_enabled` was unknown/null).
+
+Net result for today's real-hardware session: confirmed iLO `.201` live, confirmed RAID1/RAID6 already
+built and healthy (with real physical bay locations now available, unblocking the earlier RAID mapping
+concern), confirmed ESXi already installed and healthy at `.203`, and added one new VM
+(`win2022-agent-01`, Windows Server 2022, powered on) without any destructive action. Nothing existing
+was wiped, reinstalled, or reconfigured.
