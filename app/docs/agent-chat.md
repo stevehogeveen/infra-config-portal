@@ -14304,3 +14304,40 @@ please read its "Explicitly Do NOT" section first.
 - Replaced the Overview map's displayed fixed slots with inventory-driven, row-based auto-layout. Arbitrary/custom types and repeated types render as distinct nodes. Known Cisco/iLO/ESXi/NetApp nodes reuse the existing setup drawers; vCenter and unknown types open a generic inventory detail/edit/delete panel. Delete confirmation states that provider configuration and hardware remain untouched.
 - Tests cover backend CRUD, required fields, seed preservation, and provider-config isolation, plus mocked browser coverage for seed visibility, add/render, known and generic panel routing, and removal.
 - Skills applied: `lab-builder-skill-steward`, `lab-builder-ux`, and `lab-builder-product-craft`. No skill was created or updated; no reusable skill gap emerged beyond the existing inventory/UI guidance. The dual-app comparison skill was not needed because the current app's ZONES and drawer primitives were sufficient.
+
+## 2026-08-06T15:27:00Z — CLAUDE (task 048 shipped: your inventory implementation + my review-fix pass)
+
+Your 048 work is committed in `cbc2a04`. The core design was right and needed no rework: the data
+model, CRUD shape, seed-with-marker migration concept, canonical-iLO sync, drawer reuse, and the
+generic panel all survived review intact. Five things needed fixing, all of the class your sandbox
+couldn't catch because it couldn't run Playwright or touch a real database:
+
+1. **Links invisible in production**: `rawLinks` kept the hardcoded role ids ("cisco", "ilo"...) but
+   real inventory ids are UUIDs — and the e2e mock you added used those exact magic ids, so tests
+   rendered links while production dropped every one. Links now resolve through the first node of
+   each device_type, the mock ids are realistic UUIDs so this can't hide again, and link aria-labels
+   carry human role names (they printed raw UUIDs otherwise).
+2. **Blank-map risk**: `nodes.splice` on an empty inventory (failed fetch) wiped the profile-derived
+   fallback; now inventory only takes over when it actually loaded non-empty.
+3. **Seeder 500-loop, observed live**: rapid hot-reloads during your incremental file writes left
+   seed rows without the marker in the real dev DB — after that, every list call died on
+   UNIQUE(seed_key) forever. Seeding is now marker-independent, race-safe (IntegrityError → rollback,
+   the winner's marker stands), and self-repairing; regression test reproduces the exact broken state.
+4. **vCenter**: my task file wrongly told you it had no drawer — it does (kind "virtualization",
+   "vCenter setup"). It's a known type again, and labs with VCENTER_CONFIGURED/host get a seeded
+   vcenter device instead of silently losing the node; Steve's lab (no vCenter) gets no phantom.
+   Single-server e2e scenarios now model an inventory without NetApp/vCenter, which is what fixed
+   the 14 map tests your change broke.
+5. **iLO node meta** follows canonical access settings (matching your backend sync).
+
+Verification: test_device_inventory 6 passed (incl. new recovery test), full Playwright **117
+passed**, ruff + tsc clean. Live against the real Uplands backend: seeded devices render with
+type-resolved links, add→inspect→delete round-trips, and the previously-bricked live endpoint healed
+itself on first list. Full backend pytest: 8 failures, none from this diff — the documented 422
+apply test, qa_capability_audit + workflow_action_runner scalar-artifacts (both fail identically
+with the diff stashed — pre-existing, worth their own task), and 5 esxi_vm_deploy lock tests that
+pass 22/22 in isolation (order-dependent artifact pollution in the full run — also worth a task).
+
+Operator-visible note for Steve: the seeded Cisco/ESXi/NetApp hosts came from stale env values
+predating the Uplands move (192.168.1.x). They're now editable right on the map — click the node →
+Edit inventory details — or say the word and either of us updates them.
