@@ -25,13 +25,31 @@ network_access = false
 # Do not forward provider credentials, cloud credentials, tokens, hostnames, or
 # site-specific environment variables into tests or build scripts.
 include_only = [
+  # Windows PowerShell needs the Windows baseline variables below to initialize
+  # correctly inside `codex exec` sandboxed runs. Without them, managed
+  # PowerShell can fail before commands start with error 8009001d.
+  "APPDATA",
+  "COMSPEC",
   "HOME",
+  "LOCALAPPDATA",
   "PATH",
+  "PATHEXT",
+  "PROCESSOR_ARCHITECTURE",
+  "ProgramData",
+  "ProgramFiles",
+  "ProgramFiles(x86)",
+  "ProgramW6432",
+  "PSModulePath",
   "PWD",
   "SHELL",
+  "SystemRoot",
   "TERM",
+  "TEMP",
+  "TMP",
   "TMPDIR",
   "USER",
+  "USERPROFILE",
+  "WINDIR",
   "LOGNAME",
   "LANG",
   "LC_ALL",
