@@ -41,6 +41,9 @@ from app.schemas import (
     ControlActionCatalogRead,
     ControlActionPlanRead,
     ControlActionRunRead,
+    DeviceInventoryRead,
+    DeviceInventoryUpdate,
+    DeviceInventoryWrite,
     FirmwareFileSelectionsRead,
     FirmwareFileSelectionsWrite,
     FirmwareSummaryRead,
@@ -161,6 +164,13 @@ from app.services.control_access import (
     ControlAccessConfigNotFoundError,
     ControlAccessConfigValidationError,
     update_control_access_config,
+)
+from app.services.device_inventory import (
+    DeviceInventoryNotFoundError,
+    create_device,
+    delete_device,
+    list_devices,
+    update_device,
 )
 from app.services.ilo_baseline import (
     get_ilo_baseline_preview,
@@ -944,6 +954,43 @@ def read_report_summary(session: Session = Depends(get_session)) -> ReportCenter
 @router.get("/lab/profiles", response_model=LabProfileListRead)
 def read_lab_profiles() -> LabProfileListRead:
     return list_lab_profiles()
+
+
+@router.get("/device-inventory", response_model=list[DeviceInventoryRead])
+def read_device_inventory(session: Session = Depends(get_session)) -> list[DeviceInventoryRead]:
+    return list_devices(session)
+
+
+@router.post(
+    "/device-inventory",
+    response_model=DeviceInventoryRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_device_inventory(
+    payload: DeviceInventoryWrite,
+    session: Session = Depends(get_session),
+) -> DeviceInventoryRead:
+    return create_device(session, payload.model_dump())
+
+
+@router.patch("/device-inventory/{device_id}", response_model=DeviceInventoryRead)
+def update_device_inventory(
+    device_id: str,
+    payload: DeviceInventoryUpdate,
+    session: Session = Depends(get_session),
+) -> DeviceInventoryRead:
+    try:
+        return update_device(session, device_id, payload.model_dump(exclude_unset=True))
+    except DeviceInventoryNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+
+
+@router.delete("/device-inventory/{device_id}", status_code=status.HTTP_200_OK)
+def delete_device_inventory(device_id: str, session: Session = Depends(get_session)) -> None:
+    try:
+        delete_device(session, device_id)
+    except DeviceInventoryNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
 
 
 @router.post(

@@ -161,6 +161,30 @@ class IloSetupIntent(Base):
     )
 
 
+class DeviceInventory(Base):
+    __tablename__ = "device_inventory"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    device_type: Mapped[str] = mapped_column(String(80), index=True)
+    display_name: Mapped[str] = mapped_column(String(200), index=True)
+    host: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    seed_key: Mapped[str | None] = mapped_column(String(80), unique=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+    )
+
+
+class DeviceInventoryState(Base):
+    __tablename__ = "device_inventory_state"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default="legacy-seed-v1")
+    seeded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class HpeRaidIntent(Base):
     __tablename__ = "hpe_raid_intents"
 

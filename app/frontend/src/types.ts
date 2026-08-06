@@ -2008,3 +2008,20 @@ export type VMDeploymentCreate = {
 };
 
 export type VMDeploymentUpdate = Partial<VMDeploymentCreate>;
+
+export type DeviceInventoryItem = {
+  id: string;
+  device_type: string;
+  display_name: string;
+  host: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DeviceInventoryWrite = {
+  device_type: string;
+  display_name: string;
+  host?: string | null;
+  notes?: string | null;
+};

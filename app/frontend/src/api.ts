@@ -17,6 +17,8 @@ import type {
   ControlActionCatalog,
   ControlActionPlan,
   ControlActionRun,
+  DeviceInventoryItem,
+  DeviceInventoryWrite,
   FirmwareFileSelections,
   FirmwareFileSelectionsWrite,
   FirmwareSummary,
@@ -566,6 +568,13 @@ export const api = {
   reportSummary: () =>
     apiRequest<ReportCenter>("/api/v1/reports/summary"),
   labProfiles: () => apiRequest<LabProfileList>("/api/v1/lab/profiles"),
+  deviceInventory: () => apiRequest<DeviceInventoryItem[]>("/api/v1/device-inventory"),
+  createDevice: (payload: DeviceInventoryWrite) =>
+    apiRequest<DeviceInventoryItem>("/api/v1/device-inventory", { method: "POST", body: payload }),
+  updateDevice: (id: string, payload: Partial<DeviceInventoryWrite>) =>
+    apiRequest<DeviceInventoryItem>(`/api/v1/device-inventory/${id}`, { method: "PATCH", body: payload }),
+  deleteDevice: (id: string) =>
+    apiRequest<void>(`/api/v1/device-inventory/${id}`, { method: "DELETE" }),
   createLabProfile: (payload: LabProfileWrite) =>
     apiRequest<LabProfile>("/api/v1/lab/profiles", {
       method: "POST",

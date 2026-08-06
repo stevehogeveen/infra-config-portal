@@ -81,6 +81,44 @@ class VMDeploymentCreate(BaseModel):
         return self
 
 
+class DeviceInventoryWrite(BaseModel):
+    device_type: str = Field(min_length=1, max_length=80)
+    display_name: str = Field(min_length=1, max_length=200)
+    host: str | None = Field(default=None, max_length=300)
+    notes: str | None = Field(default=None, max_length=4000)
+
+    @field_validator("device_type", "display_name", "host", "notes", mode="before")
+    @classmethod
+    def clean_inventory_text(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
+
+
+class DeviceInventoryUpdate(BaseModel):
+    device_type: str | None = Field(default=None, min_length=1, max_length=80)
+    display_name: str | None = Field(default=None, min_length=1, max_length=200)
+    host: str | None = Field(default=None, max_length=300)
+    notes: str | None = Field(default=None, max_length=4000)
+
+    @field_validator("device_type", "display_name", "host", "notes", mode="before")
+    @classmethod
+    def clean_inventory_update_text(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
+
+
+class DeviceInventoryRead(DeviceInventoryWrite):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class VMDeploymentUpdate(BaseModel):
     requester: str | None = Field(default=None, min_length=2, max_length=120)
     environment: EnvironmentName | None = None

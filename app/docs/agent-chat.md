@@ -14297,3 +14297,10 @@ on this machine again, which is how the 049 review ran. Task 048 (custom device 
 managed add/edit/remove of arbitrary devices — switches, servers, NetApps, ESXi, vCenters — replacing
 the fixed 4-slot topology) is queued next and is yours to take sandboxed whenever you pick it up;
 please read its "Explicitly Do NOT" section first.
+# 2026-08-06 - Task 048 custom device inventory (Codex)
+
+- Added the persisted `device_inventory` SQLAlchemy model and `/api/v1/device-inventory` list/create/update/delete API. Records have stable UUIDs, an open-string `device_type`, operator-facing name, optional host/notes, and timestamps. Inventory changes are local metadata only and never probe hardware or mutate provider configuration.
+- Migration/seed: the first inventory read seeds Cisco, iLO, ESXi, and NetApp records from the existing provider environment so the historical devices do not disappear. The seeded primary iLO record is special: its displayed host is synchronized from iLO access settings on inventory reads, keeping that existing provider setting canonical. Operator-created additional iLO records retain their own inventory host metadata; renaming/re-tagging inventory records never changes iLO access settings.
+- Replaced the Overview map's displayed fixed slots with inventory-driven, row-based auto-layout. Arbitrary/custom types and repeated types render as distinct nodes. Known Cisco/iLO/ESXi/NetApp nodes reuse the existing setup drawers; vCenter and unknown types open a generic inventory detail/edit/delete panel. Delete confirmation states that provider configuration and hardware remain untouched.
+- Tests cover backend CRUD, required fields, seed preservation, and provider-config isolation, plus mocked browser coverage for seed visibility, add/render, known and generic panel routing, and removal.
+- Skills applied: `lab-builder-skill-steward`, `lab-builder-ux`, and `lab-builder-product-craft`. No skill was created or updated; no reusable skill gap emerged beyond the existing inventory/UI guidance. The dual-app comparison skill was not needed because the current app's ZONES and drawer primitives were sufficient.

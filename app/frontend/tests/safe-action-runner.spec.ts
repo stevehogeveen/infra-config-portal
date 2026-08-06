@@ -3576,12 +3576,56 @@ test("workflow runner surfaces network API failures", async ({ page }) => {
   await expect(page.getByText("Network error while requesting /api/v1/workflows/actions/build-verification.run-full/run.")).toBeVisible();
 });
 
+test("overview device inventory adds, opens known and generic panels, and removes devices", async ({ page }) => {
+  await page.goto("/overview");
+  for (const name of ["Cisco Switch", "HPE iLO", "ESXi Host", "NetApp ONTAP"]) {
+    await expect(page.getByText(name, { exact: true })).toBeVisible();
+  }
+
+  await page.getByRole("button", { name: "Add device" }).click();
+  await page.getByLabel("Device type").fill("packet_broker");
+  await page.getByLabel("Device name").fill("Packet Broker A");
+  await page.getByLabel("Device host").fill("packet-a.local");
+  await page.getByRole("button", { name: "Save device" }).click();
+  await expect(page.getByText("Packet Broker A", { exact: true })).toBeVisible();
+
+  await page.getByText("Packet Broker A", { exact: true }).click();
+  await expect(page.getByLabel("Packet Broker A details")).toContainText("packet-a.local");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Delete device" }).click();
+  await expect(page.getByText("Packet Broker A", { exact: true })).toHaveCount(0);
+
+  await page.getByText("Cisco Switch", { exact: true }).click();
+  await expect(page.getByLabel("Cisco Switch setup")).toBeVisible();
+});
+
 async function installApiMocks(page: Page) {
   let firmwareFileSelections = firmwareFileSelectionState({});
   let labSafety = labSafetySettings();
   let activeProfiles = activeLabProfilesFixture();
   let savedProfile: Record<string, unknown> | null = null;
   let labBuildRun: Record<string, unknown> | null = null;
+  // Ids mimic real database UUIDs on purpose: link resolution must work by
+  // device type, never by magic id values the backend does not produce.
+  // Lazily initialized per scenario: single-server labs have no NetApp in
+  // their inventory, mirroring an operator who removed or never added it.
+  let deviceInventory: ReturnType<typeof inventoryDevice>[] | null = null;
+  const seededDeviceInventory = () => {
+    if (deviceInventory === null) {
+      deviceInventory = [
+        inventoryDevice("f2c1a9d0-4b31-4a5e-9d10-000000000001", "cisco_switch", "Cisco Switch", "192.168.1.204"),
+        inventoryDevice("f2c1a9d0-4b31-4a5e-9d10-000000000002", "ilo", "HPE iLO", "192.168.1.201"),
+        inventoryDevice("f2c1a9d0-4b31-4a5e-9d10-000000000003", "esxi_host", "ESXi Host", "192.168.1.203"),
+        ...(labProfileScenario === "single"
+          ? []
+          : [
+              inventoryDevice("f2c1a9d0-4b31-4a5e-9d10-000000000004", "netapp", "NetApp ONTAP", "192.168.1.220"),
+              inventoryDevice("f2c1a9d0-4b31-4a5e-9d10-000000000005", "vcenter", "vCenter", "192.168.1.205")
+            ])
+      ];
+    }
+    return deviceInventory;
+  };
   const topologyDesignDrafts = new Map<string, Record<string, unknown>>();
   await page.route("**/*", async (route) => {
     const request = route.request();
@@ -3603,6 +3647,23 @@ async function installApiMocks(page: Page) {
     }
     if (!url.pathname.startsWith("/api/v1/")) {
       return route.continue();
+    }
+    if (url.pathname === "/api/v1/device-inventory") {
+      const devices = seededDeviceInventory();
+      if (request.method() === "POST") {
+        const payload = request.postDataJSON() as Record<string, unknown>;
+        const created = inventoryDevice(`custom-${devices.length}`, String(payload.device_type), String(payload.display_name), String(payload.host || ""), String(payload.notes || ""));
+        devices.push(created);
+        return json(route, created);
+      }
+      return json(route, devices);
+    }
+    if (url.pathname.startsWith("/api/v1/device-inventory/")) {
+      const id = url.pathname.split("/").pop();
+      if (request.method() === "DELETE") {
+        deviceInventory = seededDeviceInventory().filter((device) => device.id !== id);
+        return json(route, null);
+      }
     }
     if (url.pathname.startsWith("/api/v1/lab/profiles/") && request.method() === "PUT") {
       const payload = request.postDataJSON() as Record<string, unknown>;
@@ -3850,6 +3911,18 @@ async function installApiMocks(page: Page) {
 
 function json(route: Route, body: unknown) {
   return route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+}
+
+function inventoryDevice(id: string, deviceType: string, displayName: string, host: string, notes = "") {
+  return {
+    id,
+    device_type: deviceType,
+    display_name: displayName,
+    host: host || null,
+    notes: notes || null,
+    created_at: checkedAt,
+    updated_at: checkedAt
+  };
 }
 
 function labBuildPlan() {

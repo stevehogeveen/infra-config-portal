@@ -44,6 +44,8 @@ import type {
   CiscoConsoleIdentityCandidate,
   CiscoConsoleIdentityCandidates,
   CiscoConsoleIdentityResult,
+  DeviceInventoryItem,
+  DeviceInventoryWrite,
   FirmwareFileCandidate,
   FirmwareFileSelections,
   FirmwareSummary,
@@ -653,6 +655,7 @@ export function OperatorOverviewPage({
   const [buildVerification, setBuildVerification] = useState<ProviderProbeResult | null>(null);
   const [iloAccessSettings, setIloAccessSettings] = useState<IloAccessSettings | null>(null);
   const [hpeStorageDiscovery, setHpeStorageDiscovery] = useState<HpeStorageDiscovery | null>(null);
+  const [deviceInventory, setDeviceInventory] = useState<DeviceInventoryItem[]>([]);
   const [error, setError] = useState("");
 
   async function load() {
@@ -665,7 +668,8 @@ export function OperatorOverviewPage({
         nextVcenterNetapp,
         nextBuildVerification,
         nextIloAccessSettings,
-        nextHpeStorageDiscovery
+        nextHpeStorageDiscovery,
+        nextDeviceInventory
       ] = await Promise.all([
         safeApi(api.providers, [] as ProviderStatus[]),
         safeApi(api.labValidation, null),
@@ -673,7 +677,8 @@ export function OperatorOverviewPage({
         safeApi(api.vcenterNetappReadiness, null),
         safeApi(api.buildVerification, null),
         safeApi(api.iloAccessSettings, null),
-        safeApi(api.hpeStorageDiscovery, null)
+        safeApi(api.hpeStorageDiscovery, null),
+        safeApi(api.deviceInventory, [] as DeviceInventoryItem[])
       ]);
       setProviders(Array.isArray(nextProviders) ? nextProviders : []);
       setValidation(nextValidation);
@@ -682,6 +687,7 @@ export function OperatorOverviewPage({
       setBuildVerification(nextBuildVerification);
       setIloAccessSettings(nextIloAccessSettings);
       setHpeStorageDiscovery(nextHpeStorageDiscovery);
+      setDeviceInventory(Array.isArray(nextDeviceInventory) ? nextDeviceInventory : []);
       if (onReloadLabProfile) {
         await onReloadLabProfile();
       }
@@ -722,6 +728,7 @@ export function OperatorOverviewPage({
             features={features}
             health={health}
             hpeStorageDiscovery={hpeStorageDiscovery}
+            inventory={deviceInventory}
             iloAccessSettings={iloAccessSettings}
             labProfileState={labProfileState}
             onReload={async () => {
@@ -6939,6 +6946,7 @@ type MapNodeModel = {
   tone: TopologyNodeTone;
   x: number;
   y: number;
+  inventory?: DeviceInventoryItem;
 };
 
 type MapEditField = {
@@ -7153,6 +7161,7 @@ function MapDeviceEditor({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [inventoryEditing, setInventoryEditing] = useState(false);
   const profileKey = `${node.kind}:${activeProfile?.id ?? "none"}:${activeProfile?.version ?? 0}`;
 
   useEffect(() => {
@@ -7195,6 +7204,20 @@ function MapDeviceEditor({
     }
   }
 
+  async function removeInventoryDevice() {
+    if (!node.inventory || !window.confirm("Remove this device from the visual inventory? Provider configuration and real hardware will not be changed.")) return;
+    setBusy(true);
+    try {
+      await api.deleteDevice(node.inventory.id);
+      onClose();
+      await onReload();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <aside className="map-drawer" aria-label={`${node.title} setup`}>
       <div className="map-drawer-head">
@@ -7211,6 +7234,7 @@ function MapDeviceEditor({
         </button>
       </div>
       <div className="map-drawer-body">
+        {node.inventory && <div className="map-editor-actions"><button onClick={() => setInventoryEditing(true)} type="button">Edit inventory details</button><button className="danger" onClick={removeInventoryDevice} type="button">Delete device</button></div>}
         {node.kind !== "ilo" && (
           <DeviceCredentialsPanel groupId={CREDENTIAL_GROUP_BY_DEVICE_KIND[node.kind]} />
         )}
@@ -7255,6 +7279,7 @@ function MapDeviceEditor({
           </button>
         </div>
       </div>
+      {inventoryEditing && node.inventory && <DeviceInventoryForm device={node.inventory} onClose={() => setInventoryEditing(false)} onReload={onReload} />}
     </aside>
   );
 }
@@ -8260,6 +8285,7 @@ function OverviewLabMap({
   features,
   health,
   hpeStorageDiscovery,
+  inventory,
   iloAccessSettings,
   labProfileState,
   onReload,
@@ -8271,6 +8297,7 @@ function OverviewLabMap({
   features: LabProfileFeatures | null;
   health?: HealthLike;
   hpeStorageDiscovery: HpeStorageDiscovery | null;
+  inventory: DeviceInventoryItem[];
   iloAccessSettings: IloAccessSettings | null;
   labProfileState: LabProfileList | null;
   onReload: () => Promise<void> | void;
@@ -8294,7 +8321,7 @@ function OverviewLabMap({
   const vmStatus = topologyStatusFromAccess(accessRows, "VM inventory");
   const localStorageStatus = topologyLocalStorageStatus(hpeStorageDiscovery, iloAccessSettings);
   const localStorageTone = topologyConnectionTone([iloStatus, localStorageStatus]);
-  const localStoragePosition = MAP_NODE_LAYOUT.localStorage;
+  let localStoragePosition = MAP_NODE_LAYOUT.localStorage;
 
   const nodes: MapNodeModel[] = [
     {
@@ -8328,21 +8355,68 @@ function OverviewLabMap({
     });
   }
 
+  // The inventory is the source of truth for what renders — but only when it
+  // actually loaded. An empty result (endpoint failed/unavailable) must not
+  // blank the map; the profile-derived nodes above stay as the fallback.
+  if (inventory.length > 0) {
+    nodes.splice(0, nodes.length, ...inventory.map((device, index) => {
+      const status = inventoryDeviceStatus(device.device_type, { ciscoStatus, esxiStatus, iloStatus, netappStatus, vmStatus });
+      // The iLO's address has one canonical source of truth: the saved access
+      // settings (the backend syncs the seeded inventory row to it too).
+      const host = device.device_type === "ilo"
+        ? iloAccessSettings?.host || device.host
+        : device.host;
+      return {
+        id: device.id,
+        inventory: device,
+        kind: inventoryMapKind(device.device_type),
+        title: device.display_name,
+        subtitle: inventoryTypeLabel(device.device_type),
+        meta: displayAddress(host),
+        status,
+        tone: topologyTone(status, device.device_type === "vcenter" ? "created" : undefined),
+        x: 105 + (index % 4) * 180,
+        y: 85 + Math.floor(index / 4) * 145
+      };
+    }));
+  }
+  const mapHeight = Math.max(460, 150 + Math.ceil(nodes.length / 4) * 145);
+  localStoragePosition = { x: 680, y: mapHeight - 70 };
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedNode = nodes.find((node) => node.id === selectedId) ?? null;
   const localStorageSelected = selectedId === "local-storage";
   const byId = new Map(nodes.map((node) => [node.id, node]));
 
-  type MapLink = { from: string; to: string; status: TopologyNodeTone };
+  // Inventory node ids are database UUIDs, so the classic role-to-role links
+  // resolve through the first node of each device type. Repeated devices of a
+  // type beyond the first render as standalone nodes without inferred links —
+  // no invented cabling.
+  const nodeIdForRole = (role: string): string => {
+    const byType = nodes.find((node) => node.inventory?.device_type === role);
+    if (byType) return byType.id;
+    return role === "cisco_switch" ? "cisco" : role === "esxi_host" ? "esxi" : role;
+  };
+
+  type MapLink = { from: string; fromLabel: string; to: string; toLabel: string; status: TopologyNodeTone };
+  const roleLink = (fromRole: string, fromLabel: string, toRole: string, toLabel: string, status: TopologyNodeTone): MapLink => ({
+    from: nodeIdForRole(fromRole),
+    fromLabel,
+    to: nodeIdForRole(toRole),
+    toLabel,
+    status
+  });
   const rawLinks: MapLink[] = [
-    { from: "cisco", to: "ilo", status: topologyConnectionTone([ciscoStatus, iloStatus]) },
-    { from: "cisco", to: "esxi", status: topologyConnectionTone([ciscoStatus, esxiStatus]) },
-    { from: "cisco", to: "vcenter", status: topologyConnectionTone([ciscoStatus, vmStatus]) },
-    { from: "esxi", to: "netapp", status: topologyConnectionTone([esxiStatus, netappStatus]) },
-    { from: "netapp", to: "vcenter", status: topologyConnectionTone([netappStatus, vmStatus]) },
-    { from: "esxi", to: "vcenter", status: topologyConnectionTone([esxiStatus, vmStatus]) }
+    roleLink("cisco_switch", "Cisco switch", "ilo", "HPE iLO", topologyConnectionTone([ciscoStatus, iloStatus])),
+    roleLink("cisco_switch", "Cisco switch", "esxi_host", "ESXi host", topologyConnectionTone([ciscoStatus, esxiStatus])),
+    roleLink("cisco_switch", "Cisco switch", "vcenter", "vCenter", topologyConnectionTone([ciscoStatus, vmStatus])),
+    roleLink("esxi_host", "ESXi host", "netapp", "NetApp ONTAP", topologyConnectionTone([esxiStatus, netappStatus])),
+    roleLink("netapp", "NetApp ONTAP", "vcenter", "vCenter", topologyConnectionTone([netappStatus, vmStatus])),
+    roleLink("esxi_host", "ESXi host", "vcenter", "vCenter", topologyConnectionTone([esxiStatus, vmStatus]))
   ];
   const links = rawLinks.filter((link) => byId.has(link.from) && byId.has(link.to));
+  const primaryIlo = nodes.find((node) => node.inventory?.device_type === "ilo");
+  const [addOpen, setAddOpen] = useState(false);
 
   function linkClass(status: TopologyNodeTone): string {
     return topologyToneReachability(status) === "reachable" ? "is-reachable" : "is-unreachable";
@@ -8362,6 +8436,7 @@ function OverviewLabMap({
           <h2>{nodes.length} devices · subnet {displayAddress(address.subnet)}</h2>
         </div>
         <div className="overview-map-head-actions">
+          <button className="operator-primary-button" onClick={() => setAddOpen(true)} type="button">Add device</button>
           <div className="overview-map-pills">
             <span className={`topology-pill ${runtimeClass}`}><CheckCircle2 size={14} /> {runtimeLabel}</span>
             <span className={`topology-pill topology-pill-subnet-${subnetState.status}`}><Route size={14} /> {subnetState.label}</span>
@@ -8380,13 +8455,13 @@ function OverviewLabMap({
 
       <div className={`overview-map-stage ${selectedNode || localStorageSelected ? "is-open" : ""}`}>
         <div className="overview-map-canvas">
-          <svg className="overview-map-svg" viewBox="0 0 760 460" role="img" aria-label="Device topology">
+          <svg className="overview-map-svg" viewBox={`0 0 760 ${mapHeight}`} role="img" aria-label="Device topology">
             <g className="overview-map-links">
-              <path
+              {primaryIlo && <path
                 className={`overview-link overview-link-offshoot ${linkClass(localStorageTone)}`}
-                d={`M ${MAP_NODE_LAYOUT.ilo.x} ${MAP_NODE_LAYOUT.ilo.y} L ${localStoragePosition.x} ${localStoragePosition.y}`}
+                d={`M ${primaryIlo.x} ${primaryIlo.y} L ${localStoragePosition.x} ${localStoragePosition.y}`}
                 aria-label={`Local storage path ${topologyToneReachabilityLabel(localStorageTone)}`}
-              />
+              />}
               {links.map((link) => {
                 const a = byId.get(link.from)!;
                 const b = byId.get(link.to)!;
@@ -8395,7 +8470,7 @@ function OverviewLabMap({
                     key={`${link.from}-${link.to}`}
                     className={`overview-link ${linkClass(link.status)}`}
                     d={`M ${a.x} ${a.y} L ${b.x} ${b.y}`}
-                    aria-label={`${topologyMapLinkEndpointLabel(link.from)} to ${topologyMapLinkEndpointLabel(link.to)} ${topologyToneReachabilityLabel(link.status)}`}
+                    aria-label={`${link.fromLabel} to ${link.toLabel} ${topologyToneReachabilityLabel(link.status)}`}
                   />
                 );
               })}
@@ -8446,7 +8521,7 @@ function OverviewLabMap({
           </div>
         </div>
 
-        {selectedNode && (
+        {selectedNode && selectedNode.inventory && isKnownInventoryType(selectedNode.inventory.device_type) && (
           <MapDeviceEditor
             key={selectedNode.id}
             node={selectedNode}
@@ -8458,6 +8533,9 @@ function OverviewLabMap({
             onClose={() => setSelectedId(null)}
             onReload={onReload}
           />
+        )}
+        {selectedNode && selectedNode.inventory && !isKnownInventoryType(selectedNode.inventory.device_type) && (
+          <GenericDevicePanel device={selectedNode.inventory} onClose={() => setSelectedId(null)} onReload={onReload} />
         )}
         {localStorageSelected && (
           <LocalRaidPlannerDrawer
@@ -8471,7 +8549,115 @@ function OverviewLabMap({
           />
         )}
       </div>
+      {addOpen && <DeviceInventoryForm onClose={() => setAddOpen(false)} onReload={onReload} />}
     </section>
+  );
+}
+
+function inventoryMapKind(deviceType: string): MapDeviceKind {
+  if (deviceType === "cisco_switch") return "network";
+  if (deviceType === "ilo") return "ilo";
+  if (deviceType === "esxi_host") return "esxi";
+  if (deviceType === "netapp") return "storage";
+  return "virtualization";
+}
+
+function inventoryTypeLabel(deviceType: string): string {
+  return deviceType.split("_").map((part) => part ? `${part[0].toUpperCase()}${part.slice(1)}` : part).join(" ");
+}
+
+function isKnownInventoryType(deviceType: string): boolean {
+  // vCenter has a dedicated editor drawer too (kind "virtualization").
+  return ["ilo", "cisco_switch", "esxi_host", "netapp", "vcenter"].includes(deviceType);
+}
+
+function inventoryDeviceStatus(
+  deviceType: string,
+  statuses: { ciscoStatus: string; esxiStatus: string; iloStatus: string; netappStatus: string; vmStatus: string }
+): string {
+  if (deviceType === "cisco_switch") return statuses.ciscoStatus;
+  if (deviceType === "ilo") return statuses.iloStatus;
+  if (deviceType === "esxi_host") return statuses.esxiStatus;
+  if (deviceType === "netapp") return statuses.netappStatus;
+  if (deviceType === "vcenter") return statuses.vmStatus;
+  return "not checked";
+}
+
+function DeviceInventoryForm({
+  device,
+  onClose,
+  onReload
+}: {
+  device?: DeviceInventoryItem;
+  onClose: () => void;
+  onReload: () => Promise<void> | void;
+}) {
+  const [form, setForm] = useState<DeviceInventoryWrite>({
+    device_type: device?.device_type ?? "other",
+    display_name: device?.display_name ?? "",
+    host: device?.host ?? "",
+    notes: device?.notes ?? ""
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      if (device) await api.updateDevice(device.id, form);
+      else await api.createDevice(form);
+      await onReload();
+      onClose();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="topology-workspace-overlay" aria-label={device ? "Edit device" : "Add device"}>
+      <div className="topology-workspace-backdrop" onClick={onClose} />
+      <aside className="topology-workspace-drawer">
+        <div className="topology-workspace-drawer-head"><span>{device ? "Edit device" : "Add device"}</span><button onClick={onClose} type="button">Close</button></div>
+        <form className="map-editor-form" onSubmit={save}>
+          <label><span>Type</span><input aria-label="Device type" list="device-inventory-types" onChange={(event) => setForm({ ...form, device_type: event.target.value })} required value={form.device_type} /></label>
+          <datalist id="device-inventory-types"><option value="ilo" /><option value="cisco_switch" /><option value="esxi_host" /><option value="netapp" /><option value="vcenter" /><option value="other" /></datalist>
+          <label><span>Name</span><input aria-label="Device name" onChange={(event) => setForm({ ...form, display_name: event.target.value })} required value={form.display_name} /></label>
+          <label><span>Host (optional)</span><input aria-label="Device host" onChange={(event) => setForm({ ...form, host: event.target.value })} value={form.host ?? ""} /></label>
+          <label><span>Notes (optional)</span><textarea aria-label="Device notes" onChange={(event) => setForm({ ...form, notes: event.target.value })} value={form.notes ?? ""} /></label>
+          {error && <div className="operator-feedback error">{error}</div>}
+          <p className="muted">Inventory only. Saving does not contact hardware or change provider configuration.</p>
+          <button className="operator-primary-button" disabled={busy} type="submit">{busy ? "Saving" : "Save device"}</button>
+        </form>
+      </aside>
+    </div>
+  );
+}
+
+function GenericDevicePanel({ device, onClose, onReload }: { device: DeviceInventoryItem; onClose: () => void; onReload: () => Promise<void> | void }) {
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState("");
+  async function remove() {
+    if (!window.confirm("Remove this device from the visual inventory? Provider configuration and real hardware will not be changed.")) return;
+    try {
+      await api.deleteDevice(device.id);
+      onClose();
+      await onReload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+  return (
+    <aside className="map-device-editor" aria-label={`${device.display_name} details`}>
+      <div className="map-device-editor-head"><div><p className="operator-kicker">Inventory device</p><h3>{device.display_name}</h3></div><button onClick={onClose} type="button">Close</button></div>
+      <dl className="lab-defaults-facts"><div><dt>Type</dt><dd>{inventoryTypeLabel(device.device_type)}</dd></div><div><dt>Host</dt><dd>{device.host || "Not assigned"}</dd></div><div><dt>Notes</dt><dd>{device.notes || "No notes"}</dd></div></dl>
+      {error && <div className="operator-feedback error">{error}</div>}
+      <div className="map-editor-actions"><button onClick={() => setEditing(true)} type="button">Edit</button><button className="danger" onClick={remove} type="button">Delete device</button></div>
+      {editing && <DeviceInventoryForm device={device} onClose={() => setEditing(false)} onReload={onReload} />}
+    </aside>
   );
 }
 
@@ -15038,19 +15224,6 @@ function topologyLinkReachabilityLabel(reachability: TopologyLink["reachability"
 
 function topologyToneReachabilityLabel(tone: TopologyNodeTone): string {
   return topologyLinkReachabilityLabel(topologyToneReachability(tone));
-}
-
-function topologyMapLinkEndpointLabel(id: string): string {
-  const labels: Record<string, string> = {
-    cisco: "Cisco switch",
-    datastore: "Datastore",
-    esxi: "ESXi host",
-    ilo: "HPE iLO",
-    netapp: "NetApp ONTAP",
-    server: "HPE server",
-    vcenter: "vCenter"
-  };
-  return labels[id] ?? id;
 }
 
 function topologyNetappMeta(address: LabAddressPlan, storageProtocol: string): string {
