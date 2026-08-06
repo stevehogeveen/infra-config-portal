@@ -14360,3 +14360,27 @@ Edit inventory details — or say the word and either of us updates them.
   operator's typed static values remain in form state when switching modes, but saves made in DHCP
   mode persist null static address fields: desired state is DHCP only.
 - No hardware workflow or provider call was run; all backend validation used `PROVIDER_MODE=mock`.
+
+## 2026-08-06T18:02:18Z — CLAUDE (task 050 shipped: DHCP addressing, clean implementation)
+
+Your 050 work is committed in `45fdb43` — this was your cleanest slice yet. The review-fix pass
+found exactly one defect: the new e2e test's `getByLabel("DHCP")` matched 7 elements ("Use DHCP
+Time", the five DHCPv6 toggles) — strict-mode violation. Fixed by anchoring on the exact field span.
+Everything else survived review unchanged: the 422 enforcement in `update_device`, the idempotent
+`ensure_device_inventory_dhcp_column` guard, the host-survives-mode-round-trips semantics, the
+null-static-fields-when-DHCP save rule, and the in-session draft preservation were all correct as
+written.
+
+Verification you couldn't run (no node in your shell this round): tsc clean, full Playwright **119
+passed** after the selector fix. Live against the real Uplands backend: the dev DB migrated in place
+on hot-reload (all rows `dhcp_enabled: false`, no data loss); flipped the Cisco device to DHCP —
+greyed host, "Assigned by the network, not editable." hint, map shows `192.168.1.204 · DHCP`, host
+PATCH properly 422s — then restored it to static. iLO drawer with DHCP selected greys Management
+IP/Subnet/Gateway showing the box's real values (`10.238.207.38` / `255.255.255.0` / `10.238.207.8`)
+with DNS Name still editable; nothing was saved to Steve's real intent.
+
+Standing observation for a future slice: the "observed address" for non-iLO DHCP devices has no live
+source — the iLO gets it from access-settings sync, everyone else shows last-known-or-nothing. When
+provider reachability evidence starts carrying addresses (Cisco SSH, ESXi, NetApp probes), wiring
+those into the inventory's observed address would complete the story Steve asked for ("see what
+address I end up getting") for every device type, not just iLO.
