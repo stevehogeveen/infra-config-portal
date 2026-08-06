@@ -8756,6 +8756,130 @@ th.ui-compact-table-cell {
 
 .map-field-group-head .map-status-pill { margin-left: auto; }
 
+/* Example simplified pages (/simple, /simple-steps) — additive only */
+.simple-page {
+  margin: 0 auto;
+  max-width: 880px;
+  padding: 48px 24px 64px;
+}
+
+.simple-head h1 {
+  color: var(--ink);
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 0 0 6px;
+}
+
+.simple-sub {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0 0 34px;
+}
+
+.simple-sub a { color: inherit; text-decoration: underline; }
+
+.simple-loading { color: var(--muted); font-size: 15px; }
+
+.simple-tiles {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.simple-tile {
+  background: var(--panel, rgba(127, 127, 127, 0.06));
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.25));
+  border-left: 5px solid var(--line, rgba(127, 127, 127, 0.25));
+  border-radius: 14px;
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 22px;
+  text-decoration: none;
+  transition: transform 120ms ease;
+}
+
+.simple-tile:hover { transform: translateY(-2px); }
+.simple-tile.is-ready { border-left-color: #2e9e5b; }
+.simple-tile.is-problem { border-left-color: #d64545; }
+
+.simple-tile-status {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.simple-tile.is-ready .simple-tile-status { color: #2e9e5b; }
+.simple-tile.is-problem .simple-tile-status { color: #d64545; }
+.simple-tile strong { font-size: 21px; font-weight: 750; }
+.simple-tile-host { color: var(--muted); font-size: 13px; }
+.simple-tile-go { color: var(--muted); font-size: 13px; font-weight: 700; margin-top: 10px; }
+
+.simple-next {
+  border-top: 1px solid var(--line, rgba(127, 127, 127, 0.25));
+  color: var(--ink);
+  font-size: 16px;
+  margin-top: 36px;
+  padding-top: 22px;
+}
+
+.simple-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.simple-step {
+  align-items: center;
+  background: var(--panel, rgba(127, 127, 127, 0.06));
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.25));
+  border-radius: 14px;
+  display: flex;
+  gap: 20px;
+  opacity: 0.55;
+  padding: 20px 24px;
+}
+
+.simple-step.is-done, .simple-step.is-next { opacity: 1; }
+.simple-step.is-next { border-color: #2e6fd6; box-shadow: 0 0 0 1px #2e6fd6 inset; }
+
+.simple-step-number {
+  align-items: center;
+  border: 2px solid var(--line, rgba(127, 127, 127, 0.4));
+  border-radius: 50%;
+  color: var(--ink);
+  display: flex;
+  flex: 0 0 44px;
+  font-size: 19px;
+  font-weight: 800;
+  height: 44px;
+  justify-content: center;
+  width: 44px;
+}
+
+.simple-step.is-done .simple-step-number { background: #2e9e5b; border-color: #2e9e5b; color: #fff; }
+.simple-step.is-next .simple-step-number { border-color: #2e6fd6; color: #2e6fd6; }
+.simple-step-body { display: flex; flex: 1; flex-direction: column; gap: 3px; }
+.simple-step-body strong { color: var(--ink); font-size: 18px; font-weight: 750; }
+.simple-step-body span { color: var(--muted); font-size: 13.5px; }
+
+.simple-step-go {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 750;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.simple-step-go:hover { text-decoration: underline; }
+
 .from-device-hint {
   color: var(--muted);
   display: inline-block;
@@ -21905,3 +22029,31 @@ button.design-ilo-port:hover {
     width: auto;
   }
 }
+.vsan-readiness {
+  border-top: 1px solid var(--border-color, #d7dde5);
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+}
+
+.vsan-drive-grid .vsan-drive {
+  cursor: default;
+  text-align: left;
+}
+
+.vsan-drive.is-passthrough_ready { border-color: #2f855a; }
+.vsan-drive.is-in_raid_volume { border-color: #b7791f; }
+.vsan-drive.is-unknown { border-color: #718096; }
+
+.vsan-options {
+  display: grid;
+  gap: .75rem;
+  margin-top: 1rem;
+}
+
+.vsan-options article {
+  background: var(--surface-subtle, #f7f8fa);
+  border-radius: .5rem;
+  padding: .75rem;
+}
+
+.vsan-options p { margin: .25rem 0 0; }

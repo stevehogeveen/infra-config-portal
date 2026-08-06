@@ -41,6 +41,7 @@ import {
   OperatorValidationPage,
   OperatorVirtualizationPage
 } from "./operatorPages";
+import { SimpleLabPage, SimpleStepsPage } from "./simplePages";
 import type {
   ArtifactRecord,
   AuditEvent,
@@ -761,6 +762,8 @@ function App() {
                   />
                 }
               />
+              <RouterRoute path="/simple" element={<SimpleLabPage />} />
+              <RouterRoute path="/simple-steps" element={<SimpleStepsPage />} />
               <RouterRoute path="/network" element={<OperatorNetworkPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/server" element={<OperatorServerPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/storage" element={<OperatorStoragePage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
