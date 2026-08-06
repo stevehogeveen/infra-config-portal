@@ -2014,6 +2014,7 @@ export type DeviceInventoryItem = {
   device_type: string;
   display_name: string;
   host: string | null;
+  dhcp_enabled: boolean;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -2023,5 +2024,6 @@ export type DeviceInventoryWrite = {
   device_type: string;
   display_name: string;
   host?: string | null;
+  dhcp_enabled?: boolean;
   notes?: string | null;
 };

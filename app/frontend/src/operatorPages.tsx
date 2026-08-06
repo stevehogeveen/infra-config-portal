@@ -7761,7 +7761,12 @@ function IloSetupIntentWorkspacePanel() {
       const nextPlan = await api.iloSetupPlanPreview();
       setIntent(saved);
       setPlan(nextPlan);
-      setForm(iloWorkspaceIntentForm(saved, discovered));
+      // Keep hidden static drafts in local form state while DHCP is selected.
+      // The cleaned payload still persists nulls, but flipping back to static
+      // during this editing session restores what the operator last typed.
+      if (form.network.dhcp_enabled !== true) {
+        setForm(iloWorkspaceIntentForm(saved, discovered));
+      }
       setMessage("Saved iLO settings locally. Hardware untouched.");
     } catch (err) {
       setError(errorMessage(err));
@@ -7773,6 +7778,14 @@ function IloSetupIntentWorkspacePanel() {
   const planSections = Array.isArray(plan?.sections) ? plan.sections : [];
   const networkStatus = planSections.find((section) => section.id === "network")?.status || "plan_only";
   const sectionCount = planSections.length;
+  const dhcpOn = form.network.dhcp_enabled === true;
+  const displayedStaticNetwork = dhcpOn
+    ? {
+        management_ip: discovered?.network.management_ip ?? "",
+        subnet_mask_or_prefix: discovered?.network.subnet_mask_or_prefix ?? "",
+        gateway: discovered?.network.gateway ?? ""
+      }
+    : form.network;
 
   return (
     <section className="map-field-group ilo-config-intent" aria-label="iLO setup settings">
@@ -7814,23 +7827,37 @@ function IloSetupIntentWorkspacePanel() {
                 <small className="from-device-hint">from device</small>
               )}
             </Field>
+            <Field label="Management IP">
+              <input
+                className="is-mono"
+                disabled={dhcpOn}
+                value={displayedStaticNetwork.management_ip ?? ""}
+                onChange={(event) => updateNetwork("management_ip", event.target.value)}
+                placeholder={dhcpOn ? "No address observed yet" : undefined}
+              />
+              {(dhcpOn && discovered?.network.management_ip) && (
+                <small className="from-device-hint">from device</small>
+              )}
+            </Field>
             <Field label="Subnet Mask / Prefix">
               <input
                 className="is-mono"
-                value={form.network.subnet_mask_or_prefix ?? ""}
+                disabled={dhcpOn}
+                value={displayedStaticNetwork.subnet_mask_or_prefix ?? ""}
                 onChange={(event) => updateNetwork("subnet_mask_or_prefix", event.target.value)}
               />
-              {isFromDevice("network.subnet_mask_or_prefix", form.network.subnet_mask_or_prefix) && (
+              {(dhcpOn ? discovered?.network.subnet_mask_or_prefix : isFromDevice("network.subnet_mask_or_prefix", form.network.subnet_mask_or_prefix)) && (
                 <small className="from-device-hint">from device</small>
               )}
             </Field>
             <Field label="Gateway">
               <input
                 className="is-mono"
-                value={form.network.gateway ?? ""}
+                disabled={dhcpOn}
+                value={displayedStaticNetwork.gateway ?? ""}
                 onChange={(event) => updateNetwork("gateway", event.target.value)}
               />
-              {isFromDevice("network.gateway", form.network.gateway) && (
+              {(dhcpOn ? discovered?.network.gateway : isFromDevice("network.gateway", form.network.gateway)) && (
                 <small className="from-device-hint">from device</small>
               )}
             </Field>
@@ -8198,13 +8225,14 @@ function iloWorkspaceIntentForm(
 }
 
 function cleanIloWorkspaceIntent(form: IloSetupIntentWrite): IloSetupIntentWrite {
+  const dhcpOn = form.network.dhcp_enabled === true;
   return {
     network: {
       dhcp_enabled: form.network.dhcp_enabled,
-      gateway: blankToNull(form.network.gateway),
+      gateway: dhcpOn ? null : blankToNull(form.network.gateway),
       hostname: blankToNull(form.network.hostname),
-      management_ip: blankToNull(form.network.management_ip),
-      subnet_mask_or_prefix: blankToNull(form.network.subnet_mask_or_prefix),
+      management_ip: dhcpOn ? null : blankToNull(form.network.management_ip),
+      subnet_mask_or_prefix: dhcpOn ? null : blankToNull(form.network.subnet_mask_or_prefix),
       vlan: blankToNull(form.network.vlan)
     },
     users: form.users
@@ -8372,7 +8400,7 @@ function OverviewLabMap({
         kind: inventoryMapKind(device.device_type),
         title: device.display_name,
         subtitle: inventoryTypeLabel(device.device_type),
-        meta: displayAddress(host),
+        meta: `${host ? displayAddress(host) : "No address observed yet"}${device.dhcp_enabled ? " · DHCP" : ""}`,
         status,
         tone: topologyTone(status, device.device_type === "vcenter" ? "created" : undefined),
         x: 105 + (index % 4) * 180,
@@ -8596,6 +8624,7 @@ function DeviceInventoryForm({
     device_type: device?.device_type ?? "other",
     display_name: device?.display_name ?? "",
     host: device?.host ?? "",
+    dhcp_enabled: device?.dhcp_enabled ?? false,
     notes: device?.notes ?? ""
   });
   const [busy, setBusy] = useState(false);
@@ -8606,8 +8635,11 @@ function DeviceInventoryForm({
     setBusy(true);
     setError("");
     try {
-      if (device) await api.updateDevice(device.id, form);
-      else await api.createDevice(form);
+      const payload = form.dhcp_enabled
+        ? { ...form, host: undefined }
+        : form;
+      if (device) await api.updateDevice(device.id, payload);
+      else await api.createDevice(payload);
       await onReload();
       onClose();
     } catch (err) {
@@ -8626,7 +8658,18 @@ function DeviceInventoryForm({
           <label><span>Type</span><input aria-label="Device type" list="device-inventory-types" onChange={(event) => setForm({ ...form, device_type: event.target.value })} required value={form.device_type} /></label>
           <datalist id="device-inventory-types"><option value="ilo" /><option value="cisco_switch" /><option value="esxi_host" /><option value="netapp" /><option value="vcenter" /><option value="other" /></datalist>
           <label><span>Name</span><input aria-label="Device name" onChange={(event) => setForm({ ...form, display_name: event.target.value })} required value={form.display_name} /></label>
-          <label><span>Host (optional)</span><input aria-label="Device host" onChange={(event) => setForm({ ...form, host: event.target.value })} value={form.host ?? ""} /></label>
+          <label><span>Addressing</span><select aria-label="Device addressing mode" onChange={(event) => setForm({ ...form, dhcp_enabled: event.target.value === "dhcp" })} value={form.dhcp_enabled ? "dhcp" : "static"}><option value="static">Static</option><option value="dhcp">DHCP</option></select></label>
+          <label>
+            <span>{form.dhcp_enabled ? "Observed address" : "Host (optional)"}</span>
+            <input
+              aria-label="Device host"
+              disabled={form.dhcp_enabled}
+              onChange={(event) => setForm({ ...form, host: event.target.value })}
+              placeholder={form.dhcp_enabled ? "No address observed yet" : undefined}
+              value={form.host ?? ""}
+            />
+            {form.dhcp_enabled && <small className="from-device-hint">Assigned by the network, not editable.</small>}
+          </label>
           <label><span>Notes (optional)</span><textarea aria-label="Device notes" onChange={(event) => setForm({ ...form, notes: event.target.value })} value={form.notes ?? ""} /></label>
           {error && <div className="operator-feedback error">{error}</div>}
           <p className="muted">Inventory only. Saving does not contact hardware or change provider configuration.</p>
@@ -8653,7 +8696,7 @@ function GenericDevicePanel({ device, onClose, onReload }: { device: DeviceInven
   return (
     <aside className="map-device-editor" aria-label={`${device.display_name} details`}>
       <div className="map-device-editor-head"><div><p className="operator-kicker">Inventory device</p><h3>{device.display_name}</h3></div><button onClick={onClose} type="button">Close</button></div>
-      <dl className="lab-defaults-facts"><div><dt>Type</dt><dd>{inventoryTypeLabel(device.device_type)}</dd></div><div><dt>Host</dt><dd>{device.host || "Not assigned"}</dd></div><div><dt>Notes</dt><dd>{device.notes || "No notes"}</dd></div></dl>
+      <dl className="lab-defaults-facts"><div><dt>Type</dt><dd>{inventoryTypeLabel(device.device_type)}</dd></div><div><dt>Addressing</dt><dd>{device.dhcp_enabled ? "DHCP" : "Static"}</dd></div><div><dt>{device.dhcp_enabled ? "Observed address" : "Host"}</dt><dd>{device.host || (device.dhcp_enabled ? "No address observed yet" : "Not assigned")}</dd></div><div><dt>Notes</dt><dd>{device.notes || "No notes"}</dd></div></dl>
       {error && <div className="operator-feedback error">{error}</div>}
       <div className="map-editor-actions"><button onClick={() => setEditing(true)} type="button">Edit</button><button className="danger" onClick={remove} type="button">Delete device</button></div>
       {editing && <DeviceInventoryForm device={device} onClose={() => setEditing(false)} onReload={onReload} />}

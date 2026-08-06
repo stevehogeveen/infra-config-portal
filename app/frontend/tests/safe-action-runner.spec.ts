@@ -3599,6 +3599,23 @@ test("overview device inventory adds, opens known and generic panels, and remove
   await expect(page.getByLabel("Cisco Switch setup")).toBeVisible();
 });
 
+test("DHCP inventory devices show observed addresses as read-only evidence", async ({ page }) => {
+  await page.goto("/overview");
+  await page.getByRole("button", { name: "Add device" }).click();
+  await page.getByLabel("Device type").fill("packet_broker");
+  await page.getByLabel("Device name").fill("DHCP Packet Broker");
+  await page.getByLabel("Device addressing mode").selectOption("dhcp");
+
+  const host = page.getByLabel("Device host");
+  await expect(host).toBeDisabled();
+  await expect(host).toHaveAttribute("placeholder", "No address observed yet");
+  await expect(page.getByText("Assigned by the network, not editable.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Save device" }).click();
+  await expect(page.getByText("DHCP Packet Broker", { exact: true })).toBeVisible();
+  await expect(page.getByText("No address observed yet · DHCP", { exact: true })).toBeVisible();
+});
+
 async function installApiMocks(page: Page) {
   let firmwareFileSelections = firmwareFileSelectionState({});
   let labSafety = labSafetySettings();
@@ -3652,7 +3669,14 @@ async function installApiMocks(page: Page) {
       const devices = seededDeviceInventory();
       if (request.method() === "POST") {
         const payload = request.postDataJSON() as Record<string, unknown>;
-        const created = inventoryDevice(`custom-${devices.length}`, String(payload.device_type), String(payload.display_name), String(payload.host || ""), String(payload.notes || ""));
+        const created = inventoryDevice(
+          `custom-${devices.length}`,
+          String(payload.device_type),
+          String(payload.display_name),
+          String(payload.host || ""),
+          String(payload.notes || ""),
+          payload.dhcp_enabled === true
+        );
         devices.push(created);
         return json(route, created);
       }
@@ -3913,12 +3937,13 @@ function json(route: Route, body: unknown) {
   return route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
 }
 
-function inventoryDevice(id: string, deviceType: string, displayName: string, host: string, notes = "") {
+function inventoryDevice(id: string, deviceType: string, displayName: string, host: string, notes = "", dhcpEnabled = false) {
   return {
     id,
     device_type: deviceType,
     display_name: displayName,
     host: host || null,
+    dhcp_enabled: dhcpEnabled,
     notes: notes || null,
     created_at: checkedAt,
     updated_at: checkedAt
@@ -5597,6 +5622,67 @@ test("editing a prefilled iLO setting saves the operator's value through the unc
   expect(network.hostname).toBe("renamed-by-operator");
   // Untouched prefilled values ride along as the operator's accepted values.
   expect(network.gateway).toBe("192.168.1.1");
+});
+
+test("iLO DHCP mode shows discovered addresses and saves no static address intent", async ({ page }) => {
+  let savedIntentBody: Record<string, unknown> | null = null;
+  await page.route("**/api/v1/providers/ilo-redfish/setup-intent", (route) => {
+    if (route.request().method() === "PUT") {
+      savedIntentBody = route.request().postDataJSON() as Record<string, unknown>;
+      return json(route, iloSetupIntentFixture({
+        created_at: checkedAt,
+        updated_at: checkedAt,
+        ...savedIntentBody
+      }));
+    }
+    return json(route, iloSetupIntentFixture());
+  });
+  await page.route("**/api/v1/providers/ilo-redfish/discovered-settings", (route) =>
+    json(route, iloDiscoveredSettingsFixture())
+  );
+
+  await page.goto("/overview");
+  await page.getByRole("region", { name: "Lab topology" }).getByRole("button", { name: /^HPE iLO,/ }).click();
+
+  const settings = page.locator("section[aria-label='iLO setup settings']");
+  // "DHCP" is a substring of several field labels (Use DHCP Time, the DHCPv6
+  // toggles) — anchor on the exact field span instead.
+  const dhcp = settings
+    .locator("label.field")
+    .filter({ has: page.getByText("DHCP", { exact: true }) })
+    .locator("select");
+  const managementIp = settings.getByLabel("Management IP");
+  const subnet = settings.getByLabel("Subnet Mask / Prefix");
+  const gateway = settings.getByLabel("Gateway");
+
+  await managementIp.fill("198.51.100.20");
+  await subnet.fill("255.255.0.0");
+  await gateway.fill("198.51.100.1");
+  await dhcp.selectOption("true");
+
+  await expect(managementIp).toBeDisabled();
+  await expect(subnet).toBeDisabled();
+  await expect(gateway).toBeDisabled();
+  await expect(managementIp).toHaveValue("192.168.1.201");
+  await expect(subnet).toHaveValue("255.255.255.0");
+  await expect(gateway).toHaveValue("192.168.1.1");
+  await expect(settings.getByLabel("DNS Name")).toBeEnabled();
+
+  await dhcp.selectOption("false");
+  await expect(managementIp).toBeEnabled();
+  await expect(managementIp).toHaveValue("198.51.100.20");
+  await expect(subnet).toHaveValue("255.255.0.0");
+  await expect(gateway).toHaveValue("198.51.100.1");
+
+  await dhcp.selectOption("true");
+  await settings.getByRole("button", { name: "Save iLO setup plan" }).click();
+  await expect(settings).toContainText("Saved iLO settings locally. Hardware untouched.");
+
+  const network = (savedIntentBody as Record<string, unknown>).network as Record<string, unknown>;
+  expect(network.dhcp_enabled).toBe(true);
+  expect(network.management_ip).toBeNull();
+  expect(network.subnet_mask_or_prefix).toBeNull();
+  expect(network.gateway).toBeNull();
 });
 
 test("local RAID draft starts from the live discovered layout instead of the canned template", async ({ page }) => {

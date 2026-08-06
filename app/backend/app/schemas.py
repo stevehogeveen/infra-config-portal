@@ -85,6 +85,7 @@ class DeviceInventoryWrite(BaseModel):
     device_type: str = Field(min_length=1, max_length=80)
     display_name: str = Field(min_length=1, max_length=200)
     host: str | None = Field(default=None, max_length=300)
+    dhcp_enabled: bool = False
     notes: str | None = Field(default=None, max_length=4000)
 
     @field_validator("device_type", "display_name", "host", "notes", mode="before")
@@ -100,6 +101,7 @@ class DeviceInventoryUpdate(BaseModel):
     device_type: str | None = Field(default=None, min_length=1, max_length=80)
     display_name: str | None = Field(default=None, min_length=1, max_length=200)
     host: str | None = Field(default=None, max_length=300)
+    dhcp_enabled: bool | None = None
     notes: str | None = Field(default=None, max_length=4000)
 
     @field_validator("device_type", "display_name", "host", "notes", mode="before")

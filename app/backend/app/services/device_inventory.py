@@ -15,6 +15,10 @@ class DeviceInventoryNotFoundError(LookupError):
     pass
 
 
+class DeviceInventoryAddressModeError(ValueError):
+    pass
+
+
 SEED_DEVICES = (
     ("cisco-primary", "cisco_switch", "Cisco Switch", "CISCO_TARGET_IP"),
     ("ilo-primary", "ilo", "HPE iLO", "ILO_TEST_HOST"),
@@ -52,6 +56,11 @@ def update_device(session: Session, device_id: str, payload: dict[str, Any]) -> 
     device = session.get(DeviceInventory, device_id)
     if device is None:
         raise DeviceInventoryNotFoundError(device_id)
+    effective_dhcp = payload.get("dhcp_enabled", device.dhcp_enabled)
+    if "host" in payload and effective_dhcp:
+        raise DeviceInventoryAddressModeError(
+            "Host cannot be edited while DHCP is enabled; it is the last observed address."
+        )
     for key, value in payload.items():
         setattr(device, key, value)
     session.commit()

@@ -166,6 +166,7 @@ from app.services.control_access import (
     update_control_access_config,
 )
 from app.services.device_inventory import (
+    DeviceInventoryAddressModeError,
     DeviceInventoryNotFoundError,
     create_device,
     delete_device,
@@ -983,6 +984,8 @@ def update_device_inventory(
         return update_device(session, device_id, payload.model_dump(exclude_unset=True))
     except DeviceInventoryNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Device not found") from exc
+    except DeviceInventoryAddressModeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.delete("/device-inventory/{device_id}", status_code=status.HTTP_200_OK)

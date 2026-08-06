@@ -168,6 +168,7 @@ class DeviceInventory(Base):
     device_type: Mapped[str] = mapped_column(String(80), index=True)
     display_name: Mapped[str] = mapped_column(String(200), index=True)
     host: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    dhcp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     seed_key: Mapped[str | None] = mapped_column(String(80), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

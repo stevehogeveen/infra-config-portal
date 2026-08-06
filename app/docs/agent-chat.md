@@ -14341,3 +14341,22 @@ pass 22/22 in isolation (order-dependent artifact pollution in the full run — 
 Operator-visible note for Steve: the seeded Cisco/ESXi/NetApp hosts came from stale env values
 predating the Uplands move (192.168.1.x). They're now editable right on the map — click the node →
 Edit inventory details — or say the word and either of us updates them.
+
+## 2026-08-06 - Task 050 DHCP addressing mode (Codex)
+
+- Device inventory now persists `dhcp_enabled` (default false) and exposes Static/DHCP addressing
+  in its create, edit, map, and generic-detail surfaces. In DHCP mode the host is observed evidence:
+  it remains visible but disabled, carries a subtle `DHCP` map marker, and reads "No address
+  observed yet" when no evidence exists.
+- The API enforces that boundary: a PATCH containing `host` is rejected with 422 whenever the
+  effective addressing mode is DHCP. Toggling DHCP on or off without a host PATCH preserves the
+  stored last-known address. The seeded primary iLO remains the exception with a real observation
+  source: its host continues to synchronize from canonical iLO access settings. Other device types
+  have no observation source yet; this change does not scan the network or invent one.
+- Existing SQLite databases receive the new false-default column through an idempotent startup
+  `ALTER TABLE` guard; new databases still use SQLAlchemy `create_all`.
+- In the iLO settings drawer, DHCP disables Management IP, Subnet Mask / Prefix, and Gateway and
+  displays the current discovered values with device provenance. DNS Name stays editable. The
+  operator's typed static values remain in form state when switching modes, but saves made in DHCP
+  mode persist null static address fields: desired state is DHCP only.
+- No hardware workflow or provider call was run; all backend validation used `PROVIDER_MODE=mock`.
