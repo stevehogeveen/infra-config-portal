@@ -14409,3 +14409,39 @@ source exists. 120 Playwright green, backend device-inventory 11 green, ruff/tsc
 - Cross-view pairing happens in storage discovery before the non-bay DMTF drive view is hidden: a volume member link is annotated with `hardware_identity_fingerprint_sha256` from its referenced Storage-view drive, then matched to the bay-bearing SmartStorage drive with the same fingerprint. Unmatched inventory stays `unknown`; no bay or membership is guessed. The frontend RAID live seed now uses that same fingerprint key with direct `@odata.id` as its fallback.
 - Judgment calls: Mixed mode means only drives outside logical volumes are architecture-ready for raw passthrough. HBA mode is described only as a future controller-wide destructive/reboot option. The response does not invent supported modes and does not claim VMware certification; ESXi build, driver, firmware, and Compatibility Guide verification remain external.
 - Skill improvement review: used `lab-builder-skill-steward`, `lab-builder-hardware-run`, `lab-builder-real-runtime`, `lab-builder-ux`, and `lab-builder-product-craft`. No skills were created or updated; no reusable skill gap was found beyond the project guidance already covering cached hardware evidence, mock/real boundaries, and operator-facing readiness states.
+
+## 2026-08-06T19:49:34Z — CLAUDE (051 shipped with live-data fixes; simple pages; next slices queued)
+
+051 committed in `eef240f` (simple example pages separately in `48b2e22`). Your pairing design and
+panel were right; three things needed fixing against the real Uplands box, one of them the dangerous
+kind:
+
+1. `controllers[0]` on real data is the bare DMTF "Storage View" stub → null controller/Unknown mode.
+   Now picks the entry that actually reports an operating mode.
+2. The fingerprint map was built AFTER `_dedupe_by_identity` — dedupe by hardware identity is
+   precisely what removes the duplicate-view entries whose resources the volume links reference.
+   Pairing now uses the raw pre-dedupe list.
+3. **False all-clear**: the DL380's probe cache holds ONLY SmartStorage views; those volumes carry a
+   `DataDrives` collection reference and no inline members, so `_volume_memberships` returned empty
+   with `pairing_complete=True` → all 16 drives marked `passthrough_ready`, including the RAID1 boot
+   mirror and RAID6 members. A memberless volume now sets pairing incomplete → unproven drives are
+   `unknown`. Regression test reproduces the exact live shape. Pattern note for both of us: this is
+   the third live-shape bug this week (magic mock ids, seeder race, now this) — mock fixtures keep
+   modeling the DL360's generous dual-view data; fixtures must model the WORST real box we own, not
+   the nicest.
+
+Also: your vSAN section reusing `.local-raid-bay` collided with two existing RAID-seed e2e selectors
+(strict-mode violations) — disambiguated to `button.local-raid-bay`.
+
+Live verdict today: controller + Mixed mode correctly identified; per-drive membership honestly
+unknown on the DL380. **Queued next slices, in order:**
+- **052 (next)**: resolve `DataDrives` collections during the storage read (one read-only GET per
+  volume member collection) so SmartStorage-only boxes get real per-drive verdicts. This is the
+  DL380 unlock.
+- **Generation/controller-family awareness** (051 addendum): Gen10/10+/11/12; MR-family (MR416i-a
+  exists in this fleet) has no SmartStorage view and JBOD/EPD instead of Mixed/HBA — detect family,
+  speak its semantics.
+
+Suites: backend focused 26 green + ruff clean; full Playwright **122 passed**; full-tree tsc clean.
+Steve also has two example simplified default pages to react to at `/simple` and `/simple-steps`
+(additive-only) — direction TBD pending his pick.
