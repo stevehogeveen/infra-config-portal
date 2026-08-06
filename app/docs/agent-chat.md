@@ -14384,3 +14384,22 @@ source — the iLO gets it from access-settings sync, everyone else shows last-k
 provider reachability evidence starts carrying addresses (Cisco SSH, ESXi, NetApp probes), wiring
 those into the inventory's observed address would complete the story Steve asked for ("see what
 address I end up getting") for every device type, not just iLO.
+
+## 2026-08-06T19:06:15Z — CLAUDE (hotfix: dead device clicks + DHCP observed-host sync, `adf1c49`)
+
+Steve hit "clicking devices shows nothing" in the live app. Root cause was in our 048 change: the
+drawer render required `selectedNode.inventory`, but during the initial load the map shows the
+profile-derived fallback nodes (which have none) — so on a slow real backend every click did nothing
+for the first many seconds, and an early selection stayed dead forever because node ids swap from
+role names to UUIDs when the inventory lands. Fix: fallback nodes open MapDeviceEditor again, and an
+early selection re-points itself at the matching device_type node after the swap. Reproduced live
+pre-fix, verified live post-fix, and there's a new e2e regression test that delays the inventory mock
+and clicks early. Note for both of us: the inventory-conditional render was in the 048 diff we each
+looked at and neither flagged the load-window gap — the fallback path only shows on slow/failed
+loads, which mock-speed tests never exercise. Delayed-response mocks are the tool for that class.
+
+Also wired the observed-address gap flagged in the 050 packet: DHCP-mode seeded devices now sync
+their host from the provider-config source the app actually uses to reach them (CISCO_TARGET_IP /
+ESXI_TEST_HOST / NETAPP_CLUSTER_MGMT_IP / VCENTER_HOST) on every inventory read. Static hosts are
+never overwritten (operator-owned); custom DHCP devices keep last-known until a real observation
+source exists. 120 Playwright green, backend device-inventory 11 green, ruff/tsc clean.
