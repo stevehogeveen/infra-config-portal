@@ -41,6 +41,7 @@ def _seed_devices() -> tuple[tuple[str, str, str, str], ...]:
 def list_devices(session: Session) -> list[DeviceInventory]:
     _seed_legacy_devices(session)
     _sync_primary_ilo_host(session)
+    _sync_dhcp_observed_hosts(session)
     return list(session.scalars(select(DeviceInventory).order_by(DeviceInventory.created_at, DeviceInventory.id)))
 
 
@@ -114,4 +115,45 @@ def _sync_primary_ilo_host(session: Session) -> None:
     canonical_host = read_ilo_access_settings().get("host")
     if device.host != canonical_host:
         device.host = canonical_host
+        session.commit()
+
+
+# Where a DHCP device's observed address comes from, per seeded device. These
+# are the same provider-config sources the seed used: the address the app is
+# actually using to reach the device right now.
+DHCP_OBSERVED_HOST_SOURCES = {
+    "cisco-primary": "CISCO_TARGET_IP",
+    "esxi-primary": "ESXI_TEST_HOST",
+    "netapp-primary": "NETAPP_CLUSTER_MGMT_IP",
+    "vcenter-primary": "VCENTER_HOST",
+}
+
+
+def _sync_dhcp_observed_hosts(session: Session) -> None:
+    """Keep DHCP-mode seeded devices' observed address current.
+
+    Only DHCP devices are touched: their host is observed evidence, owned by
+    the app. A static device's host belongs to the operator and is never
+    overwritten here. (The iLO is the exception — its host is always synced
+    from access settings by _sync_primary_ilo_host, in either mode, because
+    access settings ARE the operator's edit surface for it.)
+
+    Custom (non-seeded) DHCP devices have no observation source yet, so their
+    last-known host is left as-is.
+    """
+    changed = False
+    for seed_key, env_key in DHCP_OBSERVED_HOST_SOURCES.items():
+        device = session.scalar(
+            select(DeviceInventory).where(
+                DeviceInventory.seed_key == seed_key,
+                DeviceInventory.dhcp_enabled.is_(True),
+            )
+        )
+        if device is None:
+            continue
+        observed = (os.getenv(env_key) or "").strip() or None
+        if observed and device.host != observed:
+            device.host = observed
+            changed = True
+    if changed:
         session.commit()

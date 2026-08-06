@@ -5624,6 +5624,30 @@ test("editing a prefilled iLO setting saves the operator's value through the unc
   expect(network.gateway).toBe("192.168.1.1");
 });
 
+test("clicking a device before the inventory loads still opens its drawer and survives the swap", async ({ page }) => {
+  // Hold the inventory response so the map renders profile-derived fallback
+  // nodes first — the state an operator clicks into on a slow backend.
+  await page.route("**/api/v1/device-inventory", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    return json(route, [
+      inventoryDevice("f2c1a9d0-4b31-4a5e-9d10-00000000000a", "ilo", "HPE iLO", "192.168.1.201")
+    ]);
+  });
+
+  await page.goto("/overview");
+  const topology = page.getByRole("region", { name: "Lab topology" });
+  await topology.getByRole("button", { name: /^HPE iLO,/ }).click();
+
+  // Drawer opens immediately from the fallback node...
+  const drawer = page.getByLabel("HPE iLO setup");
+  await expect(drawer).toBeVisible();
+
+  // ...and stays open once the UUID inventory nodes replace the fallback,
+  // now carrying the inventory actions.
+  await expect(drawer.getByRole("button", { name: "Edit inventory details" })).toBeVisible({ timeout: 10_000 });
+});
+
 test("iLO DHCP mode shows discovered addresses and saves no static address intent", async ({ page }) => {
   let savedIntentBody: Record<string, unknown> | null = null;
   await page.route("**/api/v1/providers/ilo-redfish/setup-intent", (route) => {

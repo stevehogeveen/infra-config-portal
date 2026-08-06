@@ -8416,6 +8416,25 @@ function OverviewLabMap({
   const localStorageSelected = selectedId === "local-storage";
   const byId = new Map(nodes.map((node) => [node.id, node]));
 
+  // A click during the initial load selects a profile-derived node (role id
+  // like "ilo"); once the inventory arrives those nodes are replaced by
+  // UUID-id inventory nodes and the selection would silently die. Re-point it
+  // at the matching device so the drawer the operator asked for still opens.
+  useEffect(() => {
+    if (!selectedId || selectedId === "local-storage" || byId.has(selectedId)) return;
+    const roleByLegacyId: Record<string, string> = {
+      cisco: "cisco_switch",
+      ilo: "ilo",
+      esxi: "esxi_host",
+      netapp: "netapp",
+      vcenter: "vcenter"
+    };
+    const role = roleByLegacyId[selectedId];
+    const replacement = role ? nodes.find((node) => node.inventory?.device_type === role) : undefined;
+    setSelectedId(replacement ? replacement.id : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- nodes/byId are rebuilt every render; inventory is the real trigger
+  }, [selectedId, inventory]);
+
   // Inventory node ids are database UUIDs, so the classic role-to-role links
   // resolve through the first node of each device type. Repeated devices of a
   // type beyond the first render as standalone nodes without inferred links —
@@ -8549,7 +8568,7 @@ function OverviewLabMap({
           </div>
         </div>
 
-        {selectedNode && selectedNode.inventory && isKnownInventoryType(selectedNode.inventory.device_type) && (
+        {selectedNode && (!selectedNode.inventory || isKnownInventoryType(selectedNode.inventory.device_type)) && (
           <MapDeviceEditor
             key={selectedNode.id}
             node={selectedNode}

@@ -127,6 +127,61 @@ def test_device_inventory_dhcp_column_guard_is_idempotent_with_existing_data(tmp
     assert row == ("192.0.2.80", 0)
 
 
+def test_dhcp_seeded_device_syncs_observed_host_from_provider_config(
+    client, monkeypatch
+) -> None:
+    monkeypatch.setenv("CISCO_TARGET_IP", "192.0.2.60")
+    devices = client.get("/api/v1/device-inventory").json()
+    cisco = next(item for item in devices if item["device_type"] == "cisco_switch")
+
+    flipped = client.patch(
+        f"/api/v1/device-inventory/{cisco['id']}",
+        json={"dhcp_enabled": True},
+    )
+    assert flipped.status_code == 200
+
+    # The provider config moves (a new lease was configured); the DHCP
+    # device's observed address follows on the next list.
+    monkeypatch.setenv("CISCO_TARGET_IP", "192.0.2.61")
+    refreshed = client.get("/api/v1/device-inventory").json()
+    cisco_after = next(item for item in refreshed if item["id"] == cisco["id"])
+    assert cisco_after["host"] == "192.0.2.61"
+
+
+def test_static_seeded_device_host_is_never_overwritten_by_provider_config(
+    client, monkeypatch
+) -> None:
+    monkeypatch.setenv("CISCO_TARGET_IP", "192.0.2.70")
+    devices = client.get("/api/v1/device-inventory").json()
+    cisco = next(item for item in devices if item["device_type"] == "cisco_switch")
+    assert cisco["dhcp_enabled"] is False
+
+    edited = client.patch(
+        f"/api/v1/device-inventory/{cisco['id']}",
+        json={"host": "10.99.0.4"},
+    )
+    assert edited.status_code == 200
+
+    monkeypatch.setenv("CISCO_TARGET_IP", "192.0.2.71")
+    refreshed = client.get("/api/v1/device-inventory").json()
+    cisco_after = next(item for item in refreshed if item["id"] == cisco["id"])
+    assert cisco_after["host"] == "10.99.0.4"
+
+
+def test_custom_dhcp_device_keeps_last_known_host_without_a_source(client) -> None:
+    created = client.post("/api/v1/device-inventory", json={
+        "device_type": "packet_broker",
+        "display_name": "Broker",
+        "host": "192.0.2.90",
+        "dhcp_enabled": True,
+    })
+    assert created.status_code == 201
+
+    listed = client.get("/api/v1/device-inventory").json()
+    broker = next(item for item in listed if item["id"] == created.json()["id"])
+    assert broker["host"] == "192.0.2.90"
+
+
 def test_device_inventory_missing_device_is_404(client) -> None:
     assert client.patch("/api/v1/device-inventory/missing", json={"display_name": "Nope"}).status_code == 404
     assert client.delete("/api/v1/device-inventory/missing").status_code == 404
