@@ -54,6 +54,7 @@ from app.schemas import (
     HpeRaidIntentWrite,
     HpeRaidPlanPreviewRead,
     HpeStorageDiscoveryRead,
+    HpeVsanReadinessRead,
     IloAccessSettingsRead,
     IloAccessSettingsWrite,
     IloBaselinePreviewRead,
@@ -253,6 +254,7 @@ from app.services.hpe_raid import (
     validate_hpe_raid_after_reset,
     write_hpe_raid_pending_report,
 )
+from app.services.hpe_vsan_readiness import get_hpe_vsan_readiness
 from app.services.esxi_install_readiness import get_esxi_install_readiness
 from app.services.esxi_management_recovery import (
     recover_esxi_management,
@@ -1331,6 +1333,14 @@ def update_ilo_access_settings_route(payload: IloAccessSettingsWrite) -> IloAcce
 )
 def read_hpe_storage_discovery() -> HpeStorageDiscoveryRead:
     return get_hpe_storage_discovery()
+
+
+@router.get(
+    "/providers/ilo-redfish/vsan-readiness",
+    response_model=HpeVsanReadinessRead,
+)
+def read_hpe_vsan_readiness() -> HpeVsanReadinessRead:
+    return get_hpe_vsan_readiness()
 
 
 @router.get(

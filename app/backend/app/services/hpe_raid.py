@@ -98,16 +98,19 @@ def get_hpe_storage_discovery(
 
     storage = probe.get("storage") if isinstance(probe.get("storage"), dict) else {}
     controllers = _dedupe_by_identity(_list(storage.get("controllers")), _controller_identity)
+    # Pairing needs the RAW drive list: deduping by hardware identity is
+    # exactly what removes the duplicate-view entries whose resource paths
+    # the volume links reference.
+    raw_physical_drives = [_drive_for_ui(drive) for drive in _list(storage.get("physical_drives"))]
+    all_physical_drives = _dedupe_by_identity(raw_physical_drives, _physical_drive_identity)
     physical_drives = _prefer_smartstorage_physical_drives(
-        _dedupe_by_identity(
-            [_drive_for_ui(drive) for drive in _list(storage.get("physical_drives"))],
-            _physical_drive_identity,
-        )
+        all_physical_drives
     )
     logical_drives = _dedupe_by_identity(
         [_logical_for_ui(drive) for drive in _list(storage.get("logical_drives"))],
         _logical_drive_identity,
     )
+    logical_drives = _pair_logical_drive_links(logical_drives, raw_physical_drives)
     systems = _list(probe.get("systems"))
     warnings = [*_string_list(storage.get("warnings")), *_string_list(probe.get("warnings"))]
     blockers = _string_list(probe.get("blockers"))
@@ -147,8 +150,6 @@ def get_hpe_storage_discovery(
             )
         ),
     )
-
-
 def get_hpe_raid_intent(session: Session) -> HpeRaidIntentRead:
     record = session.get(HpeRaidIntent, PROVIDER_ID)
     if record is None:
@@ -2190,6 +2191,45 @@ def _prefer_smartstorage_physical_drives(drives: list[dict[str, Any]]) -> list[d
         if ":" in str(drive.get("bay_id") or _bay_id(drive) or "")
     ]
     return smartstorage_drives or drives
+
+
+def _pair_logical_drive_links(
+    logical_drives: list[dict[str, Any]],
+    physical_drives: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Carry cross-view hardware identity onto volume member links.
+
+    DMTF volume links can target Storage-view drives while the useful bay is
+    only present on the SmartStorage view.  The provider fingerprints both
+    resources from stable hardware identity fields, so retain that bridge
+    before the non-bay duplicate view is hidden from the UI inventory.
+    """
+    fingerprints_by_resource = {
+        str(drive.get("@odata.id") or "").rstrip("/"): drive.get(
+            "hardware_identity_fingerprint_sha256"
+        )
+        for drive in physical_drives
+        if drive.get("@odata.id")
+        and drive.get("hardware_identity_fingerprint_sha256")
+    }
+    paired: list[dict[str, Any]] = []
+    for volume in logical_drives:
+        copy = dict(volume)
+        links = dict(copy.get("Links") or {})
+        for key in ("Drives", "DedicatedSpareDrives"):
+            members = []
+            for member in _list(links.get(key)):
+                item = dict(member)
+                resource = str(item.get("@odata.id") or "").rstrip("/")
+                fingerprint = fingerprints_by_resource.get(resource)
+                if fingerprint:
+                    item["hardware_identity_fingerprint_sha256"] = fingerprint
+                members.append(item)
+            if key in links:
+                links[key] = members
+        copy["Links"] = links
+        paired.append(copy)
+    return paired
 
 
 def _identity_part(value: Any) -> str:

@@ -14403,3 +14403,9 @@ their host from the provider-config source the app actually uses to reach them (
 ESXI_TEST_HOST / NETAPP_CLUSTER_MGMT_IP / VCENTER_HOST) on every inventory read. Static hosts are
 never overwritten (operator-owned); custom DHCP devices keep last-known until a real observation
 source exists. 120 Playwright green, backend device-inventory 11 green, ruff/tsc clean.
+# 051 — vSAN drive readiness (2026-08-06)
+
+- Added `GET /api/v1/providers/ilo-redfish/vsan-readiness`, a read-only view derived only from cached `hpe-storage-discovery` data. It returns controller model/firmware/current mode and meaning, per-bay `passthrough_ready`, `in_raid_volume`, or `unknown`, passthrough-ready totals, informational options, and `apply_enabled: false` throughout.
+- Cross-view pairing happens in storage discovery before the non-bay DMTF drive view is hidden: a volume member link is annotated with `hardware_identity_fingerprint_sha256` from its referenced Storage-view drive, then matched to the bay-bearing SmartStorage drive with the same fingerprint. Unmatched inventory stays `unknown`; no bay or membership is guessed. The frontend RAID live seed now uses that same fingerprint key with direct `@odata.id` as its fallback.
+- Judgment calls: Mixed mode means only drives outside logical volumes are architecture-ready for raw passthrough. HBA mode is described only as a future controller-wide destructive/reboot option. The response does not invent supported modes and does not claim VMware certification; ESXi build, driver, firmware, and Compatibility Guide verification remain external.
+- Skill improvement review: used `lab-builder-skill-steward`, `lab-builder-hardware-run`, `lab-builder-real-runtime`, `lab-builder-ux`, and `lab-builder-product-craft`. No skills were created or updated; no reusable skill gap was found beyond the project guidance already covering cached hardware evidence, mock/real boundaries, and operator-facing readiness states.

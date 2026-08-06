@@ -1222,6 +1222,20 @@ class HpeStorageDiscoveryRead(BaseModel):
     next_safe_action: str
 
 
+class HpeVsanReadinessRead(BaseModel):
+    provider_id: str
+    source: str
+    last_probe_time: str | None = None
+    storage_inventory_available: bool = False
+    controller: dict[str, Any] = Field(default_factory=dict)
+    drives: list[dict[str, Any]] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    options: list[dict[str, Any]] = Field(default_factory=list)
+    apply_enabled: bool = False
+    blockers: list[str] = Field(default_factory=list)
+    next_safe_action: str
+
+
 class HpeRaidPlanPreviewRead(BaseModel):
     provider_id: str
     status: str

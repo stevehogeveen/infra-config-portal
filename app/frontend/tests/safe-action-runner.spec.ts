@@ -3822,6 +3822,9 @@ async function installApiMocks(page: Page) {
     if (url.pathname === "/api/v1/providers/ilo-redfish/hpe-storage-discovery") {
       return json(route, hpeStorageDiscovery());
     }
+    if (url.pathname === "/api/v1/providers/ilo-redfish/vsan-readiness") {
+      return json(route, hpeVsanReadiness());
+    }
     if (url.pathname === "/api/v1/providers/ilo-redfish/access-settings") {
       if (request.method() === "PUT") {
         const payload = request.postDataJSON() as { host?: string; username?: string; password?: string; verify_tls?: boolean };
@@ -5396,6 +5399,41 @@ function hpeStorageDiscovery() {
   };
 }
 
+function hpeVsanReadiness() {
+  return {
+    apply_enabled: false,
+    blockers: [],
+    controller: {
+      apply_enabled: false,
+      current_operating_mode: "Mixed",
+      firmware: "1.66",
+      mode_meaning: "Mixed: drives outside RAID volumes pass through raw",
+      model: "HPE Smart Array P408i-a SR Gen10"
+    },
+    drives: Array.from({ length: 8 }, (_, index) => ({
+      apply_enabled: false,
+      bay_id: String(index + 1),
+      capacity_bytes: 1_920_000_000_000,
+      capacity_label: "1.92 TB",
+      health: "OK",
+      media_type: "SSD",
+      volume_name: index < 2 ? "ESXi OS" : null,
+      vsan_status: index < 2 ? "in_raid_volume" : "passthrough_ready"
+    })),
+    last_probe_time: checkedAt,
+    next_safe_action: "Review architecture readiness.",
+    options: [
+      { apply_enabled: false, detail: "Keep candidate drives outside logical volumes. Destructive deletion is guarded and unavailable.", id: "stay_mixed", title: "Stay in Mixed mode" },
+      { apply_enabled: false, detail: "Controller-wide destructive switch and reboot; guarded and unavailable.", id: "switch_hba", title: "Switch the controller to HBA mode" },
+      { apply_enabled: false, detail: "Architecture readiness is not certification; verify ESXi, driver, and firmware in the VMware Compatibility Guide.", id: "vmware_compatibility", title: "Verify VMware compatibility" }
+    ],
+    provider_id: "ilo-redfish",
+    source: "cached iLO Redfish probe",
+    storage_inventory_available: true,
+    summary: { passthrough_ready_capacity_bytes: 11_520_000_000_000, passthrough_ready_count: 6, physical_drive_count: 8 }
+  };
+}
+
 function labCredentials() {
   const group = (
     id: string,
@@ -5722,7 +5760,7 @@ test("local RAID draft starts from the live discovered layout instead of the can
   // Fixture live layout: RAID1 volume on bays 1-2, RAID5 volume on bays
   // 3-6+8, bay 7 is a standby spare. The canned template would have made
   // bay 7 "Data" and defaulted the datastore group to RAID6.
-  const bay = (id: string) => planner.locator(".local-raid-bay").filter({ hasText: `Bay ${id}` });
+  const bay = (id: string) => planner.locator("button.local-raid-bay").filter({ hasText: `Bay ${id}` });
   await expect(bay("1")).toHaveClass(/is-boot/);
   await expect(bay("2")).toHaveClass(/is-boot/);
   await expect(bay("3")).toHaveClass(/is-datastore/);
@@ -5730,6 +5768,20 @@ test("local RAID draft starts from the live discovered layout instead of the can
   await expect(bay("8")).toHaveClass(/is-datastore/);
   await expect(bay("3")).toContainText("Live: VM datastore · RAID5");
   await expect(planner.getByLabel(/RAID level for (Datastore|Staging) array/)).toHaveValue("RAID5");
+});
+
+test("local storage drawer renders cross-view vSAN readiness by paired physical bay", async ({ page }) => {
+  await page.goto("/overview");
+  await page.getByRole("region", { name: "Lab topology" })
+    .getByRole("button", { name: "Local storage offshoot from HPE iLO" }).click();
+  const planner = page.locator("section[aria-label='Local RAID planner']");
+  await planner.getByRole("button", { name: /Read storage from iLO/ }).click();
+  const vsan = planner.getByRole("region", { name: "vSAN readiness" });
+  await expect(vsan).toContainText("Mixed: drives outside RAID volumes pass through raw");
+  await expect(vsan).toContainText("6 drives / 10.48 TiB passthrough-ready for vSAN");
+  await expect(vsan.locator(".vsan-drive").filter({ hasText: "Bay 1" })).toContainText("In Raid Volume");
+  await expect(vsan.locator(".vsan-drive").filter({ hasText: "Bay 3" })).toContainText("Passthrough Ready");
+  await expect(vsan.getByRole("button")).toHaveCount(0);
 });
 
 test("local RAID draft refuses the live seed when volume members cannot be paired to bays", async ({ page }) => {
@@ -5758,11 +5810,41 @@ test("local RAID draft refuses the live seed when volume members cannot be paire
 
   // Bays render from inventory, but the seed is refused: no device-read
   // claim, and the draft stays on the canned template (bay 7 is not spare).
-  await expect(planner.locator(".local-raid-bay").first()).toBeVisible();
+  await expect(planner.locator("button.local-raid-bay").first()).toBeVisible();
   await expect(planner).not.toContainText("draft starts from the last device-read layout");
   await expect(
-    planner.locator(".local-raid-bay").filter({ hasText: "Bay 7" })
+    planner.locator("button.local-raid-bay").filter({ hasText: "Bay 7" })
   ).not.toHaveClass(/is-spare/);
+});
+
+test("local RAID live seed pairs DL380 cross-view members through hardware fingerprints", async ({ page }) => {
+  const crossView = hpeStorageDiscovery() as Record<string, unknown>;
+  const physical = crossView.physical_drives as Array<Record<string, unknown>>;
+  physical.forEach((drive, index) => {
+    drive.hardware_identity_fingerprint_sha256 = String(index + 1).padStart(64, "0");
+  });
+  crossView.logical_drives = (crossView.logical_drives as Array<Record<string, unknown>>).map((volume) => ({
+    ...volume,
+    Links: {
+      Drives: ((volume.Links as { Drives: Array<Record<string, unknown>> }).Drives).map((_, memberIndex) => {
+        const offset = String(volume.display_label).includes("ESXi") ? 0 : 2;
+        const driveIndex = offset + memberIndex;
+        return {
+          "@odata.id": `/redfish/v1/Systems/1/Storage/DE07B000/Drives/${driveIndex}`,
+          hardware_identity_fingerprint_sha256: String(driveIndex + 1).padStart(64, "0")
+        };
+      })
+    }
+  }));
+  await page.route("**/api/v1/providers/ilo-redfish/hpe-storage-discovery", (route) => json(route, crossView));
+  await page.goto("/overview");
+  await page.getByRole("region", { name: "Lab topology" })
+    .getByRole("button", { name: "Local storage offshoot from HPE iLO" }).click();
+  const planner = page.locator("section[aria-label='Local RAID planner']");
+  await planner.getByRole("button", { name: /Read storage from iLO/ }).click();
+  await expect(planner).toContainText("draft starts from the last device-read layout");
+  await expect(planner.locator("button.local-raid-bay").filter({ hasText: "Bay 1" }).first()).toHaveClass(/is-boot/);
+  await expect(planner.locator("button.local-raid-bay").filter({ hasText: "Bay 3" }).first()).toHaveClass(/is-datastore/);
 });
 
 function iloAccessSettings(overrides: Record<string, unknown> = {}) {

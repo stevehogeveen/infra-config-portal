@@ -18,3 +18,4 @@ behavior reference for this app.
 - [x] `.codex/tasks/049-review-editable-current-state.md` (Codex review of 047, findings fixed before commit)
 - [x] `.codex/tasks/048-custom-device-inventory.md` (Codex implementation, Claude review-fix pass, shipped 2026-08-06)
 - [x] `.codex/tasks/050-dhcp-addressing-mode.md` (Codex implementation, Claude verified + one test-selector fix, shipped 2026-08-06)
+- [ ] `.codex/tasks/051-vsan-drive-readiness.md`

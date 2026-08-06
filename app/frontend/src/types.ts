@@ -1963,6 +1963,20 @@ export type HpeStorageDiscovery = {
   next_safe_action: string;
 };
 
+export type HpeVsanReadiness = {
+  provider_id: string;
+  source: string;
+  last_probe_time: string | null;
+  storage_inventory_available: boolean;
+  controller: Record<string, unknown>;
+  drives: Array<Record<string, unknown>>;
+  summary: Record<string, unknown>;
+  options: Array<Record<string, unknown>>;
+  apply_enabled: false;
+  blockers: string[];
+  next_safe_action: string;
+};
+
 export type HpeRaidPlanPreview = {
   provider_id: string;
   status: string;

@@ -26,6 +26,7 @@ import type {
   HpeRaidIntentWrite,
   HpeRaidPlanPreview,
   HpeStorageDiscovery,
+  HpeVsanReadiness,
   IloAccessSettings,
   IloAccessSettingsWrite,
   IloBaselinePreview,
@@ -300,6 +301,8 @@ export const api = {
     apiRequest<IloSetupPlanPreview>("/api/v1/providers/ilo-redfish/setup-plan-preview"),
   hpeStorageDiscovery: () =>
     apiRequest<HpeStorageDiscovery>("/api/v1/providers/ilo-redfish/hpe-storage-discovery"),
+  hpeVsanReadiness: () =>
+    apiRequest<HpeVsanReadiness>("/api/v1/providers/ilo-redfish/vsan-readiness"),
   hpeRaidIntent: () =>
     apiRequest<HpeRaidIntent>("/api/v1/providers/ilo-redfish/hpe-raid-intent"),
   saveHpeRaidIntent: (payload: HpeRaidIntentWrite) =>

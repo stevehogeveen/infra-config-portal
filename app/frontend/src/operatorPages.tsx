@@ -51,6 +51,7 @@ import type {
   FirmwareSummary,
   FirmwareUpgradePath,
   HpeStorageDiscovery,
+  HpeVsanReadiness,
   IloAccessSettings,
   IloDiscoveredSettings,
   IloSetupIntent,
@@ -2106,6 +2107,7 @@ function LocalStorageRaidPlanner({
   const [inventoryRunning, setInventoryRunning] = useState(false);
   const [inventoryRunMessage, setInventoryRunMessage] = useState("");
   const [inventoryRunError, setInventoryRunError] = useState("");
+  const [vsanReadiness, setVsanReadiness] = useState<HpeVsanReadiness | null>(null);
   const inventoryBays = useMemo(() => localRaidInventoryBays(discovery), [discovery]);
   const inventoryBayIds = inventoryBays.map((bay) => bay.bay);
   const inventoryKey = inventoryBayIds.join("|");
@@ -2125,6 +2127,18 @@ function LocalStorageRaidPlanner({
     () => localRaidLiveSeed(discovery, netappInScope),
     [discovery, netappInScope]
   );
+
+  useEffect(() => {
+    let ignore = false;
+    if (!discovery?.storage_inventory_available) {
+      setVsanReadiness(null);
+      return () => { ignore = true; };
+    }
+    api.hpeVsanReadiness()
+      .then((value) => { if (!ignore) setVsanReadiness(value); })
+      .catch(() => { if (!ignore) setVsanReadiness(null); });
+    return () => { ignore = true; };
+  }, [discovery]);
 
   useEffect(() => {
     if (!requiresInventory || !inventoryBays.length) return;
@@ -2360,8 +2374,56 @@ function LocalStorageRaidPlanner({
         </button>
         {message && <p className="operator-action-message success">{message}</p>}
       </div>
+      <VsanReadinessPanel readiness={vsanReadiness} />
     </section>
   );
+}
+
+function VsanReadinessPanel({ readiness }: { readiness: HpeVsanReadiness | null }) {
+  if (!readiness) {
+    return (
+      <section className="vsan-readiness" aria-label="vSAN readiness">
+        <h4>vSAN readiness</h4>
+        <p>Run iLO Inventory Read first to assess drive passthrough readiness.</p>
+      </section>
+    );
+  }
+  const readyCount = Number(readiness.summary.passthrough_ready_count ?? 0);
+  const readyBytes = Number(readiness.summary.passthrough_ready_capacity_bytes ?? 0);
+  return (
+    <section className="vsan-readiness" aria-label="vSAN readiness">
+      <div className="local-raid-planner-head">
+        <div><p className="operator-kicker">Architecture check</p><h4>vSAN readiness</h4></div>
+        <StatusBadge label="Read only" status="plan-only" />
+      </div>
+      <p><strong>{asString(readiness.controller.current_operating_mode) || "Unknown"} mode</strong> — {asString(readiness.controller.mode_meaning)}</p>
+      <div className="local-raid-bay-grid vsan-drive-grid" aria-label="vSAN drive readiness by bay">
+        {readiness.drives.map((drive, index) => {
+          const status = asString(drive.vsan_status) || "unknown";
+          const volume = asString(drive.volume_name);
+          return (
+            <article className={`local-raid-bay vsan-drive is-${status}`} key={`${asString(drive.bay_id)}-${index}`}>
+              <span>Bay {asString(drive.bay_id) || "unknown"}</span>
+              <strong>{displayStatus(status)}</strong>
+              <small>{[asString(drive.capacity_label), asString(drive.media_type), asString(drive.health)].filter(Boolean).join(" · ")}</small>
+              {volume && <small>Volume: {volume}</small>}
+            </article>
+          );
+        })}
+      </div>
+      <p className="local-raid-plan-summary"><strong>{readyCount} drives / {formatTiB(readyBytes)} passthrough-ready for vSAN</strong></p>
+      <div className="vsan-options">
+        {readiness.options.map((option) => (
+          <article key={asString(option.id)}><strong>{asString(option.title)}</strong><p>{asString(option.detail)}</p></article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function formatTiB(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 TiB";
+  return `${(bytes / 1_099_511_627_776).toFixed(2)} TiB`;
 }
 
 function LocalRaidPlannerDrawer({
@@ -2564,7 +2626,7 @@ function localRaidLiveSeed(
   // half-mapped layout as "what is there" would be a false layout.
   const drivesByResource = new Set<string>();
   drives.forEach((drive) => {
-    const resource = localRaidResourcePath(drive);
+    const resource = localRaidPairingKey(drive);
     if (resource) drivesByResource.add(resource);
   });
 
@@ -2583,7 +2645,7 @@ function localRaidLiveSeed(
     const links = objectValue(entry.volume.Links);
     const members = [...recordArray(links.Drives), ...recordArray(links.DedicatedSpareDrives)];
     return members.length > 0 && members.every((link) => {
-      const resource = localRaidResourcePath(link);
+      const resource = localRaidPairingKey(link);
       return Boolean(resource) && drivesByResource.has(resource);
     });
   });
@@ -2616,11 +2678,11 @@ function localRaidLiveSeed(
       raidLevels[group] = level;
     }
     memberDrives.forEach((link) => {
-      const resource = localRaidResourcePath(link);
+      const resource = localRaidPairingKey(link);
       if (resource) groupByResource.set(resource, group);
     });
     recordArray(links.DedicatedSpareDrives).forEach((link) => {
-      const resource = localRaidResourcePath(link);
+      const resource = localRaidPairingKey(link);
       if (resource) groupByResource.set(resource, "spare");
     });
   });
@@ -2633,7 +2695,7 @@ function localRaidLiveSeed(
     ).trim();
     if (!bay || seen.has(bay)) return;
     seen.add(bay);
-    const resource = localRaidResourcePath(drive);
+    const resource = localRaidPairingKey(drive);
     const state = asString(objectValue(drive.Status).State) || asString(drive.state);
     assignments[bay] =
       (resource && groupByResource.get(resource))
@@ -2670,7 +2732,7 @@ function localRaidInventoryBays(discovery: HpeStorageDiscovery | null | undefine
     const logicalName = asString(logicalDrive.display_label) || asString(logicalDrive.Name) || "Logical drive";
     const raidLevel = asString(logicalDrive.raid_level) || asString(logicalDrive.RAIDType) || "RAID level unknown";
     recordArray(links.Drives).forEach((driveLink) => {
-      const resource = localRaidResourcePath(driveLink);
+      const resource = localRaidPairingKey(driveLink);
       if (resource) liveLayoutByResource.set(resource, `${logicalName} · ${raidLevel}`);
     });
   });
@@ -2688,7 +2750,7 @@ function localRaidInventoryBays(discovery: HpeStorageDiscovery | null | undefine
       const media = asString(drive.media_type) || asString(drive.MediaType) || asString(drive.InterfaceType) || "media unknown";
       const health = asString(drive.health) || asString(drive.Health) || asString(drive.status) || "health unknown";
       const state = asString(objectValue(drive.Status).State) || asString(drive.state);
-      const resource = localRaidResourcePath(drive);
+      const resource = localRaidPairingKey(drive);
       const currentLayout = (resource && liveLayoutByResource.get(resource))
         || (/spare/i.test(state) ? "Hot spare" : "Unassigned");
       return {
@@ -2705,6 +2767,11 @@ function localRaidInventoryBays(discovery: HpeStorageDiscovery | null | undefine
 
 function localRaidResourcePath(value: Record<string, unknown>): string {
   return asString(value["@odata.id"]).trim().replace(/\/+$/, "");
+}
+
+function localRaidPairingKey(value: Record<string, unknown>): string {
+  const fingerprint = asString(value.hardware_identity_fingerprint_sha256).trim().toLowerCase();
+  return fingerprint ? `fingerprint:${fingerprint}` : localRaidResourcePath(value);
 }
 
 function localRaidBaySortValue(bay: string): number {
