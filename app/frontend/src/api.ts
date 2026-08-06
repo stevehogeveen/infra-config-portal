@@ -28,6 +28,7 @@ import type {
   IloAccessSettingsWrite,
   IloBaselinePreview,
   IloBaselineReadiness,
+  IloDiscoveredSettings,
   IloSetupIntent,
   IloSetupIntentWrite,
   IloSetupPlanPreview,
@@ -279,6 +280,8 @@ export const api = {
     apiRequest<IloBaselineReadiness>("/api/v1/providers/hpe-ilo/readiness"),
   iloSetupIntent: () =>
     apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent"),
+  iloDiscoveredSettings: () =>
+    apiRequest<IloDiscoveredSettings>("/api/v1/providers/ilo-redfish/discovered-settings"),
   saveIloSetupIntent: (payload: IloSetupIntentWrite) =>
     apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent", {
       method: "PUT",

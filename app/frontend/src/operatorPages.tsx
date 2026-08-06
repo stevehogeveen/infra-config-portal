@@ -50,6 +50,7 @@ import type {
   FirmwareUpgradePath,
   HpeStorageDiscovery,
   IloAccessSettings,
+  IloDiscoveredSettings,
   IloSetupIntent,
   IloSetupIntentWrite,
   IloSetupPlanPreview,
@@ -1954,6 +1955,9 @@ type LocalRaidDraft = {
   raidLevels: Record<"boot" | "datastore", string>;
   selectedBay: string;
   updatedAt?: string;
+  // True once the operator has deliberately edited any assignment, RAID
+  // level, or bay count. A touched draft is never replaced by a live seed.
+  touched?: boolean;
 };
 
 type LocalRaidInventoryBay = {
@@ -2110,10 +2114,15 @@ function LocalStorageRaidPlanner({
     ? `${storageProtocol.toUpperCase()} shared datastore; local disks are boot/staging`
     : "Server-local datastore";
 
+  const liveSeed = useMemo(
+    () => localRaidLiveSeed(discovery, netappInScope),
+    [discovery, netappInScope]
+  );
+
   useEffect(() => {
     if (!requiresInventory || !inventoryBays.length) return;
-    setDraft((current) => localRaidDraftForBays(current, inventoryBayIds, settings, netappInScope));
-  }, [requiresInventory, inventoryKey, settings, netappInScope]);
+    setDraft((current) => localRaidDraftForBays(current, inventoryBayIds, settings, netappInScope, liveSeed));
+  }, [requiresInventory, inventoryKey, settings, netappInScope, liveSeed]);
 
   function updateSelectedBay(bay: string) {
     setDraft((current) => ({ ...current, selectedBay: bay }));
@@ -2124,7 +2133,8 @@ function LocalStorageRaidPlanner({
     setDraft((current) => ({
       ...current,
       selectedBay,
-      assignments: { ...current.assignments, [selectedBay]: groupId }
+      assignments: { ...current.assignments, [selectedBay]: groupId },
+      touched: true
     }));
     setMessage("");
   }
@@ -2132,7 +2142,8 @@ function LocalStorageRaidPlanner({
   function updateRaidLevel(groupId: "boot" | "datastore", raidLevel: string) {
     setDraft((current) => ({
       ...current,
-      raidLevels: { ...current.raidLevels, [groupId]: raidLevel }
+      raidLevels: { ...current.raidLevels, [groupId]: raidLevel },
+      touched: true
     }));
     setMessage("");
   }
@@ -2148,7 +2159,7 @@ function LocalStorageRaidPlanner({
       const selectedBay = Number.isInteger(selectedBayNumber) && selectedBayNumber >= 1 && selectedBayNumber <= bayCount
         ? current.selectedBay
         : "1";
-      return { ...current, assignments, bayCount, selectedBay };
+      return { ...current, assignments, bayCount, selectedBay, touched: true };
     });
     setMessage("");
   }
@@ -2242,7 +2253,10 @@ function LocalStorageRaidPlanner({
       <div className="local-raid-meta" aria-label="Local RAID context">
         <span>{storageModeLabel}</span>
         {requiresInventory ? (
-          <span>{inventoryBays.length} bays from iLO inventory{discovery?.last_probe_time ? ` · ${discovery.last_probe_time.slice(0, 19)}` : ""}</span>
+          <span>
+            {inventoryBays.length} bays from iLO inventory{discovery?.last_probe_time ? ` · ${discovery.last_probe_time.slice(0, 19)}` : ""}
+            {liveSeed && <em className="from-device-hint"> · draft starts from the last device-read layout</em>}
+          </span>
         ) : (
           <label>
             <span className="sr-only">Drive bay count</span>
@@ -2475,26 +2489,151 @@ function localRaidDraftForBays(
   current: LocalRaidDraft,
   bayIds: string[],
   settings: Record<string, string> | undefined,
-  netappInScope: boolean
+  netappInScope: boolean,
+  liveSeed: LocalRaidLiveSeed | null = null
 ): LocalRaidDraft {
-  const fallback = localRaidDefaultDraftForBayIds(settings, netappInScope, bayIds);
+  const canned = localRaidDefaultDraftForBayIds(settings, netappInScope, bayIds);
+  // If the operator never customized the draft (no recorded edit, and both
+  // assignments and RAID levels still match the canned template), the layout
+  // last read from the device is the honest starting point: show what is
+  // there, then let the operator change it. Any recorded edit wins forever.
+  const untouched =
+    current.touched !== true
+    && bayIds.every((bay) => {
+      const currentValue = current.assignments[bay];
+      return currentValue === undefined || currentValue === canned.assignments[bay];
+    })
+    && (!localRaidCleanLevel(current.raidLevels.boot)
+      || current.raidLevels.boot === canned.raidLevels.boot)
+    && (!localRaidCleanLevel(current.raidLevels.datastore)
+      || current.raidLevels.datastore === canned.raidLevels.datastore);
+  if (liveSeed && untouched) {
+    return {
+      ...current,
+      assignments: { ...liveSeed.assignments },
+      bayCount: bayIds.length,
+      raidLevels: { ...liveSeed.raidLevels },
+      selectedBay: bayIds.includes(current.selectedBay) ? current.selectedBay : bayIds[0] ?? "1"
+    };
+  }
   const assignments: Record<string, LocalRaidGroupId> = {};
   bayIds.forEach((bay, index) => {
     const currentValue = current.assignments[bay];
     assignments[bay] = currentValue === "boot" || currentValue === "datastore" || currentValue === "spare" || currentValue === "unused"
       ? currentValue
-      : fallback.assignments[bay] ?? localRaidDefaultGroup(index + 1, netappInScope);
+      : canned.assignments[bay] ?? localRaidDefaultGroup(index + 1, netappInScope);
   });
   return {
     ...current,
     assignments,
     bayCount: bayIds.length,
     raidLevels: {
-      boot: localRaidCleanLevel(current.raidLevels.boot) || fallback.raidLevels.boot,
-      datastore: localRaidCleanLevel(current.raidLevels.datastore) || fallback.raidLevels.datastore
+      boot: localRaidCleanLevel(current.raidLevels.boot) || canned.raidLevels.boot,
+      datastore: localRaidCleanLevel(current.raidLevels.datastore) || canned.raidLevels.datastore
     },
     selectedBay: bayIds.includes(current.selectedBay) ? current.selectedBay : bayIds[0] ?? "1"
   };
+}
+
+type LocalRaidLiveSeed = {
+  assignments: Record<string, LocalRaidGroupId>;
+  raidLevels: Record<"boot" | "datastore", string>;
+};
+
+function localRaidLiveSeed(
+  discovery: HpeStorageDiscovery | null | undefined,
+  netappInScope: boolean
+): LocalRaidLiveSeed | null {
+  const volumes = recordArray(discovery?.logical_drives);
+  const drives = recordArray(discovery?.physical_drives);
+  if (!volumes.length || !drives.length) {
+    return null;
+  }
+
+  // Resources of drives that have a usable bay identity. If any volume
+  // member cannot be paired to one of these (e.g. the volume references
+  // Storage-view resources while drives are SmartStorage-view, as seen on
+  // the Uplands DL380), the seed is refused entirely: presenting a
+  // half-mapped layout as "what is there" would be a false layout.
+  const drivesByResource = new Set<string>();
+  drives.forEach((drive) => {
+    const resource = localRaidResourcePath(drive);
+    if (resource) drivesByResource.add(resource);
+  });
+
+  const ordered = volumes
+    .map((volume) => ({
+      volume,
+      order:
+        Number.parseInt(
+          asString(volume.LogicalDriveNumber ?? volume.Id).match(/\d+/)?.[0] ?? "",
+          10
+        ) || Number.MAX_SAFE_INTEGER
+    }))
+    .sort((a, b) => a.order - b.order);
+
+  const everyMemberPaired = ordered.every((entry) => {
+    const links = objectValue(entry.volume.Links);
+    const members = [...recordArray(links.Drives), ...recordArray(links.DedicatedSpareDrives)];
+    return members.length > 0 && members.every((link) => {
+      const resource = localRaidResourcePath(link);
+      return Boolean(resource) && drivesByResource.has(resource);
+    });
+  });
+  if (!everyMemberPaired) {
+    return null;
+  }
+
+  // Map each member-drive resource to a planner group. With two or more live
+  // volumes the lowest-numbered one is treated as boot and the rest as
+  // datastore; a single small mirror reads as boot, a single larger volume as
+  // datastore.
+  const groupByResource = new Map<string, LocalRaidGroupId>();
+  const raidLevels: Record<"boot" | "datastore", string> = {
+    boot: "RAID1",
+    datastore: netappInScope ? "RAID1" : "RAID6"
+  };
+  ordered.forEach((entry, index) => {
+    const links = objectValue(entry.volume.Links);
+    const memberDrives = recordArray(links.Drives);
+    let group: "boot" | "datastore";
+    if (ordered.length === 1) {
+      group = memberDrives.length <= 2 ? "boot" : "datastore";
+    } else {
+      group = index === 0 ? "boot" : "datastore";
+    }
+    const level = localRaidCleanLevel(
+      asString(entry.volume.raid_level) || asString(entry.volume.RAIDType)
+    );
+    if (level) {
+      raidLevels[group] = level;
+    }
+    memberDrives.forEach((link) => {
+      const resource = localRaidResourcePath(link);
+      if (resource) groupByResource.set(resource, group);
+    });
+    recordArray(links.DedicatedSpareDrives).forEach((link) => {
+      const resource = localRaidResourcePath(link);
+      if (resource) groupByResource.set(resource, "spare");
+    });
+  });
+
+  const assignments: Record<string, LocalRaidGroupId> = {};
+  const seen = new Set<string>();
+  drives.forEach((drive, index) => {
+    const bay = (
+      asString(drive.bay_id) || asString(drive.Bay) || asString(drive.slot) || String(index + 1)
+    ).trim();
+    if (!bay || seen.has(bay)) return;
+    seen.add(bay);
+    const resource = localRaidResourcePath(drive);
+    const state = asString(objectValue(drive.Status).State) || asString(drive.state);
+    assignments[bay] =
+      (resource && groupByResource.get(resource))
+      || (/spare/i.test(state) ? "spare" : "unused");
+  });
+
+  return { assignments, raidLevels };
 }
 
 function localRaidDefaultDraftForBayIds(
@@ -7474,7 +7613,8 @@ function IloAccessSettingsPanel({
 function IloSetupIntentWorkspacePanel() {
   const [intent, setIntent] = useState<IloSetupIntent | null>(null);
   const [plan, setPlan] = useState<IloSetupPlanPreview | null>(null);
-  const [form, setForm] = useState<IloSetupIntentWrite>(() => iloWorkspaceIntentForm(null));
+  const [discovered, setDiscovered] = useState<IloDiscoveredSettings | null>(null);
+  const [form, setForm] = useState<IloSetupIntentWrite>(() => iloWorkspaceIntentForm(null, null));
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -7484,18 +7624,28 @@ function IloSetupIntentWorkspacePanel() {
     setLoading(true);
     setError("");
     try {
-      const [nextIntent, nextPlan] = await Promise.all([
+      const [nextIntent, nextPlan, nextDiscovered] = await Promise.all([
         api.iloSetupIntent(),
-        api.iloSetupPlanPreview()
+        api.iloSetupPlanPreview(),
+        api.iloDiscoveredSettings().catch(() => null)
       ]);
       setIntent(nextIntent);
       setPlan(nextPlan);
-      setForm(iloWorkspaceIntentForm(nextIntent));
+      setDiscovered(nextDiscovered);
+      setForm(iloWorkspaceIntentForm(nextIntent, nextDiscovered));
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
+  }
+
+  function isFromDevice(path: string, current: string | boolean | null | string[]): boolean {
+    const deviceValue = iloDeviceFieldValue(discovered, path);
+    if (deviceValue === null) {
+      return false;
+    }
+    return deviceValue === normalizeFieldValue(current);
   }
 
   useEffect(() => {
@@ -7586,8 +7736,8 @@ function IloSetupIntentWorkspacePanel() {
       const nextPlan = await api.iloSetupPlanPreview();
       setIntent(saved);
       setPlan(nextPlan);
-      setForm(iloWorkspaceIntentForm(saved));
-      setMessage("Saved iLO setup plan. Hardware untouched.");
+      setForm(iloWorkspaceIntentForm(saved, discovered));
+      setMessage("Saved iLO settings locally. Hardware untouched.");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -7602,8 +7752,12 @@ function IloSetupIntentWorkspacePanel() {
   return (
     <section className="map-field-group ilo-config-intent" aria-label="iLO setup settings">
       <div className="map-field-group-head">
-        <h4>iLO setup settings</h4>
-        <small>Plan-only runbook fields. Save records intent; it does not write iLO.</small>
+        <h4>iLO settings</h4>
+        <small>
+          {discovered?.available
+            ? `Pre-filled with values read from the device${discovered.probe_time ? ` (cached read, ${discovered.probe_time.slice(0, 19).replace("T", " ")})` : ""}. Edit freely - saving only records your changes locally; nothing writes to iLO.`
+            : "Current device values appear here after an iLO inventory read. Saving only records your changes locally; nothing writes to iLO."}
+        </small>
         <span className={`map-status-pill ${statusIsReady(networkStatus) ? "ready" : "unknown"}`}>
           {loading ? "Loading" : `${sectionCount} sections`}
         </span>
@@ -7621,6 +7775,9 @@ function IloSetupIntentWorkspacePanel() {
                 <option value="false">Off / static</option>
                 <option value="true">On / DHCP</option>
               </select>
+              {isFromDevice("network.dhcp_enabled", form.network.dhcp_enabled) && (
+                <small className="from-device-hint">from device</small>
+              )}
             </Field>
             <Field label="DNS Name">
               <input
@@ -7628,6 +7785,9 @@ function IloSetupIntentWorkspacePanel() {
                 onChange={(event) => updateNetwork("hostname", event.target.value)}
                 placeholder="DOP-X666-iLOADM1"
               />
+              {isFromDevice("network.hostname", form.network.hostname) && (
+                <small className="from-device-hint">from device</small>
+              )}
             </Field>
             <Field label="Subnet Mask / Prefix">
               <input
@@ -7635,6 +7795,9 @@ function IloSetupIntentWorkspacePanel() {
                 value={form.network.subnet_mask_or_prefix ?? ""}
                 onChange={(event) => updateNetwork("subnet_mask_or_prefix", event.target.value)}
               />
+              {isFromDevice("network.subnet_mask_or_prefix", form.network.subnet_mask_or_prefix) && (
+                <small className="from-device-hint">from device</small>
+              )}
             </Field>
             <Field label="Gateway">
               <input
@@ -7642,6 +7805,9 @@ function IloSetupIntentWorkspacePanel() {
                 value={form.network.gateway ?? ""}
                 onChange={(event) => updateNetwork("gateway", event.target.value)}
               />
+              {isFromDevice("network.gateway", form.network.gateway) && (
+                <small className="from-device-hint">from device</small>
+              )}
             </Field>
           </div>
         </div>
@@ -7654,6 +7820,9 @@ function IloSetupIntentWorkspacePanel() {
                 value={form.dns_domain.domain_name ?? ""}
                 onChange={(event) => updateDns("domain_name", event.target.value)}
               />
+              {isFromDevice("dns_domain.domain_name", form.dns_domain.domain_name) && (
+                <small className="from-device-hint">from device</small>
+              )}
             </Field>
             <Field label="DNS Servers">
               <input
@@ -7661,6 +7830,9 @@ function IloSetupIntentWorkspacePanel() {
                 value={form.dns_domain.dns_servers.join(", ")}
                 onChange={(event) => updateDns("dns_servers", splitCsvInput(event.target.value))}
               />
+              {isFromDevice("dns_domain.dns_servers", form.dns_domain.dns_servers) && (
+                <small className="from-device-hint">from device</small>
+              )}
             </Field>
             <Field label="Use DHCP Time">
               <select
@@ -7678,12 +7850,18 @@ function IloSetupIntentWorkspacePanel() {
                 value={form.time.ntp_servers.join(", ")}
                 onChange={(event) => updateTime("ntp_servers", splitCsvInput(event.target.value))}
               />
+              {isFromDevice("time.ntp_servers", form.time.ntp_servers) && (
+                <small className="from-device-hint">from device</small>
+              )}
             </Field>
             <Field label="Timezone">
               <input
                 value={form.time.timezone ?? ""}
                 onChange={(event) => updateTime("timezone", event.target.value)}
               />
+              {isFromDevice("time.timezone", form.time.timezone) && (
+                <small className="from-device-hint">from device</small>
+              )}
             </Field>
             <Field label="SNTP Interface">
               <input
@@ -7705,6 +7883,9 @@ function IloSetupIntentWorkspacePanel() {
                 onChange={(event) => updateLicense("expected_status", event.target.value)}
                 placeholder="iLO Advanced OK"
               />
+              {isFromDevice("license.expected_status", form.license.expected_status) && (
+                <small className="from-device-hint">from device</small>
+              )}
             </Field>
           </div>
         </div>
@@ -7718,7 +7899,10 @@ function IloSetupIntentWorkspacePanel() {
                 onChange={(event) => updateSnmp("enabled", event.target.checked)}
                 type="checkbox"
               />
-              <span>SNMP enabled in desired state</span>
+              <span>SNMP enabled</span>
+              {isFromDevice("snmp.enabled", form.snmp.enabled) && (
+                <small className="from-device-hint">from device</small>
+              )}
             </label>
             <Field label="SNMP Version">
               <select
@@ -7806,7 +7990,10 @@ function IloSetupIntentWorkspacePanel() {
 
           <div className="ilo-intent-user-list">
             <div className="ilo-intent-user-head">
-              <h6>Local user references</h6>
+              <h6>Local users</h6>
+              {!intent?.users?.length && discovered?.available && form.users.length > 0 && (
+                <small className="from-device-hint">from device</small>
+              )}
               <button onClick={addUser} type="button">
                 <Plus size={14} />
                 Add user
@@ -7862,15 +8049,73 @@ function IloSetupIntentWorkspacePanel() {
   );
 }
 
-function iloWorkspaceIntentForm(intent: IloSetupIntent | null): IloSetupIntentWrite {
+function normalizeFieldValue(value: string | boolean | null | string[]): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    const cleaned = value.map((item) => item.trim()).filter(Boolean);
+    return cleaned.length ? cleaned.join(", ") : null;
+  }
+  if (typeof value === "boolean") {
+    return String(value);
+  }
+  return value.trim() ? value.trim() : null;
+}
+
+function iloDeviceFieldValue(discovered: IloDiscoveredSettings | null, path: string): string | null {
+  if (!discovered?.available) {
+    return null;
+  }
+  switch (path) {
+    case "network.dhcp_enabled":
+      return normalizeFieldValue(discovered.network.dhcp_enabled);
+    case "network.hostname":
+      return normalizeFieldValue(discovered.network.hostname);
+    case "network.management_ip":
+      return normalizeFieldValue(discovered.network.management_ip);
+    case "network.subnet_mask_or_prefix":
+      return normalizeFieldValue(discovered.network.subnet_mask_or_prefix);
+    case "network.gateway":
+      return normalizeFieldValue(discovered.network.gateway);
+    case "network.vlan":
+      return normalizeFieldValue(discovered.network.vlan);
+    case "dns_domain.domain_name":
+      return normalizeFieldValue(discovered.dns_domain.domain_name);
+    case "dns_domain.dns_servers":
+      return normalizeFieldValue(discovered.dns_domain.dns_servers);
+    case "time.timezone":
+      return normalizeFieldValue(discovered.time.timezone);
+    case "time.ntp_servers":
+      return normalizeFieldValue(discovered.time.ntp_servers);
+    case "license.expected_status":
+      return normalizeFieldValue(discovered.license.status);
+    case "snmp.enabled":
+      return normalizeFieldValue(discovered.snmp.enabled);
+    default:
+      return null;
+  }
+}
+
+function iloWorkspaceIntentForm(
+  intent: IloSetupIntent | null,
+  discovered: IloDiscoveredSettings | null
+): IloSetupIntentWrite {
+  // The backend returns a default intent record (with non-null defaults like
+  // snmp.enabled=false) even before anything was saved. Once the operator has
+  // saved, the saved record wins completely — including deliberate nulls and
+  // empty lists — so device values only ever prefill an entirely unsaved form.
+  const hasSavedIntent = Boolean(intent?.created_at || intent?.updated_at);
+  const device = !hasSavedIntent && discovered?.available ? discovered : null;
   return {
     network: {
-      dhcp_enabled: intent?.network.dhcp_enabled ?? null,
-      gateway: intent?.network.gateway ?? "",
-      hostname: intent?.network.hostname ?? "",
-      management_ip: intent?.network.management_ip ?? "",
-      subnet_mask_or_prefix: intent?.network.subnet_mask_or_prefix ?? "",
-      vlan: intent?.network.vlan ?? ""
+      dhcp_enabled: intent?.network.dhcp_enabled ?? device?.network.dhcp_enabled ?? null,
+      gateway: intent?.network.gateway ?? device?.network.gateway ?? "",
+      hostname: intent?.network.hostname ?? device?.network.hostname ?? "",
+      management_ip: intent?.network.management_ip ?? device?.network.management_ip ?? "",
+      subnet_mask_or_prefix:
+        intent?.network.subnet_mask_or_prefix ?? device?.network.subnet_mask_or_prefix ?? "",
+      vlan: intent?.network.vlan ?? device?.network.vlan ?? ""
     },
     users: intent?.users.length
       ? intent.users.map((user) => ({
@@ -7878,15 +8123,19 @@ function iloWorkspaceIntentForm(intent: IloSetupIntent | null): IloSetupIntentWr
           role: user.role,
           username_label: user.username_label
         }))
-      : [],
+      : (device?.users ?? []).map((user) => ({
+          password_ref_label: "",
+          role: user.role ?? "Administrator",
+          username_label: user.username
+        })),
     license: {
       advanced_license_key_ref: intent?.license.advanced_license_key_ref ?? "",
-      expected_status: intent?.license.expected_status ?? ""
+      expected_status: intent?.license.expected_status ?? device?.license.status ?? ""
     },
     snmp: {
       community_or_user_ref_labels: intent?.snmp.community_or_user_ref_labels ?? [],
       destinations: intent?.snmp.destinations ?? [],
-      enabled: intent?.snmp.enabled ?? false,
+      enabled: device?.snmp.enabled ?? intent?.snmp.enabled ?? false,
       snmpv3_auth_passphrase_ref: intent?.snmp.snmpv3_auth_passphrase_ref ?? "",
       snmpv3_auth_protocol: intent?.snmp.snmpv3_auth_protocol ?? "MD5",
       snmpv3_privacy_passphrase_ref: intent?.snmp.snmpv3_privacy_passphrase_ref ?? "",
@@ -7907,13 +8156,17 @@ function iloWorkspaceIntentForm(intent: IloSetupIntent | null): IloSetupIntentWr
     },
     time: {
       interface_type: intent?.time.interface_type ?? "iLO Dedicated Network Port",
-      ntp_servers: intent?.time.ntp_servers ?? [],
-      timezone: intent?.time.timezone ?? "",
+      ntp_servers: intent?.time.ntp_servers?.length
+        ? intent.time.ntp_servers
+        : device?.time.ntp_servers ?? [],
+      timezone: intent?.time.timezone ?? device?.time.timezone ?? "",
       use_dhcp_supplied_time_settings: intent?.time.use_dhcp_supplied_time_settings ?? null
     },
     dns_domain: {
-      dns_servers: intent?.dns_domain.dns_servers ?? [],
-      domain_name: intent?.dns_domain.domain_name ?? ""
+      dns_servers: intent?.dns_domain.dns_servers?.length
+        ? intent.dns_domain.dns_servers
+        : device?.dns_domain.dns_servers ?? [],
+      domain_name: intent?.dns_domain.domain_name ?? device?.dns_domain.domain_name ?? ""
     },
     notes: intent?.notes ?? ""
   };

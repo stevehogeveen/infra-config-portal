@@ -1267,6 +1267,56 @@ class IloSetupApplyCreate(IloWriteTargetRequest):
     destructive_action_requested: bool = False
 
 
+class IloDiscoveredNetworkRead(BaseModel):
+    dhcp_enabled: bool | None = None
+    hostname: str | None = None
+    management_ip: str | None = None
+    subnet_mask_or_prefix: str | None = None
+    gateway: str | None = None
+    vlan: str | None = None
+
+
+class IloDiscoveredDnsDomainRead(BaseModel):
+    domain_name: str | None = None
+    dns_servers: list[str] = Field(default_factory=list)
+
+
+class IloDiscoveredTimeRead(BaseModel):
+    timezone: str | None = None
+    ntp_servers: list[str] = Field(default_factory=list)
+    ntp_protocol_enabled: bool | None = None
+
+
+class IloDiscoveredLicenseRead(BaseModel):
+    status: str | None = None
+    name: str | None = None
+
+
+class IloDiscoveredSnmpRead(BaseModel):
+    enabled: bool | None = None
+
+
+class IloDiscoveredUserRead(BaseModel):
+    username: str
+    role: str | None = None
+    enabled: bool | None = None
+
+
+class IloDiscoveredSettingsRead(BaseModel):
+    provider_id: str
+    source: str = "cached read-only iLO probe"
+    probe_time: datetime | None = None
+    freshness: str | None = None
+    target_matches_current_access: bool | None = None
+    available: bool = False
+    network: IloDiscoveredNetworkRead = Field(default_factory=IloDiscoveredNetworkRead)
+    dns_domain: IloDiscoveredDnsDomainRead = Field(default_factory=IloDiscoveredDnsDomainRead)
+    time: IloDiscoveredTimeRead = Field(default_factory=IloDiscoveredTimeRead)
+    license: IloDiscoveredLicenseRead = Field(default_factory=IloDiscoveredLicenseRead)
+    snmp: IloDiscoveredSnmpRead = Field(default_factory=IloDiscoveredSnmpRead)
+    users: list[IloDiscoveredUserRead] = Field(default_factory=list)
+
+
 class IloSetupCompareRowRead(BaseModel):
     section: str
     field: str

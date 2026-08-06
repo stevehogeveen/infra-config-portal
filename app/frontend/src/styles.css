@@ -8756,6 +8756,16 @@ th.ui-compact-table-cell {
 
 .map-field-group-head .map-status-pill { margin-left: auto; }
 
+.from-device-hint {
+  color: var(--muted);
+  display: inline-block;
+  font-size: 10px;
+  font-style: italic;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-top: 2px;
+}
+
 .device-credentials-loading {
   color: var(--muted);
   font-size: 12px;

@@ -1251,7 +1251,7 @@ test("overview iLO drawer puts first contact before planned config and runs the 
   await expect(iloSetup).toContainText("SNMP Version");
   await expect(iloSetup).toContainText("System Location");
   await expect(iloSetup).toContainText("Disable all IPv6 options");
-  await expect(iloSetup).toContainText("Local user references");
+  await expect(iloSetup).toContainText("Local users");
   await expect(iloSetup.getByRole("button", { name: "Save iLO setup plan" })).toBeVisible();
   await expect(drawer.getByRole("heading", { name: "Sign-in", exact: true })).toHaveCount(0);
   await expect(drawer.getByRole("button", { name: "Save sign-in" })).toHaveCount(0);
@@ -5354,6 +5354,233 @@ function labCredentials() {
     store_path: ".env.local.real-lab"
   };
 }
+
+function iloSetupIntentFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    provider_id: "ilo-redfish",
+    apply_enabled: false,
+    created_at: null,
+    updated_at: null,
+    network: {
+      dhcp_enabled: null,
+      hostname: null,
+      management_ip: null,
+      subnet_mask_or_prefix: null,
+      gateway: null,
+      vlan: null
+    },
+    users: [],
+    license: { advanced_license_key_ref: null, expected_status: null },
+    snmp: {
+      enabled: false,
+      version: "v3",
+      system_location: null,
+      system_contact: null,
+      system_role: null,
+      destinations: [],
+      community_or_user_ref_labels: [],
+      snmpv3_security_name: null,
+      snmpv3_auth_protocol: "MD5",
+      snmpv3_auth_passphrase_ref: null,
+      snmpv3_privacy_protocol: "DES",
+      snmpv3_privacy_passphrase_ref: null
+    },
+    ipv6: {
+      disable_all: true,
+      disable_dhcpv6_dns_server: true,
+      disable_dhcpv6_domain_name: true,
+      disable_dhcpv6_sntp_settings: true,
+      disable_dhcpv6_stateful_mode: true,
+      disable_dhcpv6_stateless_mode: true
+    },
+    time: {
+      use_dhcp_supplied_time_settings: null,
+      timezone: null,
+      ntp_servers: [],
+      interface_type: null
+    },
+    dns_domain: { domain_name: null, dns_servers: [] },
+    notes: null,
+    ...overrides
+  };
+}
+
+function iloDiscoveredSettingsFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    provider_id: "ilo-redfish",
+    source: "cached read-only iLO probe",
+    probe_time: checkedAt,
+    available: true,
+    network: {
+      dhcp_enabled: false,
+      hostname: "DOP-X87-iLOSrv4",
+      management_ip: "192.168.1.201",
+      subnet_mask_or_prefix: "255.255.255.0",
+      gateway: "192.168.1.1",
+      vlan: null
+    },
+    dns_domain: { domain_name: "lab.example", dns_servers: ["8.8.8.8", "2.2.2.2"] },
+    time: { timezone: null, ntp_servers: [], ntp_protocol_enabled: null },
+    license: { status: null, name: null },
+    snmp: { enabled: true },
+    users: [
+      { username: "Administrator", role: "Administrator", enabled: true },
+      { username: "X59_OA", role: "Operator", enabled: true }
+    ],
+    ...overrides
+  };
+}
+
+test("iLO settings prefill from device values when nothing is saved yet", async ({ page }) => {
+  await page.route("**/api/v1/providers/ilo-redfish/setup-intent", (route) =>
+    json(route, iloSetupIntentFixture())
+  );
+  await page.route("**/api/v1/providers/ilo-redfish/discovered-settings", (route) =>
+    json(route, iloDiscoveredSettingsFixture())
+  );
+
+  await page.goto("/overview");
+  await page.getByRole("region", { name: "Lab topology" }).getByRole("button", { name: /^HPE iLO,/ }).click();
+
+  const settings = page.locator("section[aria-label='iLO setup settings']");
+  await expect(settings).toBeVisible();
+  await expect(settings).toContainText("Pre-filled with values read from the device");
+  await expect(settings.getByLabel("DNS Name")).toHaveValue("DOP-X87-iLOSrv4");
+  await expect(settings.getByLabel("Subnet Mask / Prefix")).toHaveValue("255.255.255.0");
+  await expect(settings.getByLabel("Gateway")).toHaveValue("192.168.1.1");
+  await expect(settings.getByLabel("DNS Servers")).toHaveValue("8.8.8.8, 2.2.2.2");
+  await expect(settings.locator(".from-device-hint").first()).toBeVisible();
+  await expect(settings.getByRole("checkbox", { name: /SNMP enabled/ })).toBeChecked();
+  await expect(settings.getByLabel("Username Label").first()).toHaveValue("Administrator");
+});
+
+test("saved iLO settings win over discovered device values", async ({ page }) => {
+  await page.route("**/api/v1/providers/ilo-redfish/setup-intent", (route) =>
+    json(route, iloSetupIntentFixture({
+      created_at: checkedAt,
+      updated_at: checkedAt,
+      network: {
+        dhcp_enabled: true,
+        hostname: "operator-chosen-name",
+        management_ip: null,
+        subnet_mask_or_prefix: null,
+        gateway: null,
+        vlan: null
+      }
+    }))
+  );
+  await page.route("**/api/v1/providers/ilo-redfish/discovered-settings", (route) =>
+    json(route, iloDiscoveredSettingsFixture())
+  );
+
+  await page.goto("/overview");
+  await page.getByRole("region", { name: "Lab topology" }).getByRole("button", { name: /^HPE iLO,/ }).click();
+
+  const settings = page.locator("section[aria-label='iLO setup settings']");
+  const dnsName = settings.getByLabel("DNS Name");
+  await expect(dnsName).toHaveValue("operator-chosen-name");
+  // The operator's saved value differs from the device value, so no
+  // "from device" hint may appear on that field.
+  await expect(
+    settings.locator("label.field", { hasText: "DNS Name" }).locator(".from-device-hint")
+  ).toHaveCount(0);
+  // SNMP: saved intent exists, so its false wins over the device's true.
+  await expect(settings.getByRole("checkbox", { name: /SNMP enabled/ })).not.toBeChecked();
+  // A saved record wins completely: deliberately-empty DNS servers and users
+  // must not be refilled from the device.
+  await expect(settings.getByLabel("DNS Servers")).toHaveValue("");
+  await expect(settings).toContainText("No local user references saved.");
+});
+
+test("editing a prefilled iLO setting saves the operator's value through the unchanged intent path", async ({ page }) => {
+  let savedIntentBody: Record<string, unknown> | null = null;
+  await page.route("**/api/v1/providers/ilo-redfish/setup-intent", (route) => {
+    if (route.request().method() === "PUT") {
+      savedIntentBody = route.request().postDataJSON() as Record<string, unknown>;
+      return json(route, iloSetupIntentFixture({
+        created_at: checkedAt,
+        updated_at: checkedAt,
+        ...savedIntentBody
+      }));
+    }
+    return json(route, iloSetupIntentFixture());
+  });
+  await page.route("**/api/v1/providers/ilo-redfish/discovered-settings", (route) =>
+    json(route, iloDiscoveredSettingsFixture())
+  );
+
+  await page.goto("/overview");
+  await page.getByRole("region", { name: "Lab topology" }).getByRole("button", { name: /^HPE iLO,/ }).click();
+
+  const settings = page.locator("section[aria-label='iLO setup settings']");
+  const dnsName = settings.getByLabel("DNS Name");
+  await expect(dnsName).toHaveValue("DOP-X87-iLOSrv4");
+  await dnsName.fill("renamed-by-operator");
+  await settings.getByRole("button", { name: "Save iLO setup plan" }).click();
+
+  await expect(settings).toContainText("Saved iLO settings locally. Hardware untouched.");
+  expect(savedIntentBody).not.toBeNull();
+  const network = (savedIntentBody as Record<string, unknown>).network as Record<string, unknown>;
+  expect(network.hostname).toBe("renamed-by-operator");
+  // Untouched prefilled values ride along as the operator's accepted values.
+  expect(network.gateway).toBe("192.168.1.1");
+});
+
+test("local RAID draft starts from the live discovered layout instead of the canned template", async ({ page }) => {
+  await page.goto("/overview");
+  await page.getByRole("region", { name: "Lab topology" })
+    .getByRole("button", { name: "Local storage offshoot from HPE iLO" }).click();
+
+  const planner = page.locator("section[aria-label='Local RAID planner']");
+  await expect(planner).toContainText("No iLO drive inventory yet.");
+  await planner.getByRole("button", { name: /Read storage from iLO/ }).click();
+
+  await expect(planner).toContainText("draft starts from the last device-read layout");
+  // Fixture live layout: RAID1 volume on bays 1-2, RAID5 volume on bays
+  // 3-6+8, bay 7 is a standby spare. The canned template would have made
+  // bay 7 "Data" and defaulted the datastore group to RAID6.
+  const bay = (id: string) => planner.locator(".local-raid-bay").filter({ hasText: `Bay ${id}` });
+  await expect(bay("1")).toHaveClass(/is-boot/);
+  await expect(bay("2")).toHaveClass(/is-boot/);
+  await expect(bay("3")).toHaveClass(/is-datastore/);
+  await expect(bay("7")).toHaveClass(/is-spare/);
+  await expect(bay("8")).toHaveClass(/is-datastore/);
+  await expect(bay("3")).toContainText("Live: VM datastore · RAID5");
+  await expect(planner.getByLabel(/RAID level for (Datastore|Staging) array/)).toHaveValue("RAID5");
+});
+
+test("local RAID draft refuses the live seed when volume members cannot be paired to bays", async ({ page }) => {
+  const mismatched = hpeStorageDiscovery() as Record<string, unknown>;
+  // Volume member resources point at a different Redfish view than the
+  // physical drives (the real cross-view failure seen on a DL380), so no
+  // member can be paired to a bay.
+  mismatched.logical_drives = (mismatched.logical_drives as Array<Record<string, unknown>>).map(
+    (volume, index) => ({
+      ...volume,
+      Links: {
+        Drives: [{ "@odata.id": `/redfish/v1/Systems/1/Storage/DE07B000/Drives/${index}` }]
+      }
+    })
+  );
+  await page.route("**/api/v1/providers/ilo-redfish/hpe-storage-discovery", (route) =>
+    json(route, mismatched)
+  );
+
+  await page.goto("/overview");
+  await page.getByRole("region", { name: "Lab topology" })
+    .getByRole("button", { name: "Local storage offshoot from HPE iLO" }).click();
+
+  const planner = page.locator("section[aria-label='Local RAID planner']");
+  await planner.getByRole("button", { name: /Read storage from iLO/ }).click();
+
+  // Bays render from inventory, but the seed is refused: no device-read
+  // claim, and the draft stays on the canned template (bay 7 is not spare).
+  await expect(planner.locator(".local-raid-bay").first()).toBeVisible();
+  await expect(planner).not.toContainText("draft starts from the last device-read layout");
+  await expect(
+    planner.locator(".local-raid-bay").filter({ hasText: "Bay 7" })
+  ).not.toHaveClass(/is-spare/);
+});
 
 function iloAccessSettings(overrides: Record<string, unknown> = {}) {
   return {

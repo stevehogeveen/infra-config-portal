@@ -7,7 +7,12 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models import IloSetupIntent
-from app.providers.ilo_redfish import IloRedfishAdapter, PROVIDER_ID
+from app.providers.ilo_redfish import (
+    IloRedfishAdapter,
+    IloRedfishConfig,
+    PROVIDER_ID,
+    ilo_target_fingerprint,
+)
 from app.providers.probe_cache import get_probe_result
 from app.schemas import (
     IloConnectionReadinessRead,
@@ -15,6 +20,13 @@ from app.schemas import (
     IloDestructiveRebuildPreviewRead,
     IloDestructiveRebuildRequirementRead,
     IloDesiredSetupSectionRead,
+    IloDiscoveredDnsDomainRead,
+    IloDiscoveredLicenseRead,
+    IloDiscoveredNetworkRead,
+    IloDiscoveredSettingsRead,
+    IloDiscoveredSnmpRead,
+    IloDiscoveredTimeRead,
+    IloDiscoveredUserRead,
     IloReadinessSummaryRead,
     IloRealChangeLaneRead,
     IloReportArtifactPlaceholderRead,
@@ -1485,6 +1497,140 @@ def _compare_unknown(
             "discovery as a mismatch."
         ),
     )
+
+
+_REDACTED = "REDACTED"
+
+
+def _unredact(value: Any, replacement: str | None = None) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    if value == _REDACTED:
+        return replacement
+    return value
+
+
+def get_ilo_discovered_settings() -> IloDiscoveredSettingsRead:
+    """Raw current values from the cached read-only probe, for operator prefill.
+
+    Unlike setup-compare (a shareable report, which redacts real values behind
+    match/mismatch labels), this feeds the operator's own settings drawer, so it
+    returns the actual discovered values. This is operator-only data — never
+    embed it in report/artifact payloads.
+
+    Values the probe cache stored as REDACTED (they matched the configured
+    host/username at redaction time) are substituted from the operator's own
+    saved access settings, but only when the cached probe's target fingerprint
+    provably matches the current access host; if the operator retargeted since
+    the probe, the whole payload stays empty rather than attributing one
+    device's config to another's address.
+    """
+    probe_result, probe_time = get_probe_result(PROVIDER_ID)
+    result = IloDiscoveredSettingsRead(provider_id=PROVIDER_ID, probe_time=probe_time)
+    if not isinstance(probe_result, dict) or probe_result.get("status") != "ok":
+        return result
+
+    config = IloRedfishConfig.from_settings()
+    result.freshness = (
+        str(probe_result["freshness"]) if probe_result.get("freshness") else None
+    )
+    cached_fingerprint = probe_result.get("target_fingerprint")
+    current_fingerprint = ilo_target_fingerprint(config.host)
+    if cached_fingerprint and current_fingerprint:
+        result.target_matches_current_access = cached_fingerprint == current_fingerprint
+    # The cached probe belongs to a different target than the operator's
+    # current access host — presenting its values as "this device's current
+    # settings" would attribute device A's config to device B. Stay empty.
+    if result.target_matches_current_access is False:
+        return result
+    # Substituting REDACTED cache values from the operator's own saved access
+    # settings is only honest when the cache provably came from that target.
+    substitution_allowed = result.target_matches_current_access is True
+    substitute_host = config.host if substitution_allowed else None
+    substitute_username = config.username if substitution_allowed else None
+
+    network_identity = probe_result.get("network_identity")
+    if isinstance(network_identity, dict) and network_identity.get("status") == "ok":
+        result.available = True
+        result.network = IloDiscoveredNetworkRead(
+            dhcp_enabled=network_identity.get("dhcp_enabled")
+            if isinstance(network_identity.get("dhcp_enabled"), bool)
+            else None,
+            hostname=_unredact(network_identity.get("dns_name")),
+            management_ip=_unredact(network_identity.get("ip_address"), substitute_host),
+            subnet_mask_or_prefix=_unredact(network_identity.get("subnet_mask")),
+            gateway=_unredact(network_identity.get("gateway")),
+            # For prefill, a disabled VLAN is an empty field, not the
+            # compare-report's "disabled" label.
+            vlan=str(network_identity["vlan_id"])
+            if network_identity.get("vlan_enabled") and network_identity.get("vlan_id") is not None
+            else None,
+        )
+
+    time_and_dns = probe_result.get("time_and_dns")
+    if isinstance(time_and_dns, dict) and time_and_dns.get("status") == "ok":
+        result.available = True
+        raw_ntp = time_and_dns.get("ntp_servers")
+        raw_dns = time_and_dns.get("dns_servers")
+        result.time = IloDiscoveredTimeRead(
+            timezone=_unredact(time_and_dns.get("timezone")),
+            ntp_servers=[s for s in raw_ntp if isinstance(s, str) and s.strip()]
+            if isinstance(raw_ntp, list)
+            else [],
+            ntp_protocol_enabled=time_and_dns.get("ntp_protocol_enabled")
+            if isinstance(time_and_dns.get("ntp_protocol_enabled"), bool)
+            else None,
+        )
+        result.dns_domain = IloDiscoveredDnsDomainRead(
+            domain_name=_unredact(time_and_dns.get("domain_name")),
+            dns_servers=[s for s in raw_dns if isinstance(s, str) and s.strip()]
+            if isinstance(raw_dns, list)
+            else [],
+        )
+        result.snmp = IloDiscoveredSnmpRead(
+            enabled=time_and_dns.get("snmp_protocol_enabled")
+            if isinstance(time_and_dns.get("snmp_protocol_enabled"), bool)
+            else None,
+        )
+
+    # The manager EthernetInterface NameServers list is the network-identity
+    # read's view of DNS; prefer it when the NetworkProtocol OEM list is empty.
+    if not result.dns_domain.dns_servers and isinstance(network_identity, dict):
+        raw_name_servers = network_identity.get("name_servers")
+        if isinstance(raw_name_servers, list):
+            result.dns_domain.dns_servers = [
+                s for s in raw_name_servers if isinstance(s, str) and s.strip() and s != _REDACTED
+            ]
+
+    licenses = probe_result.get("licenses")
+    if isinstance(licenses, list) and licenses and isinstance(licenses[0], dict):
+        result.available = True
+        result.license = IloDiscoveredLicenseRead(
+            status=_unredact(licenses[0].get("status_state")),
+            name=_unredact(licenses[0].get("name")),
+        )
+
+    local_users = probe_result.get("local_users")
+    if isinstance(local_users, list):
+        users: list[IloDiscoveredUserRead] = []
+        for user in local_users:
+            if not isinstance(user, dict):
+                continue
+            username = _unredact(user.get("username"), substitute_username)
+            if not username:
+                continue
+            users.append(
+                IloDiscoveredUserRead(
+                    username=username,
+                    role=_unredact(user.get("role")),
+                    enabled=user.get("enabled") if isinstance(user.get("enabled"), bool) else None,
+                )
+            )
+        if users:
+            result.available = True
+            result.users = users
+
+    return result
 
 
 def _discovered_network_identity() -> dict[str, Any] | None:

@@ -56,6 +56,7 @@ from app.schemas import (
     IloBaselinePreviewRead,
     IloBaselineReadinessRead,
     IloDestructiveRebuildPreviewRead,
+    IloDiscoveredSettingsRead,
     IloReadinessSummaryRead,
     IloReportPreviewRead,
     IloSetupApplyCreate,
@@ -172,6 +173,7 @@ from app.services.ilo_access_settings import (
 )
 from app.services.ilo_readiness import (
     get_ilo_destructive_rebuild_preview,
+    get_ilo_discovered_settings,
     get_ilo_readiness_summary,
     get_ilo_report_preview,
     get_ilo_setup_compare,
@@ -1192,6 +1194,14 @@ def read_ilo_setup_intent(
     session: Session = Depends(get_session),
 ) -> IloSetupIntentRead:
     return get_ilo_setup_intent(session)
+
+
+@router.get(
+    "/providers/ilo-redfish/discovered-settings",
+    response_model=IloDiscoveredSettingsRead,
+)
+def read_ilo_discovered_settings() -> IloDiscoveredSettingsRead:
+    return get_ilo_discovered_settings()
 
 
 @router.put(

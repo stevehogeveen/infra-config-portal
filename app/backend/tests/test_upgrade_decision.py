@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.providers.base import ProviderStatus
@@ -1339,6 +1340,204 @@ def test_ilo_setup_compare_local_usernames_reports_match_and_mismatch(
     assert row["discovered"] == "differs from saved intent"
     assert "operator-one" not in response.text
     assert "operator-three" not in response.text
+    clear_probe_results()
+
+
+def test_ilo_discovered_settings_empty_without_cached_probe(client: TestClient) -> None:
+    clear_probe_results()
+
+    response = client.get("/api/v1/providers/ilo-redfish/discovered-settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is False
+    assert payload["probe_time"] is None
+    assert payload["network"]["management_ip"] is None
+    assert payload["network"]["dhcp_enabled"] is None
+    assert payload["time"]["ntp_servers"] == []
+    assert payload["dns_domain"]["dns_servers"] == []
+    assert payload["license"]["status"] is None
+    assert payload["snmp"]["enabled"] is None
+    assert payload["users"] == []
+
+
+def test_ilo_discovered_settings_returns_raw_cached_values(client: TestClient) -> None:
+    clear_probe_results()
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "network_identity": {
+                "status": "ok",
+                "dns_name": "ilo-lab-target",
+                "dhcp_enabled": False,
+                "ip_address": "192.168.1.201",
+                "subnet_mask": "255.255.255.0",
+                "gateway": "192.168.1.1",
+                "vlan_enabled": True,
+                "vlan_id": 20,
+                "name_servers": ["8.8.8.8"],
+            },
+            "time_and_dns": {
+                "status": "ok",
+                "timezone": "UTC",
+                "ntp_servers": ["ntp1.lab.example"],
+                "ntp_protocol_enabled": True,
+                "domain_name": "lab.example",
+                "dns_servers": [],
+                "snmp_protocol_enabled": True,
+            },
+            "licenses": [
+                {"name": "iLO Advanced", "product_type": "Perpetual", "status_state": "Enabled"}
+            ],
+            "local_users": [
+                {"username": "operator-one", "role": "Administrator", "enabled": True},
+            ],
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/discovered-settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["probe_time"] is not None
+    assert payload["network"]["hostname"] == "ilo-lab-target"
+    assert payload["network"]["dhcp_enabled"] is False
+    assert payload["network"]["management_ip"] == "192.168.1.201"
+    assert payload["network"]["subnet_mask_or_prefix"] == "255.255.255.0"
+    assert payload["network"]["gateway"] == "192.168.1.1"
+    assert payload["network"]["vlan"] == "20"
+    assert payload["time"]["timezone"] == "UTC"
+    assert payload["time"]["ntp_servers"] == ["ntp1.lab.example"]
+    assert payload["dns_domain"]["domain_name"] == "lab.example"
+    # NetworkProtocol OEM DNS list is empty, so the EthernetInterface
+    # NameServers fallback should fill in.
+    assert payload["dns_domain"]["dns_servers"] == ["8.8.8.8"]
+    assert payload["license"]["status"] == "Enabled"
+    assert payload["snmp"]["enabled"] is True
+    assert payload["users"] == [
+        {"username": "operator-one", "role": "Administrator", "enabled": True}
+    ]
+    clear_probe_results()
+
+
+def test_ilo_discovered_settings_partial_probe_and_redacted_values(
+    client: TestClient,
+) -> None:
+    clear_probe_results()
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "network_identity": {
+                "status": "ok",
+                "dns_name": "REDACTED",
+                "dhcp_enabled": None,
+                "ip_address": "REDACTED",
+                "subnet_mask": "255.255.255.0",
+                "gateway": None,
+                "vlan_enabled": False,
+                "vlan_id": None,
+            },
+            "time_and_dns": {"status": "unavailable", "message": "read failed"},
+            "licenses": [],
+            "local_users": [],
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/discovered-settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    # Redacted hostname has no substitute -> null, never the literal REDACTED.
+    assert payload["network"]["hostname"] is None
+    assert payload["network"]["subnet_mask_or_prefix"] == "255.255.255.0"
+    assert payload["network"]["gateway"] is None
+    assert payload["network"]["vlan"] is None
+    # time_and_dns read failed -> its whole section stays null/empty.
+    assert payload["time"]["timezone"] is None
+    assert payload["dns_domain"]["domain_name"] is None
+    assert payload["snmp"]["enabled"] is None
+    assert "REDACTED" not in response.text
+    clear_probe_results()
+
+
+def test_ilo_discovered_settings_stays_empty_when_target_changed_after_probe(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.providers.ilo_redfish import ilo_target_fingerprint
+
+    clear_probe_results()
+    monkeypatch.setenv("ILO_TEST_HOST", "192.168.1.201")
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "target_fingerprint": ilo_target_fingerprint("192.168.1.11"),
+            "network_identity": {
+                "status": "ok",
+                "dns_name": "old-target-name",
+                "ip_address": "REDACTED",
+                "subnet_mask": "255.255.255.0",
+            },
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/discovered-settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["target_matches_current_access"] is False
+    assert payload["available"] is False
+    assert payload["network"]["hostname"] is None
+    assert payload["network"]["management_ip"] is None
+    assert "old-target-name" not in response.text
+    clear_probe_results()
+
+
+def test_ilo_discovered_settings_substitutes_redacted_only_on_target_match(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.providers.ilo_redfish import ilo_target_fingerprint
+
+    clear_probe_results()
+    monkeypatch.setenv("ILO_TEST_HOST", "192.168.1.201")
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "target_fingerprint": ilo_target_fingerprint("192.168.1.201"),
+            "network_identity": {
+                "status": "ok",
+                "dns_name": "current-target-name",
+                "ip_address": "REDACTED",
+                "subnet_mask": "255.255.255.0",
+            },
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/discovered-settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["target_matches_current_access"] is True
+    assert payload["available"] is True
+    assert payload["network"]["management_ip"] == "192.168.1.201"
+    assert payload["network"]["hostname"] == "current-target-name"
     clear_probe_results()
 
 

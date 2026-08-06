@@ -1761,6 +1761,42 @@ export type IloSetupIntentWrite = Omit<
   "provider_id" | "apply_enabled" | "created_at" | "updated_at"
 >;
 
+export type IloDiscoveredSettings = {
+  provider_id: string;
+  source: string;
+  probe_time: string | null;
+  available: boolean;
+  network: {
+    dhcp_enabled: boolean | null;
+    hostname: string | null;
+    management_ip: string | null;
+    subnet_mask_or_prefix: string | null;
+    gateway: string | null;
+    vlan: string | null;
+  };
+  dns_domain: {
+    domain_name: string | null;
+    dns_servers: string[];
+  };
+  time: {
+    timezone: string | null;
+    ntp_servers: string[];
+    ntp_protocol_enabled: boolean | null;
+  };
+  license: {
+    status: string | null;
+    name: string | null;
+  };
+  snmp: {
+    enabled: boolean | null;
+  };
+  users: Array<{
+    username: string;
+    role: string | null;
+    enabled: boolean | null;
+  }>;
+};
+
 export type IloSetupPlanSection = {
   id: string;
   title: string;
