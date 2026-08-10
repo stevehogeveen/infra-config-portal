@@ -1197,6 +1197,8 @@ function ShellTopNav() {
       </Link>
       <nav className="top-nav" aria-label="Primary navigation">
         <NavLink to="/overview" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Overview</NavLink>
+        <NavLink to="/simple" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Simple</NavLink>
+        <NavLink to="/simple-steps" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Runbook</NavLink>
         <NavLink to="/setup/defaults" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Lab Defaults</NavLink>
         <NavLink to="/firmware-upgrades" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Firmware</NavLink>
         <NavLink to="/run" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Run Center</NavLink>

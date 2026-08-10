@@ -356,7 +356,7 @@ test("renders the map-first operator header and pages", async ({ page }) => {
   await expect(header.getByRole("link", { name: "Lab Builder overview" })).toContainText("Lab Builder");
   await expect(header.getByRole("link", { name: "Lab Builder overview" })).toContainText("Operator");
   const primaryNavigation = header.getByRole("navigation", { name: "Primary navigation" });
-  await expect(primaryNavigation.locator("a")).toHaveText(["Overview", "Lab Defaults", "Firmware", "Run Center", "Reports"]);
+  await expect(primaryNavigation.locator("a")).toHaveText(["Overview", "Simple", "Runbook", "Lab Defaults", "Firmware", "Run Center", "Reports"]);
   await expect(primaryNavigation.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/overview");
   await expect(primaryNavigation.getByRole("link", { name: "Lab Defaults" })).toHaveAttribute("href", "/setup/defaults");
   await expect(primaryNavigation.getByRole("link", { name: "Firmware" })).toHaveAttribute("href", "/firmware-upgrades");
@@ -1906,7 +1906,7 @@ test("top nav and map device drawers keep setup direct without dead settings dra
   await page.goto("/overview");
 
   const header = page.getByRole("banner", { name: "Application header" });
-  await expect(header.getByRole("navigation", { name: "Primary navigation" }).getByRole("link")).toHaveCount(5);
+  await expect(header.getByRole("navigation", { name: "Primary navigation" }).getByRole("link")).toHaveCount(7);
   await expect(header.getByRole("link", { name: "Create or change kit" })).toHaveAttribute("href", "/lab-profiles#new");
   await expect(header.getByRole("button", { name: "Settings" })).toHaveCount(0);
   await expect(page.locator(".system-setup-picker, section.tab-settings-drawer")).toHaveCount(0);
@@ -3614,6 +3614,20 @@ test("DHCP inventory devices show observed addresses as read-only evidence", asy
   await page.getByRole("button", { name: "Save device" }).click();
   await expect(page.getByText("DHCP Packet Broker", { exact: true })).toBeVisible();
   await expect(page.getByText("No address observed yet · DHCP", { exact: true })).toBeVisible();
+});
+
+test("simplified example pages are reachable from the nav and render", async ({ page }) => {
+  await page.goto("/overview");
+  const nav = page.getByRole("banner", { name: "Application header" })
+    .getByRole("navigation", { name: "Primary navigation" });
+
+  await nav.getByRole("link", { name: "Simple" }).click();
+  await expect(page.getByRole("heading", { name: "Your lab" })).toBeVisible();
+  await expect(page.locator(".simple-tile").first()).toBeVisible();
+
+  await nav.getByRole("link", { name: "Runbook" }).click();
+  await expect(page.getByRole("heading", { name: "Build the lab, in order" })).toBeVisible();
+  await expect(page.locator(".simple-step")).toHaveCount(5);
 });
 
 async function installApiMocks(page: Page) {
