@@ -3664,6 +3664,54 @@ test("rack workspace never turns stale provider evidence green and stays respons
   }
 });
 
+test("rack iLO onboarding saves the DHCP target and credentials without probing it", async ({ page }) => {
+  const writes: Array<{ method: string; path: string; payload: Record<string, unknown> }> = [];
+  const hardwareChecks: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() !== "GET" && (path === "/api/v1/device-inventory" || path === "/api/v1/providers/ilo-redfish/access-settings")) {
+      writes.push({ method: request.method(), path, payload: request.postDataJSON() as Record<string, unknown> });
+    }
+    if (request.method() !== "GET" && (path.includes("workflow") || path.includes("probe") || path.includes("inventory-read"))) {
+      hardwareChecks.push(`${request.method()} ${path}`);
+    }
+  });
+
+  await page.goto("/simple");
+  await page.getByRole("button", { name: "Add equipment" }).click();
+  await expect(page.getByLabel("Device type")).toHaveValue("ilo");
+  await expect(page.getByLabel("iLO onboarding steps")).toContainText("Locate iLO");
+  await expect(page.getByLabel("iLO onboarding steps")).toContainText("Sign in");
+  await expect(page.getByLabel("iLO onboarding steps")).toContainText("Verify");
+
+  await page.getByLabel("Device name").fill("HPE iLO 2");
+  await page.getByLabel("Current iLO DHCP address").fill("192.168.1.211");
+  await page.getByLabel("iLO username or UID").fill("Administrator");
+  await page.getByLabel("iLO password").fill("mock-first-contact-password");
+  await page.getByRole("button", { name: "Save iLO and continue" }).click();
+
+  const addedIlo = page.locator(".rack-unit[aria-label='Open HPE iLO 2']");
+  await expect(addedIlo).toBeVisible();
+  await expect(addedIlo).toHaveClass(/is-not-checked/);
+  await expect(page.locator(".rack-inspector")).toContainText("192.168.1.211");
+  await expect(page.locator(".rack-inspector")).toContainText("Step 3 of 3");
+  await expect(page.getByRole("link", { name: "Continue: verify iLO access" })).toHaveAttribute("href", "/server");
+
+  expect(writes).toHaveLength(2);
+  expect(writes[0]).toMatchObject({
+    method: "POST",
+    path: "/api/v1/device-inventory",
+    payload: { device_type: "ilo", display_name: "HPE iLO 2", dhcp_enabled: true, host: "192.168.1.211" }
+  });
+  expect(writes[1]).toMatchObject({
+    method: "PUT",
+    path: "/api/v1/providers/ilo-redfish/access-settings",
+    payload: { host: "192.168.1.211", username: "Administrator", verify_tls: false }
+  });
+  expect(writes[1].payload.password).toBeTruthy();
+  expect(hardwareChecks).toEqual([]);
+});
+
 test("rack home adds and edits equipment before opening its existing configuration workspace", async ({ page }) => {
   const inventoryWrites: string[] = [];
   page.on("request", (request) => {
@@ -3710,6 +3758,7 @@ async function installApiMocks(page: Page) {
   let activeProfiles = activeLabProfilesFixture();
   let savedProfile: Record<string, unknown> | null = null;
   let labBuildRun: Record<string, unknown> | null = null;
+  let activeIloAccess = iloAccessSettings();
   // Ids mimic real database UUIDs on purpose: link resolution must work by
   // device type, never by magic id values the backend does not produce.
   // Lazily initialized per scenario: single-server labs have no NetApp in
@@ -3923,15 +3972,30 @@ async function installApiMocks(page: Page) {
     }
     if (url.pathname === "/api/v1/providers/ilo-redfish/access-settings") {
       if (request.method() === "PUT") {
-        const payload = request.postDataJSON() as { host?: string; username?: string; password?: string; verify_tls?: boolean };
-        return json(route, iloAccessSettings({
-          host: payload.host || "192.168.1.201",
-          password_configured: Boolean(payload.password),
-          username: payload.username || "Administrator",
-          verify_tls: payload.verify_tls ?? false
-        }));
+        const payload = request.postDataJSON() as { host?: string; username?: string | null; password?: string | null; verify_tls?: boolean };
+        const nextHost = payload.host || activeIloAccess.host;
+        const targetChanged = nextHost.trim().toLowerCase() !== activeIloAccess.host.trim().toLowerCase();
+        activeIloAccess = iloAccessSettings({
+          ...activeIloAccess,
+          host: nextHost,
+          password_configured: Boolean(payload.password || (!targetChanged && activeIloAccess.password_configured)),
+          username: payload.username || (!targetChanged ? activeIloAccess.username : null),
+          username_configured: Boolean(payload.username || (!targetChanged && activeIloAccess.username_configured)),
+          verify_tls: payload.verify_tls ?? activeIloAccess.verify_tls,
+          ...(targetChanged ? {
+            last_probe_message: "This iLO address has not been checked yet.",
+            last_probe_freshness: "not_checked",
+            last_probe_is_current: false,
+            last_probe_status: "not_checked",
+            last_probe_target_fingerprint_present: false,
+            last_probe_target_matches_access_host: false,
+            last_probe_target_matches_configured_candidates: false,
+            last_probe_time: null
+          } : {})
+        });
+        return json(route, activeIloAccess);
       }
-      return json(route, iloAccessSettings());
+      return json(route, activeIloAccess);
     }
     if (url.pathname === "/api/v1/providers/ilo-redfish/hpe-raid-pending") {
       return json(route, hpeRaidPending());

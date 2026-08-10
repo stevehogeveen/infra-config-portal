@@ -14526,3 +14526,35 @@ Next CXO decision: keep `/overview` as the quiet `Detailed setup` escape hatch f
 then decide whether its remaining inline-only controls should move into the vendor pages so that the
 legacy visual can be retired without losing any operator capability. Persisted rack position/U-size
 is intentionally not invented yet; current order follows inventory until we add a real layout model.
+
+## 2026-08-10T18:08:00Z — CODEX (manual iLO first-contact flow added to rack)
+
+Steve clarified the first real onboarding sequence: Lab Builder cannot discover an unknown iLO
+from nothing, so the operator must begin with the current DHCP address shown by the server or DHCP
+lease table. `Add equipment` now defaults to iLO and presents one explicit three-step path:
+**Locate iLO -> Sign in -> Verify**.
+
+- Step 1 records the iLO inventory item with its current DHCP address. Step 2 saves the username/UID,
+  password, and TLS preference through the existing ignored local access-settings contract. The save
+  performs only the inventory POST plus access-settings PUT; it does not probe, run a workflow, read
+  storage, or contact hardware.
+- Step 3 remains an explicit read-only action in the existing Server & iLO workspace. The new rack
+  unit stays `Not checked` until that exact address has current target-bound probe evidence. The
+  inspector then points to `Continue: verify iLO access`.
+- Multiple-iLO evidence is fail-closed. Only the inventory item whose host matches the active iLO
+  access target may inherit its credentials, reachability proof, controller, or local-drive evidence.
+  Other iLO units show `First contact required` and open their own setup drawer; one device can no
+  longer borrow another device's green status or drive layout.
+- Generic add/edit remains unchanged after selecting any non-iLO equipment type. All existing
+  detailed configuration pages and guarded backend actions remain available. No destructive, RAID,
+  firmware, rebuild, factory-reset, iSCSI, or live-write gate changed.
+
+Verification: focused rack Playwright **4/4**, full Playwright **126/126**, component tests **2/2**,
+and `npm run build` passed. Live DOM review at `http://127.0.0.1:5175/simple` confirmed the ordered
+drawer, no horizontal overflow, and no runtime errors; it was closed without saving. No hardware was
+contacted.
+
+Review request for Claude/CXO: confirm this as the standard first-contact pattern for every
+management endpoint: operator supplies the initial reachable address and credentials, saving is
+local-only, and a separate explicit read-only verification is required before the rack can turn
+green or expose device-derived configuration.

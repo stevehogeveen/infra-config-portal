@@ -22122,6 +22122,14 @@ button.design-ilo-port:hover {
 .rack-inspector h2 { font-size: 25px; letter-spacing: -.03em; margin-bottom: 3px; margin-top: 12px; }
 .rack-inspector-kind { color: #708994; font-size: 12px; margin-top: 0; text-transform: capitalize; }
 .rack-evidence-note { color: #56717b; font-size: 12px; line-height: 1.5; }
+.rack-first-contact { background: #fff7e7; border: 1px solid #edd59d; border-radius: 10px; display: grid; gap: 4px; margin: 16px 22px 4px; padding: 12px; }
+.rack-first-contact span { color: #9a6500; font-size: 9px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
+.rack-first-contact strong { color: #4b390e; font-size: 12px; }
+.rack-first-contact small { color: #76623a; font-size: 10px; line-height: 1.45; }
+.rack-first-contact.is-complete { background: #eaf8f1; border-color: #bde7d1; }
+.rack-first-contact.is-complete span { color: #087949; }
+.rack-first-contact.is-complete strong { color: #135437; }
+.rack-first-contact.is-complete small { color: #47705c; }
 .rack-bay-legend { display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 8px 0 4px; }
 .rack-bay-legend span { align-items: center; color: #607983; display: inline-flex; font-size: 10px; gap: 5px; }
 .rack-bay-legend span::before { background: #cbd5d9; border-radius: 2px; content: ""; height: 8px; width: 8px; }
@@ -22141,6 +22149,18 @@ button.design-ilo-port:hover {
 .rack-inspector-empty > h2, .rack-inspector-empty > p { margin-left: 0; margin-right: 0; }
 .rack-inspector-empty .rack-action { display: block; margin: 20px 0 0; width: 100%; }
 .rack-empty-icon { align-items: center; background: #dff1f2; border-radius: 50%; color: #078489; display: flex; height: 48px; justify-content: center; margin: 0 auto 12px; width: 48px; }
+.ilo-add-flow { align-items: start; background: #edf8f8; border: 1px solid #c4e5e5; border-radius: 12px; display: grid; gap: 8px; grid-template-columns: 1fr 18px 1fr 18px 1fr; margin-bottom: 4px; padding: 14px; }
+.ilo-add-flow div { align-items: center; color: #668089; display: flex; flex-direction: column; font-size: 10px; gap: 5px; text-align: center; }
+.ilo-add-flow div span { align-items: center; background: #fff; border: 1px solid #afcdd0; border-radius: 50%; display: flex; font-size: 10px; font-weight: 850; height: 24px; justify-content: center; width: 24px; }
+.ilo-add-flow div span.is-active { background: #0b898d; border-color: #0b898d; color: #fff; }
+.ilo-add-flow i { background: #b8d3d5; height: 1px; margin-top: 12px; width: 100%; }
+.ilo-add-flow p { color: #496872; font-size: 11px; grid-column: 1 / -1; line-height: 1.5; margin: 4px 0 0; text-align: center; }
+.ilo-add-credentials-title { align-items: baseline; border-top: 1px solid #dbe7e9; display: flex; gap: 8px; margin-top: 2px; padding-top: 14px; }
+.ilo-add-credentials-title span { color: #078489; font-size: 9px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.ilo-add-credentials-title strong { color: #203d47; font-size: 13px; }
+.map-editor-form label.ilo-add-tls { align-items: center; background: #f5f9fa; border: 1px solid #dbe6e9; border-radius: 9px; display: flex; flex-direction: row; gap: 9px; padding: 11px 12px; }
+.map-editor-form label.ilo-add-tls input { height: 16px; margin: 0; width: 16px; }
+.map-editor-form label.ilo-add-tls span { color: #496872; font-size: 11px; }
 .rack-help { color: #75909a; font-size: 11px; line-height: 1.55; margin: 18px 4px 0; }
 .rack-loading { align-items: center; color: #66828c; display: flex; gap: 12px; justify-content: center; min-height: 500px; }
 

@@ -76,11 +76,25 @@ const PROVIDERS_BY_TYPE: Record<string, string[]> = {
   vcenter: ["vcenter"]
 };
 
-function deviceWord(device: DeviceInventoryItem, providers: ProviderStatus[]): "Ready" | "Problem" | "Not checked" {
+function deviceWord(device: DeviceInventoryItem, providers: ProviderStatus[], access?: IloAccessSettings | null): "Ready" | "Problem" | "Not checked" {
   const providerIds = PROVIDERS_BY_TYPE[device.device_type] ?? [];
   const provider = providers.find((item) => providerIds.includes(item.id));
   if (!provider || !provider.is_current || provider.status === "not_checked" || provider.freshness === "not_checked") {
     return "Not checked";
+  }
+  if (device.device_type === "ilo") {
+    const deviceHost = device.host?.trim().toLowerCase();
+    const accessHost = access?.host?.trim().toLowerCase();
+    if (
+      !deviceHost ||
+      !accessHost ||
+      deviceHost !== accessHost ||
+      access?.last_probe_is_current !== true ||
+      access.last_probe_target_matches_access_host !== true ||
+      access.last_probe_target_fingerprint_present !== true
+    ) {
+      return "Not checked";
+    }
   }
   if (provider.status === "ready" || provider.status === "ok") {
     return "Ready";
@@ -139,9 +153,10 @@ function rackUnitHeight(device: DeviceInventoryItem): number {
   return 60;
 }
 
-function RackElevationGraphic({ devices, providers, bays, selectedId, onSelect }: {
+function RackElevationGraphic({ devices, providers, access, bays, selectedId, onSelect }: {
   devices: DeviceInventoryItem[];
   providers: ProviderStatus[];
+  access: IloAccessSettings | null;
   bays: RackBay[];
   selectedId: string;
   onSelect: (id: string) => void;
@@ -177,9 +192,13 @@ function RackElevationGraphic({ devices, providers, bays, selectedId, onSelect }
       <rect x="125" y="45" width="390" height={rackBodyHeight - 50} rx="6" fill="url(#rackVent)" />
 
       {rows.map(({ device, height, index, y }) => {
-        const word = deviceWord(device, providers);
+        const word = deviceWord(device, providers, access);
         const isCisco = device.device_type === "cisco_switch";
         const isIlo = device.device_type === "ilo";
+        const isActiveIloTarget = isIlo && Boolean(
+          device.host?.trim().toLowerCase() &&
+          device.host.trim().toLowerCase() === access?.host?.trim().toLowerCase()
+        );
         const isNetapp = device.device_type === "netapp";
         const isEsxi = device.device_type === "esxi_host";
         return <g key={device.id} className={`rack-unit is-${rackWordClass(word)} ${selectedId === device.id ? "is-selected" : ""}`} role="button" tabIndex={0} aria-label={`Open ${device.display_name}`} onClick={() => onSelect(device.id)} onKeyDown={(event) => keySelect(event, device.id)}>
@@ -192,7 +211,7 @@ function RackElevationGraphic({ devices, providers, bays, selectedId, onSelect }
           {isIlo && <>
             <rect x="158" y={y + 32} width="72" height="38" rx="5" className="rack-management-module" />
             <text x="194" y={y + 55} textAnchor="middle" className="rack-module-label">iLO MGMT</text>
-            {bays.length ? bays.slice(0, 8).map((bay, bayIndex) => <g key={bay.id}><rect x={242 + bayIndex * 29} y={y + 34} width="23" height="32" rx="3" className={`rack-drive is-${bay.state}`} /><text x={253.5 + bayIndex * 29} y={y + 53} textAnchor="middle" className="rack-drive-label">{bay.label}</text></g>) : <><rect x="242" y={y + 34} width="230" height="32" rx="4" fill="url(#rackVent)" /><text x="357" y={y + 54} textAnchor="middle" className="rack-empty-label">LOCAL STORAGE NOT READ</text></>}
+            {isActiveIloTarget && bays.length ? bays.slice(0, 8).map((bay, bayIndex) => <g key={bay.id}><rect x={242 + bayIndex * 29} y={y + 34} width="23" height="32" rx="3" className={`rack-drive is-${bay.state}`} /><text x={253.5 + bayIndex * 29} y={y + 53} textAnchor="middle" className="rack-drive-label">{bay.label}</text></g>) : <><rect x="242" y={y + 34} width="230" height="32" rx="4" fill="url(#rackVent)" /><text x="357" y={y + 54} textAnchor="middle" className="rack-empty-label">{isActiveIloTarget ? "LOCAL STORAGE NOT READ" : "FIRST CONTACT REQUIRED"}</text></>}
           </>}
           {isNetapp && Array.from({ length: 24 }).map((_, bay) => <rect key={bay} x={158 + (bay % 12) * 27} y={y + 34 + Math.floor(bay / 12) * 22} width="21" height="16" rx="2" className="rack-shelf-bay" />)}
           {isEsxi && <><rect x="158" y={y + 32} width="190" height="15" rx="3" fill="url(#rackVent)" /><rect x="362" y={y + 33} width="22" height="12" rx="2" className="rack-port" /><rect x="390" y={y + 33} width="22" height="12" rx="2" className="rack-port" /><rect x="418" y={y + 33} width="22" height="12" rx="2" className="rack-port" /><circle cx="466" cy={y + 39} r="4" className="rack-host-led" /></>}
@@ -217,10 +236,16 @@ function RackInspector({ selected, word, bays, access, storage, onEdit, onAdd }:
   }
   const isIlo = selected.device_type === "ilo";
   const isEsxi = selected.device_type === "esxi_host";
-  const controllerName = recordText(storage?.controllers?.[0], "model", "name", "id") ?? "Not read yet";
+  const isActiveIloTarget = isIlo && Boolean(
+    selected.host?.trim().toLowerCase() &&
+    selected.host.trim().toLowerCase() === access?.host?.trim().toLowerCase()
+  );
+  const iloCredentialsReady = isActiveIloTarget && Boolean(access?.username_configured && access.password_configured);
+  const iloFirstContactComplete = isIlo && word === "Ready";
+  const controllerName = isActiveIloTarget ? recordText(storage?.controllers?.[0], "model", "name", "id") ?? "Not read yet" : "First contact required";
   const freeBays = bays.filter((bay) => bay.state === "free").length;
   const primaryRoute = devicePage(selected);
-  const typeLabel = selected.device_type.replace(/_/g, " ");
+  const typeLabel = isIlo ? "iLO" : selected.device_type.replace(/_/g, " ");
   const statusDetail = word === "Ready"
     ? "Current cached evidence confirms access."
     : word === "Problem"
@@ -233,16 +258,24 @@ function RackInspector({ selected, word, bays, access, storage, onEdit, onAdd }:
       <h2>{selected.display_name}</h2>
       <p className="rack-inspector-kind">{typeLabel} · {selected.dhcp_enabled ? "DHCP" : "static address"}</p>
       <p className="rack-evidence-note">{statusDetail}</p>
+      {isIlo && <div className={`rack-first-contact ${iloFirstContactComplete ? "is-complete" : ""}`}>
+        <span>{iloFirstContactComplete ? "First contact complete" : iloCredentialsReady ? "Step 3 of 3" : "Step 2 of 3"}</span>
+        <strong>{iloFirstContactComplete ? "This iLO is proven reachable" : iloCredentialsReady ? "Verify this exact iLO address" : "Add the iLO username and password"}</strong>
+        <small>{iloFirstContactComplete ? "You can now configure iLO and read local storage." : "The map stays unconfirmed until an explicit read-only check succeeds."}</small>
+      </div>}
       {isIlo && bays.length > 0 && <div className="rack-bay-legend"><span className="is-boot">Boot volume</span><span className="is-data">Data volume</span><span className="is-free">Free / ready</span><span className="is-unknown">Unclassified</span></div>}
       <dl className="rack-facts">
-        <div><dt>{selected.dhcp_enabled ? "Observed address" : "Address"}</dt><dd>{isIlo ? access?.host ?? selected.host ?? "Not set" : selected.host ?? (selected.dhcp_enabled ? "Not observed" : "Not set")}</dd></div>
+        <div><dt>{selected.dhcp_enabled ? "Observed address" : "Address"}</dt><dd>{selected.host ?? (selected.dhcp_enabled ? "Not observed" : "Not set")}</dd></div>
+        {isIlo && <div><dt>Credentials</dt><dd>{iloCredentialsReady ? "Saved locally" : "Still required"}</dd></div>}
         {isIlo && <div><dt>Controller</dt><dd>{controllerName}</dd></div>}
-        {isIlo && <div><dt>Local storage</dt><dd>{bays.length ? `${bays.length} bays · ${freeBays} free` : "Inventory not read"}</dd></div>}
+        {isIlo && <div><dt>Local storage</dt><dd>{isActiveIloTarget && bays.length ? `${bays.length} bays · ${freeBays} free` : isActiveIloTarget ? "Inventory not read" : "First contact required"}</dd></div>}
         <div><dt>Inventory updated</dt><dd>{new Date(selected.updated_at).toLocaleString()}</dd></div>
         <div><dt>Notes</dt><dd>{selected.notes || "None"}</dd></div>
       </dl>
       <div className="rack-actions">
-        <Link className="rack-action is-primary" to={primaryRoute}>Configure {typeLabel}</Link>
+        {isIlo && !isActiveIloTarget
+          ? <button className="rack-action is-primary" onClick={onEdit} type="button">Continue: set up this iLO</button>
+          : <Link className="rack-action is-primary" to={primaryRoute}>{isIlo && !iloFirstContactComplete ? iloCredentialsReady ? "Continue: verify iLO access" : "Continue: add iLO credentials" : `Configure ${typeLabel}`}</Link>}
         {isIlo && <Link className="rack-action" to="/storage">Local storage &amp; RAID</Link>}
         {isEsxi && <Link className="rack-action" to="/virtualization">ESXi installation &amp; config</Link>}
         <button className="rack-action" onClick={onEdit} type="button"><Pencil size={14} /> Edit rack details</button>
@@ -265,7 +298,12 @@ export function SimpleLabPage() {
   }, [selectedId, visibleKey]);
   const bays = rackBays(vsan);
   const selected = devices.find((device) => device.id === selectedId) ?? devices[0];
-  const selectedWord: RackWord = selected ? deviceWord(selected, providers) : "Not checked";
+  const selectedWord: RackWord = selected ? deviceWord(selected, providers, access) : "Not checked";
+  const editingIloIsActiveTarget = Boolean(
+    editingDevice?.device_type === "ilo" &&
+    editingDevice.host?.trim().toLowerCase() &&
+    editingDevice.host.trim().toLowerCase() === access?.host?.trim().toLowerCase()
+  );
   const profile = profiles?.active_profile;
   const mode = health?.operator_runtime_mode ?? health?.provider_mode ?? "unknown";
 
@@ -300,11 +338,11 @@ export function SimpleLabPage() {
           <header className="rack-workspace-head"><div><h1>Rack elevation</h1><p>Add equipment, select it, then configure it.</p></div><div className="rack-workspace-head-actions"><span className={`rack-runtime-badge ${mode.includes("readwrite") ? "is-write" : ""}`}>{mode.includes("readwrite") ? "Live lab · guarded writes" : "Live lab · read-only checks"}</span><button className="rack-head-add" onClick={() => setAddOpen(true)} type="button"><Plus size={15} /> Add equipment</button></div></header>
           {!loaded
             ? <div className="rack-loading"><Server size={24} /> Reading cached lab state…</div>
-            : <div className="rack-stage"><div className="rack-canvas"><RackElevationGraphic devices={devices} providers={providers} bays={bays} selectedId={selected?.id ?? ""} onSelect={setSelectedId} /></div><div className="rack-detail"><RackInspector selected={selected} word={selectedWord} bays={bays} access={access} storage={storage} onEdit={() => selected && setEditingDevice(selected)} onAdd={() => setAddOpen(true)} /><p className="rack-help">Add and edit changes only the visual inventory. Configuration opens the existing guarded device workspace. Green is shown only when a current provider check proves access.</p></div></div>}
+            : <div className="rack-stage"><div className="rack-canvas"><RackElevationGraphic devices={devices} providers={providers} access={access} bays={bays} selectedId={selected?.id ?? ""} onSelect={setSelectedId} /></div><div className="rack-detail"><RackInspector selected={selected} word={selectedWord} bays={bays} access={access} storage={storage} onEdit={() => selected && setEditingDevice(selected)} onAdd={() => setAddOpen(true)} /><p className="rack-help">Add and edit changes only the visual inventory. Configuration opens the existing guarded device workspace. Green is shown only when a current provider check proves access.</p></div></div>}
         </section>
       </div>
-      {addOpen && <DeviceInventoryForm onClose={() => setAddOpen(false)} onReload={reload} onSaved={(device) => setSelectedId(device.id)} submitLabel="Add to rack" />}
-      {editingDevice && <DeviceInventoryForm device={editingDevice} onClose={() => setEditingDevice(null)} onReload={reload} onSaved={(device) => setSelectedId(device.id)} submitLabel="Save rack details" />}
+      {addOpen && <DeviceInventoryForm defaultDeviceType="ilo" iloOnboarding onClose={() => setAddOpen(false)} onReload={reload} onSaved={(device) => setSelectedId(device.id)} submitLabel="Add to rack" />}
+      {editingDevice && <DeviceInventoryForm device={editingDevice} iloOnboarding initialIloAccessHost={access?.host} initialIloUsername={editingIloIsActiveTarget ? access?.username : null} iloCredentialsConfigured={editingIloIsActiveTarget && Boolean(access?.username_configured && access.password_configured)} onClose={() => setEditingDevice(null)} onReload={reload} onSaved={(device) => setSelectedId(device.id)} submitLabel="Save rack details" />}
     </main>
   );
 }
