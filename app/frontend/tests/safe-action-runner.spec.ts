@@ -3664,6 +3664,40 @@ test("rack workspace never turns stale provider evidence green and stays respons
   }
 });
 
+test("rack fails closed instead of showing an empty lab when the backend is disconnected", async ({ page }) => {
+  await page.route("**/health", (route) => route.fulfill({ status: 500, contentType: "text/plain", body: "Internal Server Error" }));
+  await page.route("**/api/v1/device-inventory", (route) => route.fulfill({ status: 500, contentType: "text/plain", body: "Internal Server Error" }));
+
+  await page.goto("/simple");
+
+  await expect(page.getByRole("alert")).toContainText("Backend disconnected");
+  await expect(page.getByRole("alert")).toContainText("Rack data has not been loaded");
+  await expect(page.getByRole("button", { name: "Add equipment" })).toBeDisabled();
+  await expect(page.getByText("Build your rack")).toHaveCount(0);
+  await expect(page.getByText("R1 · 0 devices")).toHaveCount(0);
+  await expect(page.getByText("Internal Server Error")).toHaveCount(0);
+});
+
+test("iLO save explains a backend disconnect instead of exposing an internal server error", async ({ page }) => {
+  await page.goto("/simple");
+  await page.getByRole("button", { name: "Add equipment" }).click();
+  await page.route("**/api/v1/device-inventory", (route) => {
+    if (route.request().method() === "POST") {
+      return route.fulfill({ status: 500, contentType: "text/plain", body: "Internal Server Error" });
+    }
+    return route.fallback();
+  });
+
+  await page.getByLabel("Device name").fill("Disconnected iLO");
+  await page.getByLabel("Current iLO DHCP address").fill("192.0.2.11");
+  await page.getByLabel("iLO username or UID").fill("Administrator");
+  await page.getByLabel("iLO password").fill("mock-only-password");
+  await page.getByRole("button", { name: "Save iLO and continue" }).click();
+
+  await expect(page.locator(".operator-feedback.error")).toHaveText("The Lab Builder backend is unavailable. Reconnect it, then try again.");
+  await expect(page.getByText("Internal Server Error")).toHaveCount(0);
+});
+
 test("rack iLO onboarding saves the DHCP target and credentials without probing it", async ({ page }) => {
   const writes: Array<{ method: string; path: string; payload: Record<string, unknown> }> = [];
   const hardwareChecks: string[] = [];

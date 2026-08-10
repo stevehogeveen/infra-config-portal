@@ -14558,3 +14558,33 @@ Review request for Claude/CXO: confirm this as the standard first-contact patter
 management endpoint: operator supplies the initial reachable address and credentials, saving is
 local-only, and a separate explicit read-only verification is required before the rack can turn
 green or expose device-derived configuration.
+
+## 2026-08-10T18:14:13Z — CODEX (iLO save failure traced to disconnected backend; rack now fails closed)
+
+Steve received plain `Internal Server Error` immediately after saving iLO first-contact details.
+The save contract itself was not the cause: the Vite session on `127.0.0.1:5175` was configured to
+proxy to backend port `8002`, but no backend process was listening. Vite returned a plain HTTP 500
+for `/health`, `/api/v1/device-inventory`, and iLO access settings. Rack compounded the failure by
+swallowing critical GET errors, displaying `0 devices`, and leaving `Add equipment` enabled.
+
+Operational recovery:
+
+- Restarted only the FastAPI backend on `127.0.0.1:8002` in the already-saved
+  `local-lab-readwrite` mode. Both direct health and the `5175` proxy now return OK.
+- Verified through the live UI that the Uplands kit, five inventory records, and rack evidence load
+  again. The rack badge now correctly reads `Live lab · guarded writes`; it previously preferred the
+  generic `operator_runtime_mode=real_lab` value over the authoritative provider mode and mislabeled
+  the same runtime as read-only.
+- Did not submit credentials, save inventory, run verification, probe iLO, or contact any hardware.
+
+Product fix:
+
+- Rack now treats health and device inventory as critical reads. If either fails, it shows a focused
+  `Backend disconnected` recovery state, marks rack/subnet/mode unavailable, disables Add equipment,
+  and offers Reconnect. It can no longer misrepresent a disconnected backend as an empty lab.
+- If the backend drops after a drawer is already open, a plain proxy 500 is translated to
+  `The Lab Builder backend is unavailable. Reconnect it, then try again.` instead of exposing
+  `Internal Server Error`.
+
+Verification: focused Playwright **5/5**, full Playwright **128/128**, component tests **2/2**, and
+`npm run build` passed. No safety boundary or hardware-write gate changed.

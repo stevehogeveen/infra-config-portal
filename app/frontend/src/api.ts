@@ -130,6 +130,9 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
 
 async function apiErrorFromResponse(response: Response): Promise<string> {
   const text = await response.text().catch(() => "");
+  if (response.status === 500 && text.trim().toLowerCase() === "internal server error") {
+    return "The Lab Builder backend is unavailable. Reconnect it, then try again.";
+  }
   if (!text.trim()) {
     return response.statusText || `Request failed with HTTP ${response.status}`;
   }

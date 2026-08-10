@@ -22163,6 +22163,14 @@ button.design-ilo-port:hover {
 .map-editor-form label.ilo-add-tls span { color: #496872; font-size: 11px; }
 .rack-help { color: #75909a; font-size: 11px; line-height: 1.55; margin: 18px 4px 0; }
 .rack-loading { align-items: center; color: #66828c; display: flex; gap: 12px; justify-content: center; min-height: 500px; }
+.rack-runtime-badge.is-disconnected { background: #fff1ee; color: #b13e2c; }
+.rack-head-add:disabled { cursor: not-allowed; opacity: .45; }
+.rack-disconnected { align-items: center; background: #fff8f5; border: 1px solid #efc7bd; border-radius: 16px; color: #6f3d34; display: flex; flex-direction: column; justify-content: center; margin: 34px; min-height: 420px; padding: 36px; text-align: center; }
+.rack-disconnected svg { color: #c6533f; }
+.rack-disconnected h2 { color: #492922; font-size: 23px; margin: 14px 0 4px; }
+.rack-disconnected p { font-size: 13px; line-height: 1.55; max-width: 440px; }
+.rack-disconnected button { background: #18323b; border: 0; border-radius: 9px; color: #fff; cursor: pointer; font-weight: 800; margin-top: 12px; padding: 11px 22px; }
+.rack-disconnected small { color: #8a645b; line-height: 1.5; margin-top: 14px; max-width: 500px; }
 
 @media (max-width: 1000px) {
   .rack-stage { grid-template-columns: 1fr; }

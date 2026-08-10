@@ -24,19 +24,35 @@ type SimpleData = {
   profiles: LabProfileList | null;
   health: Awaited<ReturnType<typeof api.health>> | null;
   loaded: boolean;
+  loadError: string | null;
 };
 
 async function readSimpleData(): Promise<SimpleData> {
-  const [devices, providers, access, storage, vsan, profiles, health] = await Promise.all([
-    api.deviceInventory().catch(() => [] as DeviceInventoryItem[]),
+  const [healthResult, devicesResult] = await Promise.allSettled([
+    api.health(),
+    api.deviceInventory()
+  ]);
+  if (healthResult.status === "rejected" || devicesResult.status === "rejected") {
+    return {
+      devices: [],
+      providers: [],
+      access: null,
+      storage: null,
+      vsan: null,
+      profiles: null,
+      health: healthResult.status === "fulfilled" ? healthResult.value : null,
+      loaded: true,
+      loadError: "Lab Builder cannot reach its local backend. Rack data has not been loaded."
+    };
+  }
+  const [providers, access, storage, vsan, profiles] = await Promise.all([
     api.providers().catch(() => [] as ProviderStatus[]),
     api.iloAccessSettings().catch(() => null),
     api.hpeStorageDiscovery().catch(() => null),
     api.hpeVsanReadiness().catch(() => null),
-    api.labProfiles().catch(() => null),
-    api.health().catch(() => null)
+    api.labProfiles().catch(() => null)
   ]);
-  return { devices, providers, access, storage, vsan, profiles, health, loaded: true };
+  return { devices: devicesResult.value, providers, access, storage, vsan, profiles, health: healthResult.value, loaded: true, loadError: null };
 }
 
 function useSimpleData(): SimpleData & { reload: () => Promise<void> } {
@@ -48,10 +64,12 @@ function useSimpleData(): SimpleData & { reload: () => Promise<void> } {
     vsan: null,
     profiles: null,
     health: null,
-    loaded: false
+    loaded: false,
+    loadError: null
   });
 
   const reload = useCallback(async () => {
+    setData((current) => ({ ...current, loaded: false, loadError: null }));
     setData(await readSimpleData());
   }, []);
 
@@ -286,7 +304,7 @@ function RackInspector({ selected, word, bays, access, storage, onEdit, onAdd }:
 }
 
 export function SimpleLabPage() {
-  const { devices, providers, access, storage, vsan, profiles, health, loaded, reload } = useSimpleData();
+  const { devices, providers, access, storage, vsan, profiles, health, loaded, loadError, reload } = useSimpleData();
   const visibleIds = devices.map((device) => device.id);
   const visibleKey = visibleIds.join("|");
   const [selectedId, setSelectedId] = useState("");
@@ -305,7 +323,7 @@ export function SimpleLabPage() {
     editingDevice.host.trim().toLowerCase() === access?.host?.trim().toLowerCase()
   );
   const profile = profiles?.active_profile;
-  const mode = health?.operator_runtime_mode ?? health?.provider_mode ?? "unknown";
+  const mode = health?.provider_mode ?? health?.operator_runtime_mode ?? "unknown";
 
   return (
     <main className="rack-light-page" aria-label="Rack elevation">
@@ -328,17 +346,19 @@ export function SimpleLabPage() {
             <Link to="/overview"><Settings2 size={17} /> Detailed setup</Link>
           </nav>
           <dl className="rack-rail-facts">
-            <div><dt>Subnet</dt><dd>{profile?.subnet_cidr ?? "Not set"}</dd></div>
-            <div><dt>Rack</dt><dd>R1 · {devices.length} devices</dd></div>
-            <div><dt>Bays free</dt><dd>{bays.length ? `${bays.filter((bay) => bay.state === "free").length}/${bays.length}` : "Not read"}</dd></div>
-            <div><dt>Mode</dt><dd>{mode}</dd></div>
+            <div><dt>Subnet</dt><dd>{loadError ? "Unavailable" : profile?.subnet_cidr ?? "Not set"}</dd></div>
+            <div><dt>Rack</dt><dd>{loadError ? "Unavailable" : `R1 · ${devices.length} devices`}</dd></div>
+            <div><dt>Bays free</dt><dd>{loadError ? "Unavailable" : bays.length ? `${bays.filter((bay) => bay.state === "free").length}/${bays.length}` : "Not read"}</dd></div>
+            <div><dt>Mode</dt><dd>{loadError ? "Disconnected" : mode}</dd></div>
           </dl>
         </aside>
         <section className="rack-workspace">
-          <header className="rack-workspace-head"><div><h1>Rack elevation</h1><p>Add equipment, select it, then configure it.</p></div><div className="rack-workspace-head-actions"><span className={`rack-runtime-badge ${mode.includes("readwrite") ? "is-write" : ""}`}>{mode.includes("readwrite") ? "Live lab · guarded writes" : "Live lab · read-only checks"}</span><button className="rack-head-add" onClick={() => setAddOpen(true)} type="button"><Plus size={15} /> Add equipment</button></div></header>
+          <header className="rack-workspace-head"><div><h1>Rack elevation</h1><p>Add equipment, select it, then configure it.</p></div><div className="rack-workspace-head-actions"><span className={`rack-runtime-badge ${loadError ? "is-disconnected" : mode.includes("readwrite") ? "is-write" : ""}`}>{loadError ? "Backend disconnected" : mode.includes("readwrite") ? "Live lab · guarded writes" : "Live lab · read-only checks"}</span><button className="rack-head-add" disabled={Boolean(loadError)} onClick={() => setAddOpen(true)} type="button"><Plus size={15} /> Add equipment</button></div></header>
           {!loaded
             ? <div className="rack-loading"><Server size={24} /> Reading cached lab state…</div>
-            : <div className="rack-stage"><div className="rack-canvas"><RackElevationGraphic devices={devices} providers={providers} access={access} bays={bays} selectedId={selected?.id ?? ""} onSelect={setSelectedId} /></div><div className="rack-detail"><RackInspector selected={selected} word={selectedWord} bays={bays} access={access} storage={storage} onEdit={() => selected && setEditingDevice(selected)} onAdd={() => setAddOpen(true)} /><p className="rack-help">Add and edit changes only the visual inventory. Configuration opens the existing guarded device workspace. Green is shown only when a current provider check proves access.</p></div></div>}
+            : loadError
+              ? <div className="rack-disconnected" role="alert"><Server size={30} /><h2>Backend disconnected</h2><p>{loadError}</p><button onClick={() => void reload()} type="button">Reconnect</button><small>Adding or changing equipment is paused so a connection failure cannot look like an empty rack or a successful save.</small></div>
+              : <div className="rack-stage"><div className="rack-canvas"><RackElevationGraphic devices={devices} providers={providers} access={access} bays={bays} selectedId={selected?.id ?? ""} onSelect={setSelectedId} /></div><div className="rack-detail"><RackInspector selected={selected} word={selectedWord} bays={bays} access={access} storage={storage} onEdit={() => selected && setEditingDevice(selected)} onAdd={() => setAddOpen(true)} /><p className="rack-help">Add and edit changes only the visual inventory. Configuration opens the existing guarded device workspace. Green is shown only when a current provider check proves access.</p></div></div>}
         </section>
       </div>
       {addOpen && <DeviceInventoryForm defaultDeviceType="ilo" iloOnboarding onClose={() => setAddOpen(false)} onReload={reload} onSaved={(device) => setSelectedId(device.id)} submitLabel="Add to rack" />}
