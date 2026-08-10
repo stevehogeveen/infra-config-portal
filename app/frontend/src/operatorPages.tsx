@@ -1495,6 +1495,93 @@ type ServerDetailSectionId = "setup" | "ilo" | "checks" | "hardware";
 
 type RackIloTab = "access" | "settings" | "checks";
 
+export function RackDeviceConfigurator({
+  activeProfile,
+  device,
+  health,
+  onClose,
+  onReload
+}: {
+  activeProfile: LabProfile | null;
+  device: DeviceInventoryItem;
+  health?: HealthLike;
+  onClose: () => void;
+  onReload: () => Promise<void> | void;
+}) {
+  const address = activeAddressPlan(activeProfile);
+  const features = activeProfile?.features ?? null;
+  const partId = rackInlineDesignPart(device, activeProfile);
+  const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
+  const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  async function loadInlineData() {
+    setLoading(true);
+    setError("");
+    try {
+      const [actions, firmware] = await Promise.all([
+        safeApi(api.workflowActions, [] as WorkflowAction[]),
+        safeApi(api.firmwareSummary, [] as FirmwareSummary[])
+      ]);
+      setWorkflowActions(Array.isArray(actions) ? actions : []);
+      setFirmwareSummaries(Array.isArray(firmware) ? firmware : []);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function reloadInlineData() {
+    await onReload();
+    await loadInlineData();
+  }
+
+  useEffect(() => {
+    void loadInlineData();
+  }, [activeProfile?.id, device.id]);
+
+  return (
+    <aside className="rack-inline-config rack-inline-device-config" aria-label={`Configure ${device.display_name} beside rack`}>
+      <div className="rack-inline-config-head">
+        <div>
+          <p className="operator-kicker">Configure beside rack</p>
+          <h2>{device.display_name}</h2>
+          <span>{rackInlineDeviceSubtitle(device, address)}</span>
+        </div>
+        <button onClick={onClose} type="button">Back to device</button>
+      </div>
+      <Feedback loading={loading} error={error} />
+      <div className="rack-inline-config-body">
+        {partId ? (
+          <LabDesignComposer
+            activeProfile={activeProfile}
+            address={address}
+            features={features}
+            firmwareSummaries={firmwareSummaries}
+            health={health}
+            initialSelectedDevice={partId}
+            onReload={reloadInlineData}
+            subnetState={topologySubnetState(address.subnet, health)}
+            workspaceNodeTone="unknown"
+            workspaceOnly
+            workflowActions={workflowActions}
+          />
+        ) : (
+          <p className="operator-action-message">
+            This custom device has rack inventory only for now. Use Detailed setup for the older generic editor.
+          </p>
+        )}
+      </div>
+      <div className="rack-inline-config-links">
+        <Link to={devicePageForRackInline(device)}>Open detailed workspace</Link>
+        <Link to="/overview">Detailed setup</Link>
+      </div>
+    </aside>
+  );
+}
+
 export function RackIloConfigurator({
   activeProfile,
   onClose,
@@ -1562,6 +1649,34 @@ export function RackIloConfigurator({
       <div className="rack-inline-config-links"><Link to="/storage">Local storage &amp; RAID</Link><Link to="/server">Detailed server workspace</Link></div>
     </aside>
   );
+}
+
+function rackInlineDesignPart(device: DeviceInventoryItem, activeProfile: LabProfile | null): DesignPartId | null {
+  if (device.device_type === "cisco_switch") return "switch";
+  if (device.device_type === "netapp") return "netapp";
+  if (device.device_type === "vcenter") return "vcenter";
+  if (device.device_type === "esxi_host" || device.device_type === "server") {
+    const model = asString(activeProfile?.devices?.server_model).toLowerCase();
+    return model === "gen10plus" || model === "gen10+" ? "server-gen10plus" : "server-gen10";
+  }
+  return null;
+}
+
+function rackInlineDeviceSubtitle(device: DeviceInventoryItem, address: LabAddressPlan): string {
+  if (device.device_type === "cisco_switch") return `Cisco switch / ${displayAddress(device.host || address.cisco_management)}`;
+  if (device.device_type === "esxi_host") return `ESXi host / ${displayAddress(device.host || address.esxi_management)}`;
+  if (device.device_type === "netapp") return `NetApp ONTAP / ${displayAddress(device.host || address.netapp_cluster_mgmt)}`;
+  if (device.device_type === "vcenter") return `vCenter / ${displayAddress(device.host)}`;
+  if (device.device_type === "server") return `Server / ${displayAddress(device.host || address.ilo || address.esxi_management)}`;
+  return `${device.device_type.replace(/_/g, " ")} / ${displayAddress(device.host)}`;
+}
+
+function devicePageForRackInline(device: DeviceInventoryItem): string {
+  if (device.device_type === "cisco_switch") return "/network";
+  if (device.device_type === "netapp") return "/storage";
+  if (device.device_type === "vcenter" || device.device_type === "esxi_host") return "/virtualization";
+  if (device.device_type === "server" || device.device_type === "ilo") return "/server";
+  return "/overview";
 }
 
 function serverComputeAccessCardModel({

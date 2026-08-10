@@ -3660,6 +3660,31 @@ test("rack keeps the server visible while essential iLO controls open beside it"
   expect(mutations).toEqual([]);
 });
 
+test("rack keeps Cisco setup beside the rack without running hardware checks", async ({ page }) => {
+  const mutations: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "GET") mutations.push(`${request.method()} ${new URL(request.url()).pathname}`);
+  });
+
+  await page.goto("/simple");
+  await page.locator(".rack-unit[aria-label='Open Cisco Switch']").click();
+  await page.getByRole("button", { name: "Configure Cisco switch beside rack" }).click();
+
+  const configurator = page.getByLabel("Configure Cisco Switch beside rack");
+  await expect(page.locator(".rack-light-svg")).toBeVisible();
+  await expect(configurator).toBeVisible();
+  await expect(configurator.getByLabel("Cisco switch workspace")).toBeVisible();
+  await expect(configurator.getByLabel("Cisco switch main setup fields")).toContainText("Management IP");
+  await expect(configurator.getByLabel("Cisco console first contact")).toBeVisible();
+  await expect(configurator.getByLabel("Cisco switch visual setup editor")).toBeVisible();
+  await expect(configurator.getByRole("button", { name: "Run Cisco read-only check" })).toBeVisible();
+  await expect(configurator.getByRole("button", { name: /Apply Bootstrap|Reset|Rebuild|Factory reset|Firmware upgrade/i })).toHaveCount(0);
+
+  await configurator.getByRole("button", { name: "Back to device" }).click();
+  await expect(page.locator(".rack-inspector").getByRole("heading", { name: "Cisco Switch" })).toBeVisible();
+  expect(mutations).toEqual([]);
+});
+
 test("rack workspace never turns stale provider evidence green and stays responsive", async ({ page }) => {
   const staleProviders = providerStatuses().map((provider) => ({
     ...provider,
@@ -3764,7 +3789,7 @@ test("rack iLO onboarding saves the DHCP target and credentials without probing 
   expect(hardwareChecks).toEqual([]);
 });
 
-test("rack home adds and edits equipment before opening its existing configuration workspace", async ({ page }) => {
+test("rack home adds and edits equipment before opening rack-side configuration", async ({ page }) => {
   const inventoryWrites: string[] = [];
   page.on("request", (request) => {
     const path = new URL(request.url()).pathname;
@@ -3797,7 +3822,10 @@ test("rack home adds and edits equipment before opening its existing configurati
 
   await expect(page.locator(".rack-unit[aria-label='Open Server 2 - DL380']")).toBeVisible();
   await expect(page.locator(".rack-inspector")).toContainText("192.168.1.213");
-  await expect(page.locator(".rack-inspector").getByRole("link", { name: "Configure server" })).toHaveAttribute("href", "/server");
+  await expect(page.locator(".rack-inspector").getByRole("button", { name: "Configure server beside rack" })).toBeVisible();
+  await page.locator(".rack-inspector").getByRole("button", { name: "Configure server beside rack" }).click();
+  await expect(page.getByLabel("Configure Server 2 - DL380 beside rack")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open detailed workspace" })).toHaveAttribute("href", "/server");
   expect(inventoryWrites).toEqual([
     "POST /api/v1/device-inventory",
     "PATCH /api/v1/device-inventory/custom-5"

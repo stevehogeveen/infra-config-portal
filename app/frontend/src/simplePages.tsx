@@ -3,7 +3,7 @@ import { Layers3, ListChecks, Pencil, Plus, Server, Settings2 } from "lucide-rea
 import { Link } from "react-router-dom";
 import { api } from "./api";
 import { DeviceInventoryForm } from "./components/DeviceInventoryForm";
-import { RackIloConfigurator } from "./operatorPages";
+import { RackDeviceConfigurator, RackIloConfigurator } from "./operatorPages";
 import type {
   DeviceInventoryItem,
   HpeStorageDiscovery,
@@ -129,6 +129,19 @@ function devicePage(device: DeviceInventoryItem): string {
   if (device.device_type === "vcenter") return "/virtualization";
   if (device.device_type === "server") return "/server";
   return "/overview";
+}
+
+function rackConfigAvailable(device: DeviceInventoryItem): boolean {
+  return ["cisco_switch", "esxi_host", "netapp", "vcenter", "server"].includes(device.device_type);
+}
+
+function rackConfigLabel(device: DeviceInventoryItem): string {
+  if (device.device_type === "cisco_switch") return "Cisco switch";
+  if (device.device_type === "esxi_host") return "ESXi host";
+  if (device.device_type === "netapp") return "NetApp";
+  if (device.device_type === "vcenter") return "vCenter";
+  if (device.device_type === "server") return "server";
+  return device.device_type.replace(/_/g, " ");
 }
 
 type RackWord = "Ready" | "Problem" | "Not checked";
@@ -266,6 +279,7 @@ function RackInspector({ selected, word, bays, access, storage, onEdit, onAdd, o
   const freeBays = bays.filter((bay) => bay.state === "free").length;
   const primaryRoute = devicePage(selected);
   const typeLabel = isIlo ? "iLO" : selected.device_type.replace(/_/g, " ");
+  const canConfigureBesideRack = rackConfigAvailable(selected);
   const statusDetail = word === "Ready"
     ? "Current cached evidence confirms access."
     : word === "Problem"
@@ -297,6 +311,8 @@ function RackInspector({ selected, word, bays, access, storage, onEdit, onAdd, o
           ? <button className="rack-action is-primary" onClick={onConfigure} type="button">Configure iLO beside rack</button>
           : isIlo && !isActiveIloTarget
           ? <button className="rack-action is-primary" onClick={onEdit} type="button">Continue: set up this iLO</button>
+          : canConfigureBesideRack
+          ? <button className="rack-action is-primary" onClick={onConfigure} type="button">{`Configure ${rackConfigLabel(selected)} beside rack`}</button>
           : <Link className="rack-action is-primary" to={primaryRoute}>{`Configure ${typeLabel}`}</Link>}
         {isIlo && <Link className="rack-action" to="/storage">Local storage &amp; RAID</Link>}
         {isEsxi && <Link className="rack-action" to="/virtualization">ESXi installation &amp; config</Link>}
@@ -357,7 +373,7 @@ export function SimpleLabPage() {
             ? <div className="rack-loading"><Server size={24} /> Reading cached lab state…</div>
             : loadError
               ? <div className="rack-disconnected" role="alert"><Server size={30} /><h2>Backend disconnected</h2><p>{loadError}</p><button onClick={() => void reload()} type="button">Reconnect</button><small>Adding or changing equipment is paused so a connection failure cannot look like an empty rack or a successful save.</small></div>
-              : <div className={`rack-stage ${configuringId ? "is-configuring" : ""}`}><div className="rack-canvas"><RackElevationGraphic devices={devices} providers={providers} access={access} bays={bays} selectedId={selected?.id ?? ""} onSelect={(id) => { setSelectedId(id); setConfiguringId(""); }} /></div><div className="rack-detail">{configuringId && selected?.id === configuringId && selected.device_type === "ilo" ? <RackIloConfigurator activeProfile={profile ?? null} onClose={() => setConfiguringId("")} onReload={reload} /> : <><RackInspector selected={selected} word={selectedWord} bays={bays} access={access} storage={storage} onEdit={() => selected && setEditingDevice(selected)} onAdd={() => setAddOpen(true)} onConfigure={() => selected && setConfiguringId(selected.id)} /><p className="rack-help">Select a device, then configure its essential settings beside the rack. Green is shown only when a current provider check proves access.</p></>}</div></div>}
+              : <div className={`rack-stage ${configuringId ? "is-configuring" : ""}`}><div className="rack-canvas"><RackElevationGraphic devices={devices} providers={providers} access={access} bays={bays} selectedId={selected?.id ?? ""} onSelect={(id) => { setSelectedId(id); setConfiguringId(""); }} /></div><div className="rack-detail">{configuringId && selected?.id === configuringId && selected.device_type === "ilo" ? <RackIloConfigurator activeProfile={profile ?? null} onClose={() => setConfiguringId("")} onReload={reload} /> : configuringId && selected?.id === configuringId && rackConfigAvailable(selected) ? <RackDeviceConfigurator activeProfile={profile ?? null} device={selected} health={health} onClose={() => setConfiguringId("")} onReload={reload} /> : <><RackInspector selected={selected} word={selectedWord} bays={bays} access={access} storage={storage} onEdit={() => selected && setEditingDevice(selected)} onAdd={() => setAddOpen(true)} onConfigure={() => selected && setConfiguringId(selected.id)} /><p className="rack-help">Select a device, then configure its essential settings beside the rack. Green is shown only when a current provider check proves access.</p></>}</div></div>}
         </section>
       </div>
       {addOpen && <DeviceInventoryForm defaultDeviceType="ilo" iloOnboarding onClose={() => setAddOpen(false)} onReload={reload} onSaved={(device) => setSelectedId(device.id)} submitLabel="Add to rack" />}

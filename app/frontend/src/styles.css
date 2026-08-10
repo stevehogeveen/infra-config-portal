@@ -22195,6 +22195,34 @@ button.design-ilo-port:hover {
 .rack-inline-config-body .map-ilo-access-actions { align-items: stretch; display: grid; grid-template-columns: 1fr; }
 .rack-inline-config-body .map-ilo-access-actions button,
 .rack-inline-config-body .map-ilo-access-actions a { text-align: center; width: 100%; }
+.rack-inline-config-body .lab-design-composer.is-workspace-only,
+.rack-inline-config-body .design-visual-workbench { display: block; width: 100%; }
+.rack-inline-config-body .design-device-workspace { border: 0; box-shadow: none; gap: 12px; min-height: 0; padding: 0; }
+.rack-inline-config-body .design-device-identity { border-radius: 12px; grid-template-columns: 1fr; padding: 12px; }
+.rack-inline-config-body .design-device-identity-main { gap: 10px; grid-template-columns: 50px minmax(0, 1fr); }
+.rack-inline-config-body .design-device-identity-main .topology-industry-symbol { height: 50px; width: 50px; }
+.rack-inline-config-body .design-device-identity-main .topology-industry-symbol svg { height: 30px; width: 30px; }
+.rack-inline-config-body .design-device-identity h3 { font-size: 20px; }
+.rack-inline-config-body .design-device-state-stack { grid-template-columns: 1fr; }
+.rack-inline-config-body .design-device-primary-action,
+.rack-inline-config-body .design-device-setting-rows,
+.rack-inline-config-body .design-element-assignment-grid,
+.rack-inline-config-body .network-workspace-evidence-grid,
+.rack-inline-config-body .network-workspace-action-buttons,
+.rack-inline-config-body .design-device-action-list,
+.rack-inline-config-body .design-readiness-list > div,
+.rack-inline-config-body .design-device-credential-grid { grid-template-columns: 1fr; }
+.rack-inline-config-body .design-device-primary-action .design-plan-action,
+.rack-inline-config-body .design-plan-action,
+.rack-inline-config-body .design-plan-secondary { text-align: center; width: 100%; }
+.rack-inline-config-body .design-device-hero { min-height: 98px; padding: 10px; }
+.rack-inline-config-body .design-workspace-details,
+.rack-inline-config-body .design-device-credential-card,
+.rack-inline-config-body .design-device-live-editor,
+.rack-inline-config-body .design-workspace-edit-settings,
+.rack-inline-config-body .network-workspace-controls { border-radius: 12px; }
+.rack-inline-config-body .cisco-console-candidates { grid-template-columns: 1fr; }
+.rack-inline-config-body .design-terminal-output { max-height: 180px; overflow: auto; }
 .rack-inline-config-links { border-top: 1px solid var(--rack-line); display: flex; gap: 14px; justify-content: center; padding: 12px 16px; }
 .rack-inline-config-links a { color: #0b777b; font-size: 10px; font-weight: 800; text-decoration: none; }
 

@@ -14629,3 +14629,49 @@ Review request for Claude/CXO: approve **rack + contextual right-hand editor** a
 interaction for the remaining devices. Recommended next order is Cisco switch, ESXi, NetApp, then
 vCenter; local storage should remain an iLO/server offshoot and receive the graphical drive/RAID
 editor in this same right-hand space rather than becoming another navigation page.
+
+## 2026-08-10T15:34:51-04:00 — CODEX (Claude-sleeping continuation: rack-side configuration generalized)
+
+Steve asked that we not carry the old standalone-page clutter forward: selecting a physical device in
+the rack should keep the rack visible and put the useful editing choices beside it. Claude was not
+available, so I picked up the pending device-configuration continuation locally.
+
+This slice extends the rack-side configuration rule beyond the specialized iLO panel:
+
+- Cisco, ESXi/server-style records, NetApp, vCenter, and generic server inventory records now open a
+  **Configure <device> beside rack** panel from the Rack inspector instead of using the primary button
+  to jump away to `/network`, `/storage`, `/virtualization`, or `/server`.
+- The new generic rack panel reuses the existing canonical device composer, lab-profile draft save
+  path, console identity panel, visual faceplate/port/bay planner, credential-reference cards, and
+  read-only action runner. Backend APIs were not replaced or bypassed.
+- iLO keeps the dedicated first-contact/access/settings/checks panel from the prior slice because it
+  has separate local credential/access-settings semantics.
+- Detailed legacy routes remain available as fallback links inside the panel. No backend
+  functionality was removed.
+- The rack-side layout CSS now compacts the existing composer into the right-hand panel: one-column
+  identity/state, main setup fields, console first contact, physical layout, credential references,
+  and read-only evidence sections without horizontal overflow pressure.
+
+Safety and boundaries:
+
+- Opening any rack-side device panel performs GET/read loading only. It does not run Cisco console
+  verification, SSH probes, firmware checks, storage reads, RAID actions, ESXi actions, NetApp
+  actions, vCenter actions, or any guarded write.
+- Cisco still exposes only existing read-only checks from this surface; `cisco.apply-bootstrap` and
+  destructive/live-write gates remain outside the rack panel.
+- RAID apply/reset, factory reset, rebuild, firmware apply, power/virtual media, NetApp/iSCSI writes,
+  and ESXi install/config writes were not touched.
+
+Verification:
+
+- `npm run build` passed.
+- Focused rack regression after final cleanup: **3/3 passed** (`rack keeps the server visible while
+  essential iLO controls`, new Cisco rack-side no-mutation test, and add/edit rack-side config).
+- Component tests: **2/2 passed**.
+- Final full frontend Playwright after the final cleanup: **130/130 passed** in 5.5 minutes.
+
+Review request for Claude/CXO: confirm that the generic rack-side wrapper is acceptable as the bridge
+for Cisco/NetApp/vCenter/ESXi while we keep simplifying the individual device contents. My suggested
+next refinement is not another page; it is to split ESXi from the server/local-storage content more
+cleanly inside this rack-side panel, then give local storage the graphical RAID editor as its own
+iLO/server offshoot beside the rack.
