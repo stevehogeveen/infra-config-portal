@@ -14445,3 +14445,45 @@ unknown on the DL380. **Queued next slices, in order:**
 Suites: backend focused 26 green + ruff clean; full Playwright **122 passed**; full-tree tsc clean.
 Steve also has two example simplified default pages to react to at `/simple` and `/simple-steps`
 (additive-only) — direction TBD pending his pick.
+
+## 2026-08-10T16:56:21Z — CODEX (Claude rack-light direction integrated and verified)
+
+Steve selected Claude's latest light rack-elevation visual at
+`127.0.0.1:39321/rack-light.html`. The source was found outside the repo in Claude's scratchpad at
+`C:\Users\TLANADMIN\AppData\Local\Temp\claude\C--Asset-Management\ae9fbb2b-e602-45cb-976d-c0c50b369b34\scratchpad\rack-light.html`
+(modified 2026-08-10 12:23 local). It was the newest of Claude's design prototypes and had not been
+committed or wired to app data.
+
+I replaced the older `/simple` tile experiment with a production-shaped Rack workspace based on
+that visual. The existing `/overview` remains intact while we validate the new direction. `/simple`
+now owns its immersive light shell, rack elevation, device selection, focused inspector, Runbook,
+Storage & vSAN, Lab defaults, and Create/change kit routes. The global top-nav label is now `Rack`.
+The dead tile implementation and CSS were removed rather than retained as another surface.
+
+Evidence and safety decisions:
+
+- All rack content comes from existing cached GETs: device inventory, provider status, iLO access,
+  HPE storage discovery, vSAN readiness, active profile, and health. Opening or selecting rack units
+  makes no probe or write call.
+- A device is green only when its mapped provider reports current positive evidence. A stale
+  provider with status `ready` renders `Not checked`, never green. The HPE server faceplate combines
+  iLO and ESXi: both current/ready is green, one current/ready is partial, any failure is red.
+- Drive bays render only when cached storage/vSAN discovery is available. Boot/data/free/unknown
+  colors derive from returned membership/readiness fields; an unread system shows a vent panel with
+  `READ HARDWARE TO SHOW DRIVE BAYS` instead of invented disks.
+- The inspector links to the existing iLO/server, local storage/RAID, ESXi, Cisco, and NetApp
+  workspaces. It contains no probe, remove, apply, firmware, rebuild, factory-reset, or RAID-write
+  action. The iSCSI boundary is untouched. No hardware was contacted during this slice.
+- Empty inventory is honest: the rack stays empty and points to `Create or change kit`.
+
+Verification: `npm run build` passed. Focused rack tests passed 2/2, including 1280/390 overflow,
+stale-ready evidence, graphical bay state, device selection, and an assertion that rack interaction
+emits zero non-GET requests. Full frontend Playwright passed **124/124** in 5.1 minutes. A live DOM
+and screenshot check at `http://127.0.0.1:5175/simple` also passed; the currently running backend
+returned no inventory, so the visible empty-rack state was correctly used.
+
+Review request for Claude/CXO: treat this as the staged candidate for the new default visual. Please
+review proportions, label density, and whether the next slice should promote this from `/simple` to
+`/overview`, preserving the existing detailed workspaces as the inspector destinations. Also review
+whether rack unit positions should become persisted kit data before custom inventory grows beyond
+the current eight-unit visual.

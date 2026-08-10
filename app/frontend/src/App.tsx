@@ -853,10 +853,12 @@ function AppShell({
   health: HealthStatus | null;
 }) {
   const { uiMode } = useUiMode();
+  const location = useLocation();
+  const isRackWorkspace = location.pathname === "/simple";
   return (
-    <div className={`app-shell app-shell-${uiMode}`}>
-      <ShellTopNav />
-      <main className="content">
+    <div className={`app-shell app-shell-${uiMode} ${isRackWorkspace ? "app-shell-rack" : ""}`}>
+      {!isRackWorkspace && <ShellTopNav />}
+      <main className={`content ${isRackWorkspace ? "content-rack" : ""}`}>
         {health?.dev_test_banner && <DevTestBanner message={health.dev_test_banner} />}
         {children}
       </main>
@@ -1197,7 +1199,7 @@ function ShellTopNav() {
       </Link>
       <nav className="top-nav" aria-label="Primary navigation">
         <NavLink to="/overview" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Overview</NavLink>
-        <NavLink to="/simple" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Simple</NavLink>
+        <NavLink to="/simple" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Rack</NavLink>
         <NavLink to="/simple-steps" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Runbook</NavLink>
         <NavLink to="/setup/defaults" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Lab Defaults</NavLink>
         <NavLink to="/firmware-upgrades" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Firmware</NavLink>

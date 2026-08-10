@@ -332,7 +332,7 @@ async function expectResponsiveShell(page: Page, path: string, viewport: { width
   });
   expect(metrics.width, `${path} document overflow at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
   expect(metrics.bodyWidth, `${path} body overflow at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
-  expect(metrics.navLinkCount, `${path} keeps all primary destinations at ${viewport.width}px`).toBe(5);
+  expect(metrics.navLinkCount, `${path} keeps all primary destinations at ${viewport.width}px`).toBe(7);
   expect(metrics.navLeft, `${path} primary nav starts inside the viewport at ${viewport.width}px`).toBeGreaterThanOrEqual(-1);
   expect(metrics.navRight, `${path} primary nav ends inside the viewport at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
   if (viewport.width >= 1280) {
@@ -356,7 +356,7 @@ test("renders the map-first operator header and pages", async ({ page }) => {
   await expect(header.getByRole("link", { name: "Lab Builder overview" })).toContainText("Lab Builder");
   await expect(header.getByRole("link", { name: "Lab Builder overview" })).toContainText("Operator");
   const primaryNavigation = header.getByRole("navigation", { name: "Primary navigation" });
-  await expect(primaryNavigation.locator("a")).toHaveText(["Overview", "Simple", "Runbook", "Lab Defaults", "Firmware", "Run Center", "Reports"]);
+  await expect(primaryNavigation.locator("a")).toHaveText(["Overview", "Rack", "Runbook", "Lab Defaults", "Firmware", "Run Center", "Reports"]);
   await expect(primaryNavigation.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/overview");
   await expect(primaryNavigation.getByRole("link", { name: "Lab Defaults" })).toHaveAttribute("href", "/setup/defaults");
   await expect(primaryNavigation.getByRole("link", { name: "Firmware" })).toHaveAttribute("href", "/firmware-upgrades");
@@ -3616,18 +3616,51 @@ test("DHCP inventory devices show observed addresses as read-only evidence", asy
   await expect(page.getByText("No address observed yet · DHCP", { exact: true })).toBeVisible();
 });
 
-test("simplified example pages are reachable from the nav and render", async ({ page }) => {
+test("rack workspace and runbook are reachable from the nav and render", async ({ page }) => {
+  const mutations: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "GET") mutations.push(`${request.method()} ${new URL(request.url()).pathname}`);
+  });
   await page.goto("/overview");
   const nav = page.getByRole("banner", { name: "Application header" })
     .getByRole("navigation", { name: "Primary navigation" });
 
-  await nav.getByRole("link", { name: "Simple" }).click();
-  await expect(page.getByRole("heading", { name: "Your lab" })).toBeVisible();
-  await expect(page.locator(".simple-tile").first()).toBeVisible();
+  await nav.getByRole("link", { name: "Rack" }).click();
+  await expect(page.getByRole("heading", { name: "Rack elevation" })).toBeVisible();
+  await expect(page.locator(".rack-light-svg")).toBeVisible();
+  await expect(page.getByRole("banner", { name: "Application header" })).toHaveCount(0);
+  await expect(page.getByText("Green is shown only when a current provider check proves access.")).toBeVisible();
+  await expect(page.locator(".rack-drive")).toHaveCount(8);
+  await expect(page.locator(".rack-drive.is-free")).toHaveCount(6);
+  await page.locator(".rack-unit[aria-label='Open Cisco Switch']").click();
+  await expect(page.locator(".rack-inspector").getByRole("heading", { name: "Cisco Switch" })).toBeVisible();
+  await expect(page.locator(".rack-inspector")).toContainText("192.168.1.204");
+  await expect(page.getByText("Remove from lab")).toHaveCount(0);
+  expect(mutations).toEqual([]);
 
-  await nav.getByRole("link", { name: "Runbook" }).click();
+  await page.getByRole("navigation", { name: "Rack workspace navigation" }).getByRole("link", { name: "Runbook" }).click();
   await expect(page.getByRole("heading", { name: "Build the lab, in order" })).toBeVisible();
   await expect(page.locator(".simple-step")).toHaveCount(5);
+});
+
+test("rack workspace never turns stale provider evidence green and stays responsive", async ({ page }) => {
+  const staleProviders = providerStatuses().map((provider) => ({
+    ...provider,
+    freshness: "stale",
+    is_current: false,
+    status: "ready"
+  }));
+  await page.route("**/api/v1/providers/status", (route) => json(route, staleProviders));
+
+  for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/simple");
+    await expect(page.locator(".rack-unit.is-ready")).toHaveCount(0);
+    await expect(page.locator(".rack-inspector-status")).toContainText("Not checked");
+    const metrics = await page.evaluate(() => ({ body: document.body.scrollWidth, root: document.documentElement.scrollWidth, viewport: window.innerWidth }));
+    expect(metrics.body).toBeLessThanOrEqual(metrics.viewport + 1);
+    expect(metrics.root).toBeLessThanOrEqual(metrics.viewport + 1);
+  }
 });
 
 async function installApiMocks(page: Page) {
