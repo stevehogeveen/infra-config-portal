@@ -1277,8 +1277,7 @@ export function OperatorServerPage({ health, labProfileState, onReloadLabProfile
   const [esxiReadiness, setEsxiReadiness] = useState<ProviderProbeResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [activeDetailSection, setActiveDetailSection] = useState<ServerDetailSectionId>("access");
+  const [activeDetailSection, setActiveDetailSection] = useState<ServerDetailSectionId>("setup");
 
   async function loadWorkspaceData() {
     setError("");
@@ -1419,215 +1418,151 @@ export function OperatorServerPage({ health, labProfileState, onReloadLabProfile
   ];
 
   const detailSections: { id: ServerDetailSectionId; label: string; summary: string }[] = [
-    { id: "access", label: "Access", summary: "iLO, ESXi, next check" },
-    { id: "checks", label: "Checks", summary: "Storage and firmware signals" },
-    { id: "setup", label: "Setup", summary: "Saved compute fields" },
-    { id: "path", label: "Path", summary: "Local vs shared handoff" },
-    { id: "raid", label: "RAID", summary: "Advanced local storage" },
-    { id: "proof", label: "Proof", summary: "Advanced evidence" }
+    { id: "setup", label: "Server settings", summary: "Addresses and shared defaults" },
+    { id: "ilo", label: "iLO & access", summary: "Sign in, configure, verify" },
+    { id: "checks", label: "ESXi & RAID", summary: "Read-only host and storage checks" },
+    { id: "hardware", label: "Hardware & proof", summary: "Ports, bays, firmware, evidence" }
   ];
 
   return (
-    <OperatorPage title="Compute & iLO">
+    <OperatorPage title="Server & iLO">
       <div className="operator-surface-heading server-workspace-heading">
-        <p className="operator-kicker">Setup</p>
-        <h1>Compute & iLO</h1>
-        <p>Set the host values once, then run read-only iLO, ESXi, and RAID checks from the server workspace.</p>
+        <p className="operator-kicker">Selected rack device</p>
+        <h1>Server &amp; iLO</h1>
+        <p>Edit saved server values directly, then open only the access, storage, or proof section you need.</p>
       </div>
       <Feedback loading={loading && !activeProfile} error={error} />
-      <section className="server-compute-workspace-shell" aria-label="Compute and iLO setup launcher">
-        <div className="server-compute-workspace-summary" aria-label="Compute and iLO launcher summary">
-          <div>
-            <p className="operator-kicker">Compute setup</p>
-            <h2>{serverModelLabel} workspace</h2>
-            <span>Set the host path and run one safe check. Firmware choices stay on the Firmware page.</span>
+      <section className="rack-server-workspace" aria-label="Server configuration workspace">
+        <div className="rack-server-summary" aria-label="Server configuration summary">
+          <div className="rack-server-faceplate" aria-hidden="true">
+            <div className="rack-server-faceplate-head"><span /><strong>{serverModelLabel}</strong><small>{localStorageMode ? "local storage" : "shared storage"}</small></div>
+            <div className="rack-server-faceplate-bays">{Array.from({ length: 8 }).map((_, index) => <i key={index} />)}</div>
           </div>
-          <div className="server-compute-workspace-facts">
-            <span><strong>iLO IP</strong>{displayAddress(address.ilo)}</span>
-            <span><strong>ESXi IP</strong>{displayAddress(address.esxi_management)}</span>
-            <span><strong>Storage path</strong>{localStorageMode ? "Server-local RAID" : "Shared datastore"}</span>
+          <div className="rack-server-identity">
+            <p className="operator-kicker">Selected rack device</p>
+            <h2>{computeAccess.host}</h2>
+            <span>Configure the saved values first, then prove access with the explicit read-only checks.</span>
           </div>
+          <StatusBadge label={computeAccess.stateLabel} status={computeAccess.badgeStatus} />
+          <dl className="rack-server-facts">
+            <div><dt>iLO</dt><dd>{computeAccess.iloIp}</dd></div>
+            <div><dt>ESXi</dt><dd>{computeAccess.esxiIp}</dd></div>
+            <div><dt>Storage</dt><dd>{computeAccess.storageRole}</dd></div>
+            <div><dt>Next</dt><dd>{humanize(asString(esxiReadiness?.next_safe_action) || "Review server settings, then run a read-only check.")}</dd></div>
+          </dl>
         </div>
-        <LabDesignComposer
-          activeProfile={activeProfile}
-          address={address}
-          features={features}
-          firmwareSummaries={firmwareSummaries}
-          health={health}
-          initialSelectedDevice={serverPart}
-          onReload={reloadWorkspace}
-          subnetState={subnetState}
-          workspaceNodeStatus={subnetState.status}
-          workspaceNodeTone={workspaceTone}
-          workspaceOnly
-          workflowActions={workflowActions}
-        />
-      </section>
 
-      <section className="network-access-surface server-access-surface" aria-label="Compute Access">
-        <Card className="network-access-card server-access-card" hover={false}>
-          <CardHeader>
-            <div>
-              <p className="operator-kicker">Compute access</p>
-              <h2>{computeAccess.host}</h2>
-            </div>
-            <StatusBadge label={computeAccess.stateLabel} status={computeAccess.badgeStatus} />
-          </CardHeader>
-          <CardContent>
-            <div className="network-access-actions server-access-actions">
-              <button
-                aria-expanded={detailsOpen}
-                className="secondary-button"
-                onClick={() => setDetailsOpen((current) => !current)}
-                type="button"
-              >
-                {detailsOpen ? "Hide compute details" : "View compute details"}
-              </button>
-            </div>
-          </CardContent>
-        </Card>
-      </section>
+        <div className="rack-server-tabs" role="tablist" aria-label="Server workspace sections">
+          {detailSections.map((section) => (
+            <button aria-selected={activeDetailSection === section.id} className={activeDetailSection === section.id ? "is-active" : ""} key={section.id} onClick={() => setActiveDetailSection(section.id)} role="tab" type="button">
+              <strong>{section.label}</strong><small>{section.summary}</small>
+            </button>
+          ))}
+        </div>
 
-      {detailsOpen && (
-        <section className="network-details server-details" aria-label="Compute details">
-          <div className="detail-tab-strip server-detail-tab-strip" role="tablist" aria-label="Compute detail sections">
-            {detailSections.map((section) => (
-              <button
-                aria-selected={activeDetailSection === section.id}
-                className={`detail-tab ${activeDetailSection === section.id ? "is-active" : ""}`}
-                key={section.id}
-                onClick={() => setActiveDetailSection(section.id)}
-                role="tab"
-                type="button"
-              >
-                <strong>{section.label}</strong>
-                <small>{section.summary}</small>
-              </button>
-            ))}
-          </div>
-          <div className="network-detail-panel server-detail-panel" aria-label={`Compute ${activeDetailSection}`}>
-            {activeDetailSection === "access" && (
-            <Card className="network-details-card" hover={false}>
-              <CardHeader>
-                <div>
-                  <p className="operator-kicker">Details</p>
-                  <h2>Access and saved addresses</h2>
-                </div>
-                <StatusBadge label={displayStatus(serverStatus)} status={statusBadgeStatus(serverStatus)} />
-              </CardHeader>
-              <CardContent>
-                <ConfigValueList
-                  values={[
-                    { label: "Host", value: computeAccess.host, source: "Saved setup" },
-                    { label: "iLO IP", value: computeAccess.iloIp, source: "Saved setup", status: iloStatus },
-                    { label: "ESXi IP", value: computeAccess.esxiIp, source: "Saved setup", status: esxiStatus },
-                    { label: "Storage role", value: computeAccess.storageRole, source: "Saved setup" },
-                    { label: "Next check", value: humanize(asString(esxiReadiness?.next_safe_action) || "Run server check.") }
-                  ]}
-                />
-              </CardContent>
-            </Card>
-            )}
-            {activeDetailSection === "checks" && (
-            <Card className="network-details-card" hover={false}>
-              <CardHeader>
-                <div>
-                  <p className="operator-kicker">Saved signals</p>
-                  <h2>Server checks</h2>
-                </div>
-                <span>{serverDetailRows.length} tracked</span>
-              </CardHeader>
-              <CompactTable>
-                <CompactTableHeader>
-                  <CompactTableCell>Item</CompactTableCell>
-                  <CompactTableCell>Current</CompactTableCell>
-                  <CompactTableCell>Status</CompactTableCell>
-                </CompactTableHeader>
-                <tbody>
-                  {serverDetailRows.map((row) => (
-                    <CompactTableRow key={row.item}>
-                      <CompactTableCell><strong>{row.item}</strong></CompactTableCell>
-                      <CompactTableCell>{row.current}</CompactTableCell>
-                      <CompactTableCell><StatusBadge label={displayStatus(row.status)} status={statusBadgeStatus(row.status)} /></CompactTableCell>
-                    </CompactTableRow>
-                  ))}
-                </tbody>
-              </CompactTable>
-            </Card>
-            )}
-            {activeDetailSection === "setup" && (
-            <section className="overview-safe-actions" aria-label="Server configure">
-              <ServerConfigurePanel
-                activeProfile={activeProfile}
-                address={address}
-                global={global}
-                onSaved={async () => {
-                  await onReloadLabProfile?.();
-                  await loadWorkspaceData();
-                }}
-              />
-            </section>
-            )}
-            {activeDetailSection === "path" && (
-            <ServerSetupShapePanel
-              activeProfile={activeProfile}
-              address={address}
-              currentView={currentView}
-              esxiReadiness={esxiReadiness}
-              esxiStatus={esxiStatus}
-              firmwareSummaries={firmwareSummaries}
-              iloStatus={iloStatus}
-              raidPlan={raidPlan}
-              raidStatus={raidStatus}
-            />
-            )}
-            {activeDetailSection === "raid" && (
-            <>
-              <Card className="network-details-card server-drive-map-card" hover={false}>
-                <CardHeader>
-                  <div>
-                    <p className="operator-kicker">RAID plan</p>
-                    <h2>Server drive map</h2>
-                  </div>
-                  <StatusBadge label={displayStatus(raidStatus)} status={statusBadgeStatus(raidStatus)} />
-                </CardHeader>
-                <CardContent>
-                  <ServerDriveMapPlan activeProfile={activeProfile} raidPlan={raidPlan} />
-                </CardContent>
-              </Card>
-              <details className="network-advanced-switch-plan server-advanced-raid-plan">
-                <summary>
-                  <span>
-                    <span className="operator-kicker">Advanced</span>
-                    <strong>Advanced RAID proof</strong>
-                    <small>Local datastore readiness and RAID recommendation stay one level deeper.</small>
-                  </span>
-                </summary>
-                <LocalStorageReadinessCard activeProfile={activeProfile} raidPlan={raidPlan} />
-              </details>
-            </>
-            )}
-            {activeDetailSection === "proof" && (
-            <AdvancedDrawer title="Server proof" summary={noProofText}>
-              <OperatorWorkspace currentView={currentView} rows={serverRows} compact />
-              <ConfigValueList
-                values={[
-                  { label: "RAID warnings", value: String(stringArray(raidPlan?.warnings).length) },
-                  { label: "RAID controller model", value: raidControllerModels(raidPlan) },
-                  { label: "ESXi blockers", value: String(stringArray(esxiReadiness?.blockers).length) },
-                  { label: "Storage firmware", value: firmwareVersion(firmwareSummaries, "raid") }
-                ]}
-              />
-            </AdvancedDrawer>
-            )}
-          </div>
-        </section>
-      )}
+        <div className="rack-server-panel" aria-label={`Server ${activeDetailSection} panel`}>
+          {activeDetailSection === "setup" && (
+            <ServerConfigurePanel activeProfile={activeProfile} address={address} global={global} onSaved={reloadWorkspace} />
+          )}
+          {activeDetailSection === "ilo" && (
+            <div className="rack-server-panel-stack">
+              <IloAccessSettingsPanel initialHost={address.ilo_initial || ""} onReload={reloadWorkspace} plannedHost={address.ilo || ""} />
+              <IloSetupIntentWorkspacePanel />
+              <ServerWorkspaceControls activeProfile={activeProfile} address={address} firmwareSummaries={firmwareSummaries} localStorageMode={localStorageMode} onReload={reloadWorkspace} scope="ilo" workflowActions={workflowActions} />
+            </div>
+          )}
+          {activeDetailSection === "checks" && (
+            <div className="rack-server-panel-stack">
+              <ServerWorkspaceControls activeProfile={activeProfile} address={address} firmwareSummaries={firmwareSummaries} localStorageMode={localStorageMode} onReload={reloadWorkspace} scope="server" workflowActions={workflowActions} />
+              <div className="rack-server-handoffs"><Link to="/storage">Open graphical local storage</Link><Link to="/virtualization">Open ESXi configuration</Link><Link to="/firmware-upgrades">Open firmware decisions</Link></div>
+            </div>
+          )}
+          {activeDetailSection === "hardware" && (
+            <div className="rack-server-panel-stack">
+              <LabDesignComposer activeProfile={activeProfile} address={address} features={features} firmwareSummaries={firmwareSummaries} health={health} initialSelectedDevice={serverPart} onReload={reloadWorkspace} subnetState={subnetState} workspaceNodeStatus={subnetState.status} workspaceNodeTone={workspaceTone} workspaceOnly workflowActions={workflowActions} />
+              <ServerSetupShapePanel activeProfile={activeProfile} address={address} currentView={currentView} esxiReadiness={esxiReadiness} esxiStatus={esxiStatus} firmwareSummaries={firmwareSummaries} iloStatus={iloStatus} raidPlan={raidPlan} raidStatus={raidStatus} />
+              <Card className="network-details-card server-drive-map-card" hover={false}><CardHeader><div><p className="operator-kicker">RAID plan</p><h2>Server drive map</h2></div><StatusBadge label={displayStatus(raidStatus)} status={statusBadgeStatus(raidStatus)} /></CardHeader><CardContent><ServerDriveMapPlan activeProfile={activeProfile} raidPlan={raidPlan} /></CardContent></Card>
+              <AdvancedDrawer title="Server proof" summary={noProofText}><OperatorWorkspace currentView={currentView} rows={serverRows} compact /><ConfigValueList values={[{ label: "RAID warnings", value: String(stringArray(raidPlan?.warnings).length) }, { label: "RAID controller model", value: raidControllerModels(raidPlan) }, { label: "ESXi blockers", value: String(stringArray(esxiReadiness?.blockers).length) }, { label: "Storage firmware", value: firmwareVersion(firmwareSummaries, "raid") }]} /></AdvancedDrawer>
+            </div>
+          )}
+        </div>
+      </section>
     </OperatorPage>
   );
 }
 
-type ServerDetailSectionId = "access" | "checks" | "setup" | "path" | "raid" | "proof";
+type ServerDetailSectionId = "setup" | "ilo" | "checks" | "hardware";
+
+type RackIloTab = "access" | "settings" | "checks";
+
+export function RackIloConfigurator({
+  activeProfile,
+  onClose,
+  onReload
+}: {
+  activeProfile: LabProfile | null;
+  onClose: () => void;
+  onReload: () => Promise<void> | void;
+}) {
+  const address = activeAddressPlan(activeProfile);
+  const [tab, setTab] = useState<RackIloTab>("access");
+  const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
+  const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const localStorageMode = activeProfile?.features?.storage_location === "server_local" || activeProfile?.features?.netapp_enabled === false;
+
+  async function loadInlineData() {
+    setLoading(true);
+    setError("");
+    try {
+      const [actions, firmware] = await Promise.all([
+        safeApi(api.workflowActions, [] as WorkflowAction[]),
+        safeApi(api.firmwareSummary, [] as FirmwareSummary[])
+      ]);
+      setWorkflowActions(Array.isArray(actions) ? actions : []);
+      setFirmwareSummaries(Array.isArray(firmware) ? firmware : []);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function reloadInlineData() {
+    await onReload();
+    await loadInlineData();
+  }
+
+  useEffect(() => {
+    void loadInlineData();
+  }, [activeProfile?.id]);
+
+  const tabs: Array<{ id: RackIloTab; label: string }> = [
+    { id: "access", label: "Access" },
+    { id: "settings", label: "iLO settings" },
+    { id: "checks", label: "Checks" }
+  ];
+
+  return (
+    <aside className="rack-inline-config" aria-label="Configure HPE iLO beside rack">
+      <div className="rack-inline-config-head">
+        <div><p className="operator-kicker">Configure beside rack</p><h2>HPE iLO</h2><span>{displayAddress(address.ilo_initial || address.ilo)}</span></div>
+        <button onClick={onClose} type="button">Back to device</button>
+      </div>
+      <div className="rack-inline-config-tabs" role="tablist" aria-label="iLO configuration sections">
+        {tabs.map((item) => <button aria-selected={tab === item.id} className={tab === item.id ? "is-active" : ""} key={item.id} onClick={() => setTab(item.id)} role="tab" type="button">{item.label}</button>)}
+      </div>
+      <Feedback loading={loading} error={error} />
+      <div className="rack-inline-config-body">
+        {tab === "access" && <IloAccessSettingsPanel initialHost={address.ilo_initial || ""} onReload={reloadInlineData} plannedHost={address.ilo || ""} />}
+        {tab === "settings" && <IloSetupIntentWorkspacePanel />}
+        {tab === "checks" && <ServerWorkspaceControls activeProfile={activeProfile} address={address} firmwareSummaries={firmwareSummaries} localStorageMode={localStorageMode} onReload={reloadInlineData} scope="ilo" workflowActions={workflowActions} />}
+      </div>
+      <div className="rack-inline-config-links"><Link to="/storage">Local storage &amp; RAID</Link><Link to="/server">Detailed server workspace</Link></div>
+    </aside>
+  );
+}
 
 function serverComputeAccessCardModel({
   activeProfile,
@@ -7848,9 +7783,9 @@ function IloSetupIntentWorkspacePanel() {
   const dhcpOn = form.network.dhcp_enabled === true;
   const displayedStaticNetwork = dhcpOn
     ? {
-        management_ip: discovered?.network.management_ip ?? "",
-        subnet_mask_or_prefix: discovered?.network.subnet_mask_or_prefix ?? "",
-        gateway: discovered?.network.gateway ?? ""
+        management_ip: discovered?.network?.management_ip ?? "",
+        subnet_mask_or_prefix: discovered?.network?.subnet_mask_or_prefix ?? "",
+        gateway: discovered?.network?.gateway ?? ""
       }
     : form.network;
 
@@ -7902,7 +7837,7 @@ function IloSetupIntentWorkspacePanel() {
                 onChange={(event) => updateNetwork("management_ip", event.target.value)}
                 placeholder={dhcpOn ? "No address observed yet" : undefined}
               />
-              {(dhcpOn && discovered?.network.management_ip) && (
+              {(dhcpOn && discovered?.network?.management_ip) && (
                 <small className="from-device-hint">from device</small>
               )}
             </Field>
@@ -7913,7 +7848,7 @@ function IloSetupIntentWorkspacePanel() {
                 value={displayedStaticNetwork.subnet_mask_or_prefix ?? ""}
                 onChange={(event) => updateNetwork("subnet_mask_or_prefix", event.target.value)}
               />
-              {(dhcpOn ? discovered?.network.subnet_mask_or_prefix : isFromDevice("network.subnet_mask_or_prefix", form.network.subnet_mask_or_prefix)) && (
+              {(dhcpOn ? discovered?.network?.subnet_mask_or_prefix : isFromDevice("network.subnet_mask_or_prefix", form.network.subnet_mask_or_prefix)) && (
                 <small className="from-device-hint">from device</small>
               )}
             </Field>
@@ -7924,7 +7859,7 @@ function IloSetupIntentWorkspacePanel() {
                 value={displayedStaticNetwork.gateway ?? ""}
                 onChange={(event) => updateNetwork("gateway", event.target.value)}
               />
-              {(dhcpOn ? discovered?.network.gateway : isFromDevice("network.gateway", form.network.gateway)) && (
+              {(dhcpOn ? discovered?.network?.gateway : isFromDevice("network.gateway", form.network.gateway)) && (
                 <small className="from-device-hint">from device</small>
               )}
             </Field>
@@ -8168,7 +8103,7 @@ function IloSetupIntentWorkspacePanel() {
   );
 }
 
-function normalizeFieldValue(value: string | boolean | null | string[]): string | null {
+function normalizeFieldValue(value: string | boolean | null | string[] | undefined): string | null {
   if (value === null || value === undefined) {
     return null;
   }
@@ -8188,29 +8123,29 @@ function iloDeviceFieldValue(discovered: IloDiscoveredSettings | null, path: str
   }
   switch (path) {
     case "network.dhcp_enabled":
-      return normalizeFieldValue(discovered.network.dhcp_enabled);
+      return normalizeFieldValue(discovered.network?.dhcp_enabled);
     case "network.hostname":
-      return normalizeFieldValue(discovered.network.hostname);
+      return normalizeFieldValue(discovered.network?.hostname);
     case "network.management_ip":
-      return normalizeFieldValue(discovered.network.management_ip);
+      return normalizeFieldValue(discovered.network?.management_ip);
     case "network.subnet_mask_or_prefix":
-      return normalizeFieldValue(discovered.network.subnet_mask_or_prefix);
+      return normalizeFieldValue(discovered.network?.subnet_mask_or_prefix);
     case "network.gateway":
-      return normalizeFieldValue(discovered.network.gateway);
+      return normalizeFieldValue(discovered.network?.gateway);
     case "network.vlan":
-      return normalizeFieldValue(discovered.network.vlan);
+      return normalizeFieldValue(discovered.network?.vlan);
     case "dns_domain.domain_name":
-      return normalizeFieldValue(discovered.dns_domain.domain_name);
+      return normalizeFieldValue(discovered.dns_domain?.domain_name);
     case "dns_domain.dns_servers":
-      return normalizeFieldValue(discovered.dns_domain.dns_servers);
+      return normalizeFieldValue(discovered.dns_domain?.dns_servers);
     case "time.timezone":
-      return normalizeFieldValue(discovered.time.timezone);
+      return normalizeFieldValue(discovered.time?.timezone);
     case "time.ntp_servers":
-      return normalizeFieldValue(discovered.time.ntp_servers);
+      return normalizeFieldValue(discovered.time?.ntp_servers);
     case "license.expected_status":
-      return normalizeFieldValue(discovered.license.status);
+      return normalizeFieldValue(discovered.license?.status);
     case "snmp.enabled":
-      return normalizeFieldValue(discovered.snmp.enabled);
+      return normalizeFieldValue(discovered.snmp?.enabled);
     default:
       return null;
   }
@@ -8228,15 +8163,15 @@ function iloWorkspaceIntentForm(
   const device = !hasSavedIntent && discovered?.available ? discovered : null;
   return {
     network: {
-      dhcp_enabled: intent?.network.dhcp_enabled ?? device?.network.dhcp_enabled ?? null,
-      gateway: intent?.network.gateway ?? device?.network.gateway ?? "",
-      hostname: intent?.network.hostname ?? device?.network.hostname ?? "",
-      management_ip: intent?.network.management_ip ?? device?.network.management_ip ?? "",
+      dhcp_enabled: intent?.network?.dhcp_enabled ?? device?.network?.dhcp_enabled ?? null,
+      gateway: intent?.network?.gateway ?? device?.network?.gateway ?? "",
+      hostname: intent?.network?.hostname ?? device?.network?.hostname ?? "",
+      management_ip: intent?.network?.management_ip ?? device?.network?.management_ip ?? "",
       subnet_mask_or_prefix:
-        intent?.network.subnet_mask_or_prefix ?? device?.network.subnet_mask_or_prefix ?? "",
-      vlan: intent?.network.vlan ?? device?.network.vlan ?? ""
+        intent?.network?.subnet_mask_or_prefix ?? device?.network?.subnet_mask_or_prefix ?? "",
+      vlan: intent?.network?.vlan ?? device?.network?.vlan ?? ""
     },
-    users: intent?.users.length
+    users: intent?.users?.length
       ? intent.users.map((user) => ({
           password_ref_label: user.password_ref_label ?? "",
           role: user.role,
@@ -8248,44 +8183,44 @@ function iloWorkspaceIntentForm(
           username_label: user.username
         })),
     license: {
-      advanced_license_key_ref: intent?.license.advanced_license_key_ref ?? "",
-      expected_status: intent?.license.expected_status ?? device?.license.status ?? ""
+      advanced_license_key_ref: intent?.license?.advanced_license_key_ref ?? "",
+      expected_status: intent?.license?.expected_status ?? device?.license?.status ?? ""
     },
     snmp: {
-      community_or_user_ref_labels: intent?.snmp.community_or_user_ref_labels ?? [],
-      destinations: intent?.snmp.destinations ?? [],
-      enabled: device?.snmp.enabled ?? intent?.snmp.enabled ?? false,
-      snmpv3_auth_passphrase_ref: intent?.snmp.snmpv3_auth_passphrase_ref ?? "",
-      snmpv3_auth_protocol: intent?.snmp.snmpv3_auth_protocol ?? "MD5",
-      snmpv3_privacy_passphrase_ref: intent?.snmp.snmpv3_privacy_passphrase_ref ?? "",
-      snmpv3_privacy_protocol: intent?.snmp.snmpv3_privacy_protocol ?? "DES",
-      snmpv3_security_name: intent?.snmp.snmpv3_security_name ?? "",
-      system_contact: intent?.snmp.system_contact ?? "",
-      system_location: intent?.snmp.system_location ?? "",
-      system_role: intent?.snmp.system_role ?? "",
-      version: intent?.snmp.version ?? "v3"
+      community_or_user_ref_labels: intent?.snmp?.community_or_user_ref_labels ?? [],
+      destinations: intent?.snmp?.destinations ?? [],
+      enabled: device?.snmp?.enabled ?? intent?.snmp?.enabled ?? false,
+      snmpv3_auth_passphrase_ref: intent?.snmp?.snmpv3_auth_passphrase_ref ?? "",
+      snmpv3_auth_protocol: intent?.snmp?.snmpv3_auth_protocol ?? "MD5",
+      snmpv3_privacy_passphrase_ref: intent?.snmp?.snmpv3_privacy_passphrase_ref ?? "",
+      snmpv3_privacy_protocol: intent?.snmp?.snmpv3_privacy_protocol ?? "DES",
+      snmpv3_security_name: intent?.snmp?.snmpv3_security_name ?? "",
+      system_contact: intent?.snmp?.system_contact ?? "",
+      system_location: intent?.snmp?.system_location ?? "",
+      system_role: intent?.snmp?.system_role ?? "",
+      version: intent?.snmp?.version ?? "v3"
     },
     ipv6: {
-      disable_all: intent?.ipv6.disable_all ?? true,
-      disable_dhcpv6_dns_server: intent?.ipv6.disable_dhcpv6_dns_server ?? true,
-      disable_dhcpv6_domain_name: intent?.ipv6.disable_dhcpv6_domain_name ?? true,
-      disable_dhcpv6_sntp_settings: intent?.ipv6.disable_dhcpv6_sntp_settings ?? true,
-      disable_dhcpv6_stateful_mode: intent?.ipv6.disable_dhcpv6_stateful_mode ?? true,
-      disable_dhcpv6_stateless_mode: intent?.ipv6.disable_dhcpv6_stateless_mode ?? true
+      disable_all: intent?.ipv6?.disable_all ?? true,
+      disable_dhcpv6_dns_server: intent?.ipv6?.disable_dhcpv6_dns_server ?? true,
+      disable_dhcpv6_domain_name: intent?.ipv6?.disable_dhcpv6_domain_name ?? true,
+      disable_dhcpv6_sntp_settings: intent?.ipv6?.disable_dhcpv6_sntp_settings ?? true,
+      disable_dhcpv6_stateful_mode: intent?.ipv6?.disable_dhcpv6_stateful_mode ?? true,
+      disable_dhcpv6_stateless_mode: intent?.ipv6?.disable_dhcpv6_stateless_mode ?? true
     },
     time: {
-      interface_type: intent?.time.interface_type ?? "iLO Dedicated Network Port",
-      ntp_servers: intent?.time.ntp_servers?.length
+      interface_type: intent?.time?.interface_type ?? "iLO Dedicated Network Port",
+      ntp_servers: intent?.time?.ntp_servers?.length
         ? intent.time.ntp_servers
-        : device?.time.ntp_servers ?? [],
-      timezone: intent?.time.timezone ?? device?.time.timezone ?? "",
-      use_dhcp_supplied_time_settings: intent?.time.use_dhcp_supplied_time_settings ?? null
+        : device?.time?.ntp_servers ?? [],
+      timezone: intent?.time?.timezone ?? device?.time?.timezone ?? "",
+      use_dhcp_supplied_time_settings: intent?.time?.use_dhcp_supplied_time_settings ?? null
     },
     dns_domain: {
-      dns_servers: intent?.dns_domain.dns_servers?.length
+      dns_servers: intent?.dns_domain?.dns_servers?.length
         ? intent.dns_domain.dns_servers
-        : device?.dns_domain.dns_servers ?? [],
-      domain_name: intent?.dns_domain.domain_name ?? device?.dns_domain.domain_name ?? ""
+        : device?.dns_domain?.dns_servers ?? [],
+      domain_name: intent?.dns_domain?.domain_name ?? device?.dns_domain?.domain_name ?? ""
     },
     notes: intent?.notes ?? ""
   };
@@ -16456,70 +16391,37 @@ function ServerConfigurePanel({
       </CardHeader>
       <CardContent>
         <form className="network-config-form" onSubmit={save}>
-          <div className="server-config-summary design-device-summary" aria-label="Compute setup summary">
-            <div>
-              <span>iLO IP</span>
-              <strong>{displayValue(edit.ilo)}</strong>
-            </div>
-            <div>
-              <span>ESXi mgmt IP</span>
-              <strong>{displayValue(edit.esxiManagement)}</strong>
-            </div>
-            <div>
-              <span>Embedded NIC</span>
-              <strong>{displayValue(edit.serverEmbeddedNic)}</strong>
-            </div>
+          <p className="rack-server-form-note">These inputs show the saved values directly. Saving updates the kit only; it does not contact or configure the server.</p>
+          <div className="rack-server-input-grid">
+            <Field label="Planned iLO IP">
+              <input aria-label="Planned iLO IP" value={edit.ilo} onChange={(event) => update("ilo", event.target.value)} />
+            </Field>
+            <Field label="ESXi management IP">
+              <input aria-label="ESXi management IP" value={edit.esxiManagement} onChange={(event) => update("esxiManagement", event.target.value)} />
+            </Field>
+            <Field label="Initial iLO IP">
+              <input aria-label="Initial iLO IP" value={edit.iloInitial} onChange={(event) => update("iloInitial", event.target.value)} />
+            </Field>
+            <Field label="Embedded server NIC">
+              <input aria-label="Embedded server NIC" value={edit.serverEmbeddedNic} onChange={(event) => update("serverEmbeddedNic", event.target.value)} />
+            </Field>
           </div>
-          <details className="server-config-more server-config-edit">
-            <summary>
-              <span>Edit compute values</span>
-              <small>Only updates the saved setup. No hardware touched.</small>
-            </summary>
-            <div className="server-config-more-grid server-config-edit-grid">
-              <Field label="iLO IP">
-                <input value={edit.ilo} onChange={(event) => update("ilo", event.target.value)} />
-              </Field>
-              <Field label="ESXi mgmt IP">
-                <input value={edit.esxiManagement} onChange={(event) => update("esxiManagement", event.target.value)} />
-              </Field>
-              <details className="server-config-more server-config-overrides">
-                <summary>
-                  <span>More compute values</span>
-                  <small>Factory iLO, embedded NIC, and network overrides live here.</small>
-                </summary>
-                <div className="server-config-more-grid">
-                  <Field label="Initial iLO IP">
-                    <input value={edit.iloInitial} onChange={(event) => update("iloInitial", event.target.value)} />
-                  </Field>
-                  <Field label="Embedded NIC">
-                    <input value={edit.serverEmbeddedNic} onChange={(event) => update("serverEmbeddedNic", event.target.value)} />
-                  </Field>
-                  <Field label="Subnet">
-                    <input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} />
-                  </Field>
-                  <Field label="Gateway">
-                    <input value={edit.gateway} onChange={(event) => update("gateway", event.target.value)} />
-                  </Field>
-                  <Field label="DNS servers">
-                    <input value={edit.dnsServers} onChange={(event) => update("dnsServers", event.target.value)} />
-                  </Field>
-                  <Field label="NTP servers">
-                    <input value={edit.ntpServers} onChange={(event) => update("ntpServers", event.target.value)} />
-                  </Field>
-                  <Field label="MTU">
-                    <input inputMode="numeric" value={edit.mtu} onChange={(event) => update("mtu", event.target.value)} />
-                  </Field>
-                </div>
-              </details>
-              <div className="network-config-actions">
-                <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
-                  {busy ? "Saving..." : "Save compute setup"}
-                </button>
-                {message && <span className="operator-success-text">{message}</span>}
-                {error && <span className="operator-error-text">{error}</span>}
-              </div>
+          <details className="server-config-more server-config-overrides rack-server-network-defaults">
+            <summary><span>Network defaults</span><small>Subnet, gateway, DNS, NTP, and MTU inherited by this server.</small></summary>
+            <div className="server-config-more-grid">
+              <Field label="Subnet"><input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} /></Field>
+              <Field label="Gateway"><input value={edit.gateway} onChange={(event) => update("gateway", event.target.value)} /></Field>
+              <Field label="DNS servers"><input value={edit.dnsServers} onChange={(event) => update("dnsServers", event.target.value)} /></Field>
+              <Field label="NTP servers"><input value={edit.ntpServers} onChange={(event) => update("ntpServers", event.target.value)} /></Field>
+              <Field label="MTU"><input inputMode="numeric" value={edit.mtu} onChange={(event) => update("mtu", event.target.value)} /></Field>
             </div>
           </details>
+          <div className="network-config-actions rack-server-save-row">
+            <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">{busy ? "Saving..." : "Save server settings"}</button>
+            <span className="rack-server-safe-copy">Kit save only · no hardware contacted</span>
+            {message && <span className="operator-success-text">{message}</span>}
+            {error && <span className="operator-error-text">{error}</span>}
+          </div>
         </form>
       </CardContent>
     </Card>

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
-import { Cpu, Database, Layers3, ListChecks, Network, Pencil, Plus, Server, Settings2 } from "lucide-react";
+import { Layers3, ListChecks, Pencil, Plus, Server, Settings2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "./api";
 import { DeviceInventoryForm } from "./components/DeviceInventoryForm";
+import { RackIloConfigurator } from "./operatorPages";
 import type {
   DeviceInventoryItem,
   HpeStorageDiscovery,
@@ -240,7 +241,7 @@ function RackElevationGraphic({ devices, providers, access, bays, selectedId, on
   );
 }
 
-function RackInspector({ selected, word, bays, access, storage, onEdit, onAdd }: {
+function RackInspector({ selected, word, bays, access, storage, onEdit, onAdd, onConfigure }: {
   selected?: DeviceInventoryItem;
   word: RackWord;
   bays: RackBay[];
@@ -248,6 +249,7 @@ function RackInspector({ selected, word, bays, access, storage, onEdit, onAdd }:
   storage: HpeStorageDiscovery | null;
   onEdit: () => void;
   onAdd: () => void;
+  onConfigure: () => void;
 }) {
   if (!selected) {
     return <aside className="rack-inspector rack-inspector-empty"><div className="rack-empty-icon"><Plus size={22} /></div><h2>Build your rack</h2><p>No devices are in this kit yet. Add the first piece of equipment without contacting it.</p><button className="rack-action is-primary" onClick={onAdd} type="button">Add first device</button></aside>;
@@ -291,9 +293,11 @@ function RackInspector({ selected, word, bays, access, storage, onEdit, onAdd }:
         <div><dt>Notes</dt><dd>{selected.notes || "None"}</dd></div>
       </dl>
       <div className="rack-actions">
-        {isIlo && !isActiveIloTarget
+        {isIlo && isActiveIloTarget
+          ? <button className="rack-action is-primary" onClick={onConfigure} type="button">Configure iLO beside rack</button>
+          : isIlo && !isActiveIloTarget
           ? <button className="rack-action is-primary" onClick={onEdit} type="button">Continue: set up this iLO</button>
-          : <Link className="rack-action is-primary" to={primaryRoute}>{isIlo && !iloFirstContactComplete ? iloCredentialsReady ? "Continue: verify iLO access" : "Continue: add iLO credentials" : `Configure ${typeLabel}`}</Link>}
+          : <Link className="rack-action is-primary" to={primaryRoute}>{`Configure ${typeLabel}`}</Link>}
         {isIlo && <Link className="rack-action" to="/storage">Local storage &amp; RAID</Link>}
         {isEsxi && <Link className="rack-action" to="/virtualization">ESXi installation &amp; config</Link>}
         <button className="rack-action" onClick={onEdit} type="button"><Pencil size={14} /> Edit rack details</button>
@@ -310,6 +314,7 @@ export function SimpleLabPage() {
   const [selectedId, setSelectedId] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<DeviceInventoryItem | null>(null);
+  const [configuringId, setConfiguringId] = useState("");
   useEffect(() => {
     if (visibleIds.length && !visibleIds.includes(selectedId)) setSelectedId(visibleIds[0]);
     if (!visibleIds.length && selectedId) setSelectedId("");
@@ -335,15 +340,9 @@ export function SimpleLabPage() {
             <p>Console</p>
             <Link className="is-active" to="/simple" aria-current="page"><Layers3 size={17} /> Rack home</Link>
             <Link to="/simple-steps"><ListChecks size={17} /> Runbook</Link>
-            <p>Configure</p>
-            <Link to="/network"><Network size={17} /> Network</Link>
-            <Link to="/server"><Server size={17} /> Server &amp; iLO</Link>
-            <Link to="/storage"><Database size={17} /> Storage &amp; vSAN</Link>
-            <Link to="/virtualization"><Cpu size={17} /> ESXi &amp; vCenter</Link>
             <p>Manage</p>
             <Link to="/setup/defaults"><Settings2 size={17} /> Lab defaults</Link>
             <Link to="/lab-profiles#new"><Plus size={17} /> Create or change kit</Link>
-            <Link to="/overview"><Settings2 size={17} /> Detailed setup</Link>
           </nav>
           <dl className="rack-rail-facts">
             <div><dt>Subnet</dt><dd>{loadError ? "Unavailable" : profile?.subnet_cidr ?? "Not set"}</dd></div>
@@ -358,7 +357,7 @@ export function SimpleLabPage() {
             ? <div className="rack-loading"><Server size={24} /> Reading cached lab state…</div>
             : loadError
               ? <div className="rack-disconnected" role="alert"><Server size={30} /><h2>Backend disconnected</h2><p>{loadError}</p><button onClick={() => void reload()} type="button">Reconnect</button><small>Adding or changing equipment is paused so a connection failure cannot look like an empty rack or a successful save.</small></div>
-              : <div className="rack-stage"><div className="rack-canvas"><RackElevationGraphic devices={devices} providers={providers} access={access} bays={bays} selectedId={selected?.id ?? ""} onSelect={setSelectedId} /></div><div className="rack-detail"><RackInspector selected={selected} word={selectedWord} bays={bays} access={access} storage={storage} onEdit={() => selected && setEditingDevice(selected)} onAdd={() => setAddOpen(true)} /><p className="rack-help">Add and edit changes only the visual inventory. Configuration opens the existing guarded device workspace. Green is shown only when a current provider check proves access.</p></div></div>}
+              : <div className={`rack-stage ${configuringId ? "is-configuring" : ""}`}><div className="rack-canvas"><RackElevationGraphic devices={devices} providers={providers} access={access} bays={bays} selectedId={selected?.id ?? ""} onSelect={(id) => { setSelectedId(id); setConfiguringId(""); }} /></div><div className="rack-detail">{configuringId && selected?.id === configuringId && selected.device_type === "ilo" ? <RackIloConfigurator activeProfile={profile ?? null} onClose={() => setConfiguringId("")} onReload={reload} /> : <><RackInspector selected={selected} word={selectedWord} bays={bays} access={access} storage={storage} onEdit={() => selected && setEditingDevice(selected)} onAdd={() => setAddOpen(true)} onConfigure={() => selected && setConfiguringId(selected.id)} /><p className="rack-help">Select a device, then configure its essential settings beside the rack. Green is shown only when a current provider check proves access.</p></>}</div></div>}
         </section>
       </div>
       {addOpen && <DeviceInventoryForm defaultDeviceType="ilo" iloOnboarding onClose={() => setAddOpen(false)} onReload={reload} onSaved={(device) => setSelectedId(device.id)} submitLabel="Add to rack" />}
@@ -416,8 +415,7 @@ export function SimpleStepsPage() {
       <header className="simple-head">
         <h1>Build the lab, in order</h1>
         <p className="simple-sub">
-          Return to <Link to="/simple">Rack home</Link>, or open <Link to="/overview">Detailed setup</Link>
-          for the complete device drawers.
+          Return to <Link to="/simple">Rack home</Link>. Each step opens the controls for the device it needs.
         </p>
       </header>
       {!loaded && <p className="simple-loading">Loading…</p>}

@@ -14588,3 +14588,44 @@ Product fix:
 
 Verification: focused Playwright **5/5**, full Playwright **128/128**, component tests **2/2**, and
 `npm run build` passed. No safety boundary or hardware-write gate changed.
+
+## 2026-08-10T19:03:07Z — CODEX (device configuration now stays beside the rack)
+
+Steve rejected carrying the older device-page clutter into the new rack design. The new interaction
+rule is now explicit in the product: select the physical device first, then replace the right-hand
+inspector with only that device's essential controls while the rack remains visible.
+
+This slice applies that pattern to the HPE iLO/server entry point:
+
+- `Configure iLO beside rack` opens an inline panel with three focused tabs: **Access**, **iLO
+  settings**, and **Checks**. Access reuses the existing local-only host/UID/password/TLS contract;
+  settings reuses the complete editable iLO intent (network, multiple DNS/NTP, SNMP version and
+  destinations, IPv6, license refs, and local user refs); checks reuses only the existing read-only
+  iLO reachability/auth/inventory workflows.
+- Opening the panel or moving between its tabs performs GETs only. No check runs automatically.
+  Saving access/settings remains explicit, and the panel exposes no RAID apply, reset, rebuild,
+  install, firmware, factory-reset, iSCSI, or other destructive/live-write action.
+- The rack sidebar is reduced to **Rack home**, **Runbook**, **Lab defaults**, and **Create or change
+  kit**. Network, server, storage, and virtualization routes remain intact, but are contextual
+  fallbacks from the selected device rather than a permanent menu the operator must understand.
+- The legacy `/server` fallback is also quieter: direct saved-value inputs plus four deliberate
+  sections (Server settings, iLO & access, ESXi & RAID, Hardware & proof). Its former duplicate
+  launcher/editor/proof stack is gone; all backend contracts and guarded operations remain intact.
+- Partial iLO intent/discovery payloads are now normalized defensively so an absent nested section
+  cannot crash the inline editor. This fixed the mock/live boundary exposed by embedding the intent
+  form in the rack.
+
+Visual evidence:
+`app/artifacts/codex-runs/ui-screens-20260810-rack-inline/ilo-config-beside-rack.png`.
+The live review used the running `local-lab-readwrite` backend and its cached Uplands inventory. No
+save, workflow run, probe, or hardware contact was performed during the review.
+
+Verification: focused rack/server Playwright **7/7**, regression follow-up **7/7**, component tests
+**2/2**, production build passed, and final full Playwright **129/129** in 5.0 minutes. The inline
+regression explicitly records all non-GET requests and proves opening Access/iLO settings/Checks
+emits none. Mobile server overflow remains covered.
+
+Review request for Claude/CXO: approve **rack + contextual right-hand editor** as the standard
+interaction for the remaining devices. Recommended next order is Cisco switch, ESXi, NetApp, then
+vCenter; local storage should remain an iLO/server offshoot and receive the graphical drive/RAID
+editor in this same right-hand space rather than becoming another navigation page.

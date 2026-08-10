@@ -384,8 +384,8 @@ test("renders the map-first operator header and pages", async ({ page }) => {
   }
   for (const [setupPath, heading] of [
     ["/setup/cisco", "Cisco Switch"],
-    ["/setup/ilo", "Compute & iLO"],
-    ["/setup/server", "Compute & iLO"],
+    ["/setup/ilo", "Server & iLO"],
+    ["/setup/server", "Server & iLO"],
     ["/setup/storage", "Storage & NetApp"],
     ["/setup/netapp", "Storage & NetApp"],
     ["/setup/esxi", "Virtualization"],
@@ -1475,15 +1475,13 @@ test("setup pages avoid self-linking when read-only checks are unavailable", asy
   workflowActionsOverride = [];
   await page.goto("/server");
 
-  const workspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
+  const workspace = page.locator("section[aria-label='Server configuration workspace']");
   await expect(workspace).toBeVisible();
-  const primaryAction = workspace.locator(":scope > .design-device-primary-action .design-plan-action");
-  await expect(primaryAction).toHaveCount(1);
-  await expect(primaryAction).toContainText("Finish setup first");
-  await expect(primaryAction).toBeDisabled();
+  await expect(workspace.getByLabel("Planned iLO IP")).toBeVisible();
+  await expect(workspace.getByLabel("ESXi management IP")).toBeVisible();
+  await expect(workspace.getByLabel("Server workspace checks")).not.toBeVisible();
   await expect(workspace.getByRole("link", { name: "Open setup" })).toHaveCount(0);
   await expect(workspace).not.toContainText("No read-only test registered");
-  await expect(workspace.getByLabel("DL360 Gen10 essentials")).toBeVisible();
 });
 
 test("overview device drawer resolves values from the saved active profile", async ({ page }) => {
@@ -1514,13 +1512,6 @@ test("setup faceplate element clicks reveal concise details only after intent", 
       note: "which VLAN lane it belongs to",
       path: "/network",
       workspace: "Cisco switch"
-    },
-    {
-      assignmentLabel: "Drive bay assignment",
-      click: /^Drive bay 1/,
-      note: "saved RAID role",
-      path: "/server",
-      workspace: "DL360 Gen10"
     },
     {
       click: /^e0a$/,
@@ -1556,6 +1547,13 @@ test("setup faceplate element clicks reveal concise details only after intent", 
     }
     await expect(workspace.getByLabel(`${item.workspace} advanced checks and proof`), `${item.workspace} still keeps proof closed`).not.toHaveAttribute("open", "");
   }
+
+  await page.goto("/server");
+  const serverWorkspace = page.locator("section[aria-label='Server configuration workspace']");
+  await expect(serverWorkspace.getByLabel("Planned iLO IP"), "Server values stay visible before physical planning").toBeVisible();
+  await expect(serverWorkspace.getByText("Server drive map", { exact: true })).not.toBeVisible();
+  await serverWorkspace.getByRole("tab", { name: /Hardware & proof/ }).click();
+  await expect(serverWorkspace.getByText("Server drive map", { exact: true })).toBeVisible();
 });
 
 test("topology directs storage exceptions to the NetApp setup drawer", async ({ page }) => {
@@ -2101,7 +2099,7 @@ test("operator button matrix keeps default actions simple and safe", async ({ pa
     { label: "Overview", path: "/overview", primary: () => page.getByTestId("operator-home-primary-action") },
     { label: "Lab Defaults", path: "/setup/defaults", primary: () => page.locator(".lab-defaults-actions .operator-primary-button") },
     { label: "Network", path: "/network", primary: () => page.locator("section[aria-label='Cisco switch workspace'] > .design-device-primary-action .design-plan-action") },
-    { label: "Server", path: "/server", primary: () => page.locator("section[aria-label='DL360 Gen10 workspace'] > .design-device-primary-action .design-plan-action") },
+    { label: "Server", path: "/server", primary: () => page.locator("section[aria-label='Server configuration workspace'] .operator-primary-button") },
     { label: "Storage", path: "/storage", primary: () => page.locator("section[aria-label='NetApp ONTAP workspace'] > .design-device-primary-action .design-plan-action") },
     { label: "Virtualization", path: "/virtualization", primary: () => page.locator("section[aria-label='vCenter VCSA workspace'] > .design-device-primary-action .design-plan-action") },
     { label: "Firmware", path: "/firmware-upgrades", primary: () => page.getByRole("button", { name: "Check versions" }) },
@@ -2141,7 +2139,11 @@ test("operator primary check buttons run only expected read-only workflows", asy
       path: "/network"
     },
     {
-      click: () => page.locator("section[aria-label='DL360 Gen10 workspace'] > .design-device-primary-action").getByRole("button", { name: "Test DL360 Gen10" }).click(),
+      click: async () => {
+        const workspace = page.locator("section[aria-label='Server configuration workspace']");
+        await workspace.getByRole("tab", { name: /ESXi & RAID/ }).click();
+        await workspace.getByRole("button", { name: /ESXi Live Check/ }).click();
+      },
       expectedActionIds: ["esxi.management-validation"],
       label: "Server",
       path: "/server"
@@ -2436,49 +2438,33 @@ test("network surface has no horizontal overflow on mobile", async ({ page }) =>
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
-test("server default opens canonical Compute workspace and keeps guarded actions out of first glance", async ({ page }) => {
+test("server fallback opens a concise rack-style workspace and keeps guarded actions out of first glance", async ({ page }) => {
   await page.goto("/server");
 
-  const launcher = page.getByLabel("Compute and iLO setup launcher");
-  const workspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
-  await expect(launcher).toBeVisible();
+  const workspace = page.locator("section[aria-label='Server configuration workspace']");
   await expect(workspace).toBeVisible();
-  await expect(workspace.getByRole("heading", { name: "DL360 Gen10" })).toBeVisible();
-  await expect(page.getByLabel("Compute and iLO launcher summary")).toContainText("iLO IP");
-  await expect(page.getByLabel("Compute and iLO launcher summary")).toContainText("ESXi IP");
-  await expect(page.getByLabel("Compute and iLO launcher summary")).toContainText("Storage path");
-  await expect(workspace.getByLabel("DL360 Gen10 main setup fields")).toContainText("iLO IP");
-  await expect(workspace.getByLabel("DL360 Gen10 main setup fields")).toContainText("ESXi IP");
-  await expect(workspace.getByLabel("DL360 Gen10 credential setup")).toContainText("Reference only");
-  await expect(workspace.getByRole("button", { name: "Test DL360 Gen10" })).toBeVisible();
-  await expect(workspace.getByLabel("DL360 Gen10 interactive faceplate")).not.toBeVisible();
+  await expect(workspace.getByLabel("Server configuration summary")).toContainText("iLO");
+  await expect(workspace.getByLabel("Server configuration summary")).toContainText("ESXi");
+  await expect(workspace.getByRole("tab", { name: /Server settings/ })).toHaveAttribute("aria-selected", "true");
+  await expect(workspace.getByLabel("Planned iLO IP")).toBeVisible();
+  await expect(workspace.getByLabel("ESXi management IP")).toBeVisible();
+  await expect(workspace.getByLabel("Initial iLO IP")).toBeVisible();
+  await expect(workspace.getByLabel("Embedded server NIC")).toBeVisible();
   await expect(workspace.getByLabel("Server workspace checks")).not.toBeVisible();
   await expect(workspace.getByRole("button", { name: /reset|rebuild|apply|install/i })).toHaveCount(0);
   await expect(workspace).not.toContainText(/\bprovider\b|\bruntime\b/i);
 });
 
-test("server workspace reveals migrated setup, storage path, service pack, and RAID evidence", async ({ page }) => {
+test("server fallback reveals essential iLO and read-only RAID sections on demand", async ({ page }) => {
   await page.goto("/server");
 
-  const workspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
-  await expect(workspace.getByLabel("DL360 Gen10 main setup fields")).toContainText("iLO IP");
-  await expect(workspace.getByLabel("DL360 Gen10 main setup fields")).toContainText("ESXi IP");
-  await openCredentialReferences(page, "DL360 Gen10", ["ILO_TEST_PASSWORD", "ESXI_TEST_PASSWORD"]);
-  await expect(workspace.getByLabel("DL360 Gen10 edit settings")).toContainText("More settings");
-  await expect(workspace.getByLabel("DL360 Gen10 edit settings")).toContainText("Profile only");
-  await expect.poll(
-    () => workspace.getByLabel("DL360 Gen10 edit settings").evaluate((node) => (node as HTMLDetailsElement).open),
-    { message: "Server optional setup fields start collapsed" }
-  ).toBe(false);
-  await expect(workspace.getByLabel("DL360 Gen10 more setup fields")).not.toBeVisible();
-  const storageGroup = await openWorkspaceEditGroup(page, "DL360 Gen10", "Storage");
-  await expect(storageGroup).toContainText("RAID controller");
-  await expect(storageGroup).toContainText("Boot RAID");
-  await expect(storageGroup).not.toContainText("Data RAID");
-  await expect(workspace.getByLabel("Server workspace checks")).not.toBeVisible();
+  const workspace = page.locator("section[aria-label='Server configuration workspace']");
+  await workspace.getByRole("tab", { name: /iLO & access/ }).click();
+  await expect(workspace.getByLabel("iLO access credentials")).toBeVisible();
+  await expect(workspace.getByLabel("iLO workspace server controls")).toContainText("iLO read-only checks");
 
-  const advanced = await openWorkspaceAdvanced(page, "DL360 Gen10");
-  const serverControls = advanced.getByLabel("Server workspace checks");
+  await workspace.getByRole("tab", { name: /ESXi & RAID/ }).click();
+  const serverControls = workspace.getByLabel("Server workspace checks");
   await expect(serverControls).toBeVisible();
   await expect(serverControls).toContainText("ESXi and RAID checks");
   await expect(serverControls).toContainText("Validate RAID");
@@ -2492,14 +2478,16 @@ test("server workspace reveals migrated setup, storage path, service pack, and R
 
 test("server workspace primary check runs through the ESXi read-only action endpoint", async ({ page }) => {
   await page.goto("/server");
+  const workspace = page.locator("section[aria-label='Server configuration workspace']");
+  await workspace.getByRole("tab", { name: /ESXi & RAID/ }).click();
 
   const runResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/workflows/actions/esxi.management-validation/run") &&
     response.request().method() === "POST"
   );
-  await page.locator("section[aria-label='DL360 Gen10 workspace'] > .design-device-primary-action").getByRole("button", { name: "Test DL360 Gen10" }).click();
+  await workspace.getByRole("button", { name: /ESXi Live Check/ }).click();
   await expect((await runResponse).ok()).toBeTruthy();
-  await expect(page.locator("section[aria-label='DL360 Gen10 workspace']")).toContainText("ESXi Live Check:");
+  await expect(workspace).toContainText("ESXi Live Check:");
 });
 
 test("server blocker copy hides internal mode vocabulary", async ({ page }) => {
@@ -2512,7 +2500,7 @@ test("server blocker copy hides internal mode vocabulary", async ({ page }) => {
   }));
 
   await page.goto("/server");
-  const workspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
+  const workspace = page.locator("section[aria-label='Server configuration workspace']");
   await expect(workspace).toBeVisible();
   await expect(workspace.getByLabel("Server workspace checks")).not.toBeVisible();
   const text = await visibleMainText(page);
@@ -2530,7 +2518,7 @@ test("server RAID blocker copy stays out of default operator mode", async ({ pag
   }));
 
   await page.goto("/server");
-  const workspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
+  const workspace = page.locator("section[aria-label='Server configuration workspace']");
   await expect(workspace).toBeVisible();
   await expect(workspace.getByLabel("Server workspace checks")).not.toBeVisible();
   const text = await visibleMainText(page);
@@ -2608,7 +2596,7 @@ test("setup surfaces hide stale loading while background checks are slow", async
 
   for (const [path, heading] of [
     ["/setup/cisco", "Cisco Switch"],
-    ["/setup/ilo", "Compute & iLO"],
+    ["/setup/ilo", "Server & iLO"],
     ["/setup/storage", "Storage & NetApp"],
     ["/setup/firmware", "Keep every device on the expected version."]
   ] as const) {
@@ -3644,6 +3632,34 @@ test("rack workspace and runbook are reachable from the nav and render", async (
   await expect(page.locator(".simple-step")).toHaveCount(5);
 });
 
+test("rack keeps the server visible while essential iLO controls open beside it", async ({ page }) => {
+  const mutations: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "GET") mutations.push(`${request.method()} ${new URL(request.url()).pathname}`);
+  });
+
+  await page.goto("/simple");
+  await page.locator(".rack-unit[aria-label='Open HPE iLO']").click();
+  await page.getByRole("button", { name: "Configure iLO beside rack" }).click();
+
+  const configurator = page.getByLabel("Configure HPE iLO beside rack");
+  await expect(page.locator(".rack-light-svg")).toBeVisible();
+  await expect(configurator).toBeVisible();
+  await expect(configurator.getByRole("tab", { name: "Access" })).toHaveAttribute("aria-selected", "true");
+  await expect(configurator.getByLabel("iLO access credentials")).toBeVisible();
+  await expect(configurator.getByLabel("iLO host or initial IP")).toHaveValue("192.168.1.201");
+
+  await configurator.getByRole("tab", { name: "iLO settings" }).click();
+  await expect(configurator.getByLabel("iLO setup settings")).toBeVisible();
+  await configurator.getByRole("tab", { name: "Checks" }).click();
+  await expect(configurator.getByLabel("iLO workspace server controls")).toContainText("iLO read-only checks");
+  await expect(configurator.getByRole("button", { name: /reset|rebuild|apply|install/i })).toHaveCount(0);
+
+  await configurator.getByRole("button", { name: "Back to device" }).click();
+  await expect(page.locator(".rack-inspector").getByRole("heading", { name: "HPE iLO" })).toBeVisible();
+  expect(mutations).toEqual([]);
+});
+
 test("rack workspace never turns stale provider evidence green and stays responsive", async ({ page }) => {
   const staleProviders = providerStatuses().map((provider) => ({
     ...provider,
@@ -3729,7 +3745,9 @@ test("rack iLO onboarding saves the DHCP target and credentials without probing 
   await expect(addedIlo).toHaveClass(/is-not-checked/);
   await expect(page.locator(".rack-inspector")).toContainText("192.168.1.211");
   await expect(page.locator(".rack-inspector")).toContainText("Step 3 of 3");
-  await expect(page.getByRole("link", { name: "Continue: verify iLO access" })).toHaveAttribute("href", "/server");
+  await expect(page.getByRole("button", { name: "Configure iLO beside rack" })).toBeVisible();
+  await page.getByRole("button", { name: "Configure iLO beside rack" }).click();
+  await expect(page.getByLabel("Configure HPE iLO beside rack")).toBeVisible();
 
   expect(writes).toHaveLength(2);
   expect(writes[0]).toMatchObject({
