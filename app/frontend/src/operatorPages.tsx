@@ -21,6 +21,7 @@ import { createContext, FormEvent, Fragment, ReactNode, useContext, useEffect, u
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { api } from "./api";
+import { DeviceInventoryForm } from "./components/DeviceInventoryForm";
 import { OperatorHomeView } from "./components/operator/OperatorHomeView";
 import {
   ActionLink,
@@ -45,7 +46,6 @@ import type {
   CiscoConsoleIdentityCandidates,
   CiscoConsoleIdentityResult,
   DeviceInventoryItem,
-  DeviceInventoryWrite,
   FirmwareFileCandidate,
   FirmwareFileSelections,
   FirmwareSummary,
@@ -8695,75 +8695,6 @@ function inventoryDeviceStatus(
   if (deviceType === "netapp") return statuses.netappStatus;
   if (deviceType === "vcenter") return statuses.vmStatus;
   return "not checked";
-}
-
-function DeviceInventoryForm({
-  device,
-  onClose,
-  onReload
-}: {
-  device?: DeviceInventoryItem;
-  onClose: () => void;
-  onReload: () => Promise<void> | void;
-}) {
-  const [form, setForm] = useState<DeviceInventoryWrite>({
-    device_type: device?.device_type ?? "other",
-    display_name: device?.display_name ?? "",
-    host: device?.host ?? "",
-    dhcp_enabled: device?.dhcp_enabled ?? false,
-    notes: device?.notes ?? ""
-  });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      const payload = form.dhcp_enabled
-        ? { ...form, host: undefined }
-        : form;
-      if (device) await api.updateDevice(device.id, payload);
-      else await api.createDevice(payload);
-      await onReload();
-      onClose();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="topology-workspace-overlay" aria-label={device ? "Edit device" : "Add device"}>
-      <div className="topology-workspace-backdrop" onClick={onClose} />
-      <aside className="topology-workspace-drawer">
-        <div className="topology-workspace-drawer-head"><span>{device ? "Edit device" : "Add device"}</span><button onClick={onClose} type="button">Close</button></div>
-        <form className="map-editor-form" onSubmit={save}>
-          <label><span>Type</span><input aria-label="Device type" list="device-inventory-types" onChange={(event) => setForm({ ...form, device_type: event.target.value })} required value={form.device_type} /></label>
-          <datalist id="device-inventory-types"><option value="ilo" /><option value="cisco_switch" /><option value="esxi_host" /><option value="netapp" /><option value="vcenter" /><option value="other" /></datalist>
-          <label><span>Name</span><input aria-label="Device name" onChange={(event) => setForm({ ...form, display_name: event.target.value })} required value={form.display_name} /></label>
-          <label><span>Addressing</span><select aria-label="Device addressing mode" onChange={(event) => setForm({ ...form, dhcp_enabled: event.target.value === "dhcp" })} value={form.dhcp_enabled ? "dhcp" : "static"}><option value="static">Static</option><option value="dhcp">DHCP</option></select></label>
-          <label>
-            <span>{form.dhcp_enabled ? "Observed address" : "Host (optional)"}</span>
-            <input
-              aria-label="Device host"
-              disabled={form.dhcp_enabled}
-              onChange={(event) => setForm({ ...form, host: event.target.value })}
-              placeholder={form.dhcp_enabled ? "No address observed yet" : undefined}
-              value={form.host ?? ""}
-            />
-            {form.dhcp_enabled && <small className="from-device-hint">Assigned by the network, not editable.</small>}
-          </label>
-          <label><span>Notes (optional)</span><textarea aria-label="Device notes" onChange={(event) => setForm({ ...form, notes: event.target.value })} value={form.notes ?? ""} /></label>
-          {error && <div className="operator-feedback error">{error}</div>}
-          <p className="muted">Inventory only. Saving does not contact hardware or change provider configuration.</p>
-          <button className="operator-primary-button" disabled={busy} type="submit">{busy ? "Saving" : "Save device"}</button>
-        </form>
-      </aside>
-    </div>
-  );
 }
 
 function GenericDevicePanel({ device, onClose, onReload }: { device: DeviceInventoryItem; onClose: () => void; onReload: () => Promise<void> | void }) {

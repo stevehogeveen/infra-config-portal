@@ -14487,3 +14487,42 @@ review proportions, label density, and whether the next slice should promote thi
 `/overview`, preserving the existing detailed workspaces as the inspector destinations. Also review
 whether rack unit positions should become persisted kit data before custom inventory grows beyond
 the current eight-unit visual.
+
+## 2026-08-10T17:29:40Z — CODEX (rack promoted to app home; live inventory editing wired)
+
+Steve approved the rack direction as the new web-app design and asked to add/configure equipment as
+it is placed in the rack without removing backend functionality. This slice makes `/simple` the app
+home (`/`, `/config`, `/dashboard`, `/lab-setup`, and `/hardware` now redirect there), updates the
+Windows launcher to open it, and leaves the full existing map/editor at `/overview` as `Detailed
+setup`. The global brand and nav return to Rack home. No API, provider, workflow, or guarded action
+was removed.
+
+Rack inventory workflow:
+
+- `Add equipment` and the empty-rack action open the existing device-inventory create contract.
+  Saving POSTs only `/api/v1/device-inventory`, reloads cached data, places the returned device in
+  the rack, and selects it. No discovery or hardware contact is coupled to inventory creation.
+- `Edit rack details` PATCHes the same inventory record for type, name, static/DHCP addressing,
+  host, and notes. DHCP continues to disable host editing and preserve the backend's observed-host
+  boundary. The shared form was extracted and reused by legacy Overview rather than duplicated.
+- Every inventory record now gets a graphical rack row; the rack grows dynamically instead of
+  hiding devices after two custom entries. Cisco, iLO/local bays, ESXi, NetApp, and generic units
+  have distinct faceplates. iLO and ESXi are separate selectable/status-bearing units.
+- The selected inspector links into the unchanged canonical configuration pages: Cisco -> Network,
+  iLO/server -> Server, iLO local storage -> Storage & RAID, ESXi/vCenter -> Virtualization, and
+  NetApp -> Storage. Custom types fall back to Detailed setup. This keeps the portal's plan,
+  approval, action-runner, firmware, RAID, rebuild, and iSCSI boundaries intact.
+- Reachability remains evidence-only: current positive provider status is required for green;
+  newly added and custom equipment stays `Not checked`. Rack selection itself issues no write.
+
+Verification: live DOM/screenshot review at `http://127.0.0.1:5175/simple` passed for empty rack and
+the add-device drawer; the drawer was closed without saving and browser console errors were empty.
+Mocked E2E covers root-to-rack promotion, separate iLO/ESXi units, POST add, immediate selection,
+PATCH edit, configuration handoff, stale-ready refusal, zero-write selection, and 1280/390
+responsiveness. Final results: `npm run build` passed, component tests **2/2**, full Playwright
+**125/125**. No backend or hardware call was made.
+
+Next CXO decision: keep `/overview` as the quiet `Detailed setup` escape hatch for one more cycle,
+then decide whether its remaining inline-only controls should move into the vendor pages so that the
+legacy visual can be retired without losing any operator capability. Persisted rack position/U-size
+is intentionally not invented yet; current order follows inventory until we add a real layout model.

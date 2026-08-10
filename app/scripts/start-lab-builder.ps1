@@ -138,7 +138,7 @@ try {
   Wait-HttpReady -Url "http://$HostName`:$BackendPort/health" -TimeoutSeconds $StartupTimeoutSeconds -Processes @($backendProcess)
 
   $frontendProcess = Start-Process -FilePath $shell.Source -ArgumentList $frontendArgumentLine -PassThru -WindowStyle Hidden -RedirectStandardOutput $frontendLog -RedirectStandardError $frontendErrorLog
-  Wait-HttpReady -Url "http://$HostName`:$FrontendPort/overview" -TimeoutSeconds $StartupTimeoutSeconds -Processes @($backendProcess, $frontendProcess)
+  Wait-HttpReady -Url "http://$HostName`:$FrontendPort/simple" -TimeoutSeconds $StartupTimeoutSeconds -Processes @($backendProcess, $frontendProcess)
 
   $state = [ordered]@{
     schema_version = "lab-builder-windows-runtime/v1"
@@ -150,7 +150,7 @@ try {
     frontend_pid = $frontendProcess.Id
     backend_started_at = $backendProcess.StartTime.ToUniversalTime().ToString("o")
     frontend_started_at = $frontendProcess.StartTime.ToUniversalTime().ToString("o")
-    frontend_url = "http://$HostName`:$FrontendPort/overview"
+    frontend_url = "http://$HostName`:$FrontendPort/simple"
     backend_health_url = "http://$HostName`:$BackendPort/health"
   }
   $state | ConvertTo-Json | Set-Content -LiteralPath $pidPath -Encoding utf8

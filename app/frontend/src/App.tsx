@@ -749,7 +749,7 @@ function App() {
         >
           <OperatorTabStateProvider>
             <Routes>
-              <RouterRoute path="/" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/" element={<Navigate to="/simple" replace />} />
               <RouterRoute
                 path="/overview"
                 element={
@@ -763,6 +763,7 @@ function App() {
                 }
               />
               <RouterRoute path="/simple" element={<SimpleLabPage />} />
+              <RouterRoute path="/rack" element={<Navigate to="/simple" replace />} />
               <RouterRoute path="/simple-steps" element={<SimpleStepsPage />} />
               <RouterRoute path="/network" element={<OperatorNetworkPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/server" element={<OperatorServerPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
@@ -783,10 +784,10 @@ function App() {
               <RouterRoute path="/lab-defaults" element={<Navigate to="/setup/defaults" replace />} />
               <RouterRoute path="/firmware-upgrades" element={<OperatorFirmwareUpgradesPage labProfileState={labProfileState} />} />
               <RouterRoute path="/validation" element={<OperatorValidationPage isAdvancedMode={uiMode === "advanced"} labProfileState={labProfileState} />} />
-              <RouterRoute path="/config" element={<Navigate to="/overview" replace />} />
-              <RouterRoute path="/dashboard" element={<Navigate to="/overview" replace />} />
-              <RouterRoute path="/lab-setup" element={<Navigate to="/overview" replace />} />
-              <RouterRoute path="/hardware" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/config" element={<Navigate to="/simple" replace />} />
+              <RouterRoute path="/dashboard" element={<Navigate to="/simple" replace />} />
+              <RouterRoute path="/lab-setup" element={<Navigate to="/simple" replace />} />
+              <RouterRoute path="/hardware" element={<Navigate to="/simple" replace />} />
               <RouterRoute path="/run-center" element={<RunCenter />} />
               <RouterRoute path="/run" element={<RunCenter />} />
               <RouterRoute path="/control-center" element={<Navigate to="/overview" replace />} />
@@ -1193,12 +1194,11 @@ function pageTitleForRoute(pathname: string) {
 function ShellTopNav() {
   return (
     <header className="shell-topbar" aria-label="Application header">
-      <Link className="shell-brand" to="/overview" aria-label="Lab Builder overview">
+      <Link className="shell-brand" to="/simple" aria-label="Lab Builder rack home">
         <span className="shell-brand-mark"><Server size={22} /></span>
         <span className="shell-brand-copy"><b>Lab Builder</b><small>Operator</small></span>
       </Link>
       <nav className="top-nav" aria-label="Primary navigation">
-        <NavLink to="/overview" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Overview</NavLink>
         <NavLink to="/simple" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Rack</NavLink>
         <NavLink to="/simple-steps" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Runbook</NavLink>
         <NavLink to="/setup/defaults" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Lab Defaults</NavLink>

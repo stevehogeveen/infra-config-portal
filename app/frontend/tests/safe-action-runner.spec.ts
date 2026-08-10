@@ -332,7 +332,7 @@ async function expectResponsiveShell(page: Page, path: string, viewport: { width
   });
   expect(metrics.width, `${path} document overflow at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
   expect(metrics.bodyWidth, `${path} body overflow at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
-  expect(metrics.navLinkCount, `${path} keeps all primary destinations at ${viewport.width}px`).toBe(7);
+  expect(metrics.navLinkCount, `${path} keeps all primary destinations at ${viewport.width}px`).toBe(6);
   expect(metrics.navLeft, `${path} primary nav starts inside the viewport at ${viewport.width}px`).toBeGreaterThanOrEqual(-1);
   expect(metrics.navRight, `${path} primary nav ends inside the viewport at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
   if (viewport.width >= 1280) {
@@ -352,12 +352,12 @@ test("renders the map-first operator header and pages", async ({ page }) => {
   await expect(page.locator("aside[aria-label='Lab Builder navigation']")).toHaveCount(0);
   const header = page.locator("header[aria-label='Application header']");
   await expect(header).toBeVisible();
-  await expect(header.getByRole("link", { name: "Lab Builder overview" })).toHaveAttribute("href", "/overview");
-  await expect(header.getByRole("link", { name: "Lab Builder overview" })).toContainText("Lab Builder");
-  await expect(header.getByRole("link", { name: "Lab Builder overview" })).toContainText("Operator");
+  await expect(header.getByRole("link", { name: "Lab Builder rack home" })).toHaveAttribute("href", "/simple");
+  await expect(header.getByRole("link", { name: "Lab Builder rack home" })).toContainText("Lab Builder");
+  await expect(header.getByRole("link", { name: "Lab Builder rack home" })).toContainText("Operator");
   const primaryNavigation = header.getByRole("navigation", { name: "Primary navigation" });
-  await expect(primaryNavigation.locator("a")).toHaveText(["Overview", "Rack", "Runbook", "Lab Defaults", "Firmware", "Run Center", "Reports"]);
-  await expect(primaryNavigation.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/overview");
+  await expect(primaryNavigation.locator("a")).toHaveText(["Rack", "Runbook", "Lab Defaults", "Firmware", "Run Center", "Reports"]);
+  await expect(primaryNavigation.getByRole("link", { name: "Rack" })).toHaveAttribute("href", "/simple");
   await expect(primaryNavigation.getByRole("link", { name: "Lab Defaults" })).toHaveAttribute("href", "/setup/defaults");
   await expect(primaryNavigation.getByRole("link", { name: "Firmware" })).toHaveAttribute("href", "/firmware-upgrades");
   await expect(primaryNavigation.getByRole("link", { name: "Run Center" })).toHaveAttribute("href", "/run");
@@ -375,7 +375,8 @@ test("renders the map-first operator header and pages", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
   await page.goto("/lab-setup");
-  await expect(page).toHaveURL(/\/overview/);
+  await expect(page).toHaveURL(/\/simple/);
+  await expect(page.getByRole("heading", { name: "Rack elevation" })).toBeVisible();
   for (const setupPath of ["/network", "/server", "/storage", "/virtualization"]) {
     await page.goto(setupPath);
     await expect(page).toHaveURL(new RegExp(`${setupPath}$`));
@@ -420,8 +421,8 @@ test("renders the map-first operator header and pages", async ({ page }) => {
   await page.goto("/validation");
   await expect(page.getByRole("heading", { name: "Validation", exact: true })).toBeVisible();
   await page.goto("/config");
-  await expect(page).toHaveURL(/\/overview/);
-  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/simple/);
+  await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
   await page.goto("/settings");
   await expect(page).toHaveURL(/\/overview/);
   await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
@@ -1906,7 +1907,7 @@ test("top nav and map device drawers keep setup direct without dead settings dra
   await page.goto("/overview");
 
   const header = page.getByRole("banner", { name: "Application header" });
-  await expect(header.getByRole("navigation", { name: "Primary navigation" }).getByRole("link")).toHaveCount(7);
+  await expect(header.getByRole("navigation", { name: "Primary navigation" }).getByRole("link")).toHaveCount(6);
   await expect(header.getByRole("link", { name: "Create or change kit" })).toHaveAttribute("href", "/lab-profiles#new");
   await expect(header.getByRole("button", { name: "Settings" })).toHaveCount(0);
   await expect(page.locator(".system-setup-picker, section.tab-settings-drawer")).toHaveCount(0);
@@ -3214,14 +3215,14 @@ test("saved lab setup global defaults use active profile values and never render
   await expect(page.locator("input[type='password']")).toHaveCount(0);
 });
 
-test("legacy settings paths redirect to overview and the contextual drawer is removed", async ({ page }) => {
+test("legacy settings paths redirect to the current home and the contextual drawer is removed", async ({ page }) => {
   await page.goto("/overview");
   await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
   await expect(page.locator("section.tab-settings-drawer")).toHaveCount(0);
 
   await page.goto("/config");
-  await expect(page).toHaveURL(/\/overview/);
-  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/simple/);
+  await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
 
   await page.goto("/settings");
   await expect(page).toHaveURL(/\/overview/);
@@ -3663,6 +3664,46 @@ test("rack workspace never turns stale provider evidence green and stays respons
   }
 });
 
+test("rack home adds and edits equipment before opening its existing configuration workspace", async ({ page }) => {
+  const inventoryWrites: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/v1/device-inventory") && request.method() !== "GET") {
+      inventoryWrites.push(`${request.method()} ${path}`);
+    }
+  });
+
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/simple$/);
+  await expect(page.locator(".rack-unit")).toHaveCount(5);
+  await expect(page.locator(".rack-unit[aria-label='Open HPE iLO']")).toHaveCount(1);
+  await expect(page.locator(".rack-unit[aria-label='Open ESXi Host']")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Add equipment" }).click();
+  await page.getByLabel("Device type").fill("server");
+  await page.getByLabel("Device name").fill("Server 2");
+  await page.getByLabel("Device host").fill("192.168.1.212");
+  await page.getByLabel("Device notes").fill("Second rack server");
+  await page.getByRole("button", { name: "Add to rack" }).click();
+
+  await expect(page.locator(".rack-unit")).toHaveCount(6);
+  await expect(page.locator(".rack-inspector").getByRole("heading", { name: "Server 2" })).toBeVisible();
+  await expect(page.locator(".rack-inspector")).toContainText("192.168.1.212");
+
+  await page.getByRole("button", { name: "Edit rack details" }).click();
+  await page.getByLabel("Device name").fill("Server 2 - DL380");
+  await page.getByLabel("Device host").fill("192.168.1.213");
+  await page.getByRole("button", { name: "Save rack details" }).click();
+
+  await expect(page.locator(".rack-unit[aria-label='Open Server 2 - DL380']")).toBeVisible();
+  await expect(page.locator(".rack-inspector")).toContainText("192.168.1.213");
+  await expect(page.locator(".rack-inspector").getByRole("link", { name: "Configure server" })).toHaveAttribute("href", "/server");
+  expect(inventoryWrites).toEqual([
+    "POST /api/v1/device-inventory",
+    "PATCH /api/v1/device-inventory/custom-5"
+  ]);
+});
+
 async function installApiMocks(page: Page) {
   let firmwareFileSelections = firmwareFileSelectionState({});
   let labSafety = labSafetySettings();
@@ -3734,6 +3775,14 @@ async function installApiMocks(page: Page) {
       if (request.method() === "DELETE") {
         deviceInventory = seededDeviceInventory().filter((device) => device.id !== id);
         return json(route, null);
+      }
+      if (request.method() === "PATCH") {
+        const payload = request.postDataJSON() as Record<string, unknown>;
+        const devices = seededDeviceInventory();
+        const index = devices.findIndex((device) => device.id === id);
+        const updated = { ...devices[index], ...payload, updated_at: checkedAt };
+        devices[index] = updated;
+        return json(route, updated);
       }
     }
     if (url.pathname.startsWith("/api/v1/lab/profiles/") && request.method() === "PUT") {

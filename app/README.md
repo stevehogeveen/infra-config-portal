@@ -234,7 +234,7 @@ cd C:\path\to\infra-config-portal\app
 ```
 
 The launcher starts hidden backend and frontend processes, waits for both HTTP
-surfaces, opens `http://127.0.0.1:5173/overview`, and records only the processes
+surfaces, opens the Rack home at `http://127.0.0.1:5173/simple`, and records only the processes
 it owns under repo-root `.local\windows-runtime`. It uses an explicit `-Mode`
 first, then an existing `PROVIDER_MODE`, then the mode saved by the app in
 `.local\app-mode.env`, and otherwise fails safely to `mock`.
