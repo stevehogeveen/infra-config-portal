@@ -48,16 +48,33 @@ def get_session() -> Generator[Session, None, None]:
         session.close()
 
 
-def init_database() -> None:
+_initialized_engine_urls: set[str] = set()
+
+
+def init_database(*, force: bool = False) -> None:
+    """Create and upgrade the schema once per engine.
+
+    Startup calls this, but so do request-time helpers that cannot assume a
+    session (see netapp_state). Each run opens several short-lived connections
+    of its own, so repeating it inside a request that already holds a pooled
+    session exhausted the pool under concurrent reads and stalled the API.
+    Doing the work once per engine keeps those callers safe without making
+    them care whether startup ran first.
+    """
     from app import models  # noqa: F401
     from app.services.device_inventory import seed_legacy_devices
     from app.services.ilo_device_storage import ensure_per_device_ilo_storage
+
+    engine_key = str(engine.url)
+    if not force and engine_key in _initialized_engine_urls:
+        return
 
     Base.metadata.create_all(bind=engine)
     ensure_device_inventory_dhcp_column(engine)
     with SessionLocal() as session:
         seed_legacy_devices(session)
     ensure_per_device_ilo_storage(engine)
+    _initialized_engine_urls.add(engine_key)
 
 
 def ensure_device_inventory_dhcp_column(target_engine: Engine) -> None:

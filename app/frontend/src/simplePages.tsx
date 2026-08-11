@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
-import { Cpu, Database, FileText, HardDrive, Layers3, ListChecks, PlayCircle, Pencil, Plus, Server, Settings2 } from "lucide-react";
+import { Cpu, Database, FileText, HardDrive, Layers3, ListChecks, PlayCircle, Pencil, Plus, Server, Settings2, Trash2 } from "lucide-react";
 import { Link, NavLink } from "react-router-dom";
 import { api } from "./api";
 import { DeviceInventoryForm } from "./components/DeviceInventoryForm";
@@ -182,7 +182,7 @@ function devicePage(device: DeviceInventoryItem): string {
   if (kind === "netapp") return "/storage";
   if (kind === "vcenter") return "/virtualization";
   if (kind === "server") return "/server";
-  return "/overview";
+  return "/simple";
 }
 
 function rackConfigAvailable(device: DeviceInventoryItem): boolean {
@@ -478,7 +478,7 @@ function RackElevationGraphic({ devices, providers, accessByDeviceId, bays, stor
   );
 }
 
-function RackInspector({ selected, word, bays, access, storage, storageMatchesDevice, onEdit, onAdd, onConfigure }: {
+function RackInspector({ selected, word, bays, access, storage, storageMatchesDevice, onEdit, onAdd, onConfigure, onRemove }: {
   selected?: DeviceInventoryItem;
   word: RackWord;
   bays: RackBay[];
@@ -488,6 +488,7 @@ function RackInspector({ selected, word, bays, access, storage, storageMatchesDe
   onEdit: () => void;
   onAdd: () => void;
   onConfigure: () => void;
+  onRemove: () => void;
 }) {
   if (!selected) {
     return <aside className="rack-inspector rack-inspector-empty"><div className="rack-empty-icon"><Plus size={22} /></div><h2>Build your rack</h2><p>No devices are in this kit yet. Add the first piece of equipment without contacting it.</p><button className="rack-action is-primary" onClick={onAdd} type="button">Add first device</button></aside>;
@@ -539,6 +540,7 @@ function RackInspector({ selected, word, bays, access, storage, storageMatchesDe
         {isIlo && <Link className="rack-action" to="/storage">Local storage &amp; RAID</Link>}
         {isEsxi && <Link className="rack-action" to="/virtualization">ESXi installation &amp; config</Link>}
         <button className="rack-action" onClick={onEdit} type="button"><Pencil size={14} /> Edit rack details</button>
+        <button className="rack-action is-remove" onClick={onRemove} type="button"><Trash2 size={14} /> Remove from rack</button>
         <button className="rack-add-another" onClick={onAdd} type="button"><Plus size={14} /> Add another device</button>
       </div>
     </aside>
@@ -721,6 +723,54 @@ function MachineItemConfigPanel({
   );
 }
 
+function RemoveDeviceDialog({
+  device,
+  onCancel,
+  onRemoved
+}: {
+  device: DeviceInventoryItem;
+  onCancel: () => void;
+  onRemoved: () => Promise<void> | void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function remove() {
+    setBusy(true);
+    setError("");
+    try {
+      await api.deleteDevice(device.id);
+      await onRemoved();
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rack-remove-overlay" role="dialog" aria-modal="true" aria-label={`Remove ${device.display_name} from the rack`}>
+      <div className="rack-remove-panel">
+        <p className="operator-kicker">Remove from rack</p>
+        <h2>{device.display_name}</h2>
+        <p>
+          This removes the rack record for {device.display_name}
+          {device.host ? ` (${device.host})` : ""} and any access details saved against it.
+        </p>
+        <p className="rack-remove-safe">
+          The hardware itself is never contacted or changed. You can add it back at any time.
+        </p>
+        {error && <p className="rack-remove-error" role="alert">{error}</p>}
+        <div className="rack-remove-actions">
+          <button disabled={busy} onClick={onCancel} type="button">Keep it</button>
+          <button className="is-destructive" disabled={busy} onClick={() => void remove()} type="button">
+            {busy ? "Removing…" : "Remove from rack"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function railLinkClass({ isActive }: { isActive: boolean }): string {
   return isActive ? "is-active" : "";
 }
@@ -794,6 +844,7 @@ export function SimpleLabPage() {
   const [editingDevice, setEditingDevice] = useState<DeviceInventoryItem | null>(null);
   const [configuringId, setConfiguringId] = useState("");
   const [selectedItemId, setSelectedItemId] = useState("");
+  const [removingDevice, setRemovingDevice] = useState<DeviceInventoryItem | null>(null);
   useEffect(() => {
     if (visibleIds.length && !visibleIds.includes(selectedId)) setSelectedId(visibleIds[0]);
     if (!visibleIds.length && selectedId) setSelectedId("");
@@ -860,7 +911,7 @@ export function SimpleLabPage() {
           ? <div className="rack-loading"><Server size={24} /> Reading cached lab state…</div>
           : loadError
             ? <div className="rack-disconnected" role="alert"><Server size={30} /><h2>Backend disconnected</h2><p>{loadError}</p><button onClick={() => void reload()} type="button">Reconnect</button><small>Adding or changing equipment is paused so a connection failure cannot look like an empty rack or a successful save.</small></div>
-            : <div className={`rack-stage ${configuringId ? "is-configuring" : ""}`}><div className="rack-canvas"><RackElevationGraphic devices={devices} providers={providers} accessByDeviceId={accessByDeviceId} bays={bays} storageDeviceId={storageDeviceId} selectedId={selected?.id ?? ""} onSelect={(id) => { setSelectedId(id); setConfiguringId(""); }} /></div><div className="rack-detail">{configuringId && selected?.id === configuringId && rackDeviceKind(selected) === "ilo" ? <RackIloConfigurator activeProfile={profile ?? null} device={selected} onClose={() => setConfiguringId("")} onReload={reload} /> : configuringId && selected?.id === configuringId && rackConfigAvailable(selected) ? <RackDeviceConfigurator activeProfile={profile ?? null} device={selected} health={health} onClose={() => setConfiguringId("")} onReload={reload} /> : <><RackInspector selected={selected} word={selectedWord} bays={bays} access={selectedAccess} storage={storage} storageMatchesDevice={Boolean(selected && selected.id === storageDeviceId)} onEdit={() => selected && setEditingDevice(selected)} onAdd={() => setAddOpen(true)} onConfigure={() => selected && setConfiguringId(selected.id)} /><p className="rack-help">Select a device, then configure its essential settings beside the rack. Green is shown only when a current provider check proves access.</p></>}</div></div>}
+            : <div className={`rack-stage ${configuringId ? "is-configuring" : ""}`}><div className="rack-canvas"><RackElevationGraphic devices={devices} providers={providers} accessByDeviceId={accessByDeviceId} bays={bays} storageDeviceId={storageDeviceId} selectedId={selected?.id ?? ""} onSelect={(id) => { setSelectedId(id); setConfiguringId(""); }} /></div><div className="rack-detail">{configuringId && selected?.id === configuringId && rackDeviceKind(selected) === "ilo" ? <RackIloConfigurator activeProfile={profile ?? null} device={selected} onClose={() => setConfiguringId("")} onReload={reload} /> : configuringId && selected?.id === configuringId && rackConfigAvailable(selected) ? <RackDeviceConfigurator activeProfile={profile ?? null} device={selected} health={health} onClose={() => setConfiguringId("")} onReload={reload} /> : <><RackInspector selected={selected} word={selectedWord} bays={bays} access={selectedAccess} storage={storage} storageMatchesDevice={Boolean(selected && selected.id === storageDeviceId)} onEdit={() => selected && setEditingDevice(selected)} onAdd={() => setAddOpen(true)} onConfigure={() => selected && setConfiguringId(selected.id)} onRemove={() => selected && setRemovingDevice(selected)} /><p className="rack-help">Select a device, then configure its essential settings beside the rack. Green is shown only when a current provider check proves access.</p></>}</div></div>}
         {loaded && !loadError && selected && insideAvailable && (
           <MachineInsidePanel
             device={selected}
@@ -879,6 +930,19 @@ export function SimpleLabPage() {
           />
         )}
       </section>
+      {removingDevice && (
+        <RemoveDeviceDialog
+          device={removingDevice}
+          onCancel={() => setRemovingDevice(null)}
+          onRemoved={async () => {
+            setRemovingDevice(null);
+            setSelectedId("");
+            setConfiguringId("");
+            setSelectedItemId("");
+            await reload();
+          }}
+        />
+      )}
       {addOpen && <DeviceInventoryForm defaultDeviceType="ilo" iloOnboarding onClose={() => setAddOpen(false)} onReload={reload} onSaved={(device) => setSelectedId(device.id)} submitLabel="Add to rack" />}
       {editingDevice && <DeviceInventoryForm device={editingDevice} iloOnboarding initialIloUsername={editingIloAccess?.username} iloCredentialsConfigured={Boolean(editingIloAccess?.username_configured && editingIloAccess.password_configured)} onClose={() => setEditingDevice(null)} onReload={reload} onSaved={(device) => setSelectedId(device.id)} submitLabel="Save rack details" />}
     </main>

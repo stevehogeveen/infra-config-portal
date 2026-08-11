@@ -211,6 +211,24 @@ test.beforeEach(async ({ page }) => {
   await installApiMocks(page);
 });
 
+async function openRackIloConfigurator(page: Page) {
+  await page.locator(".rack-unit[aria-label='Open HPE iLO']").click();
+  const inspector = page.locator(".rack-inspector");
+  await expect(inspector.getByRole("heading", { name: "HPE iLO" })).toBeVisible();
+  await inspector.getByRole("button", { name: "Configure iLO beside rack" }).click();
+  const configurator = page.getByLabel("Configure HPE iLO beside rack");
+  await expect(configurator).toBeVisible();
+  return configurator;
+}
+
+async function openRackIloSettings(page: Page) {
+  const configurator = await openRackIloConfigurator(page);
+  await configurator.getByRole("tab", { name: "iLO settings" }).click();
+  const settings = page.locator("section[aria-label='iLO setup settings']");
+  await expect(settings).toBeVisible();
+  return settings;
+}
+
 async function openWorkspaceAdvanced(page: Page, workspaceName: string) {
   const workspace = page.locator(`section[aria-label='${workspaceName} workspace']`);
   const details = workspace.getByLabel(`${workspaceName} details`);
@@ -331,8 +349,8 @@ async function expectResponsiveShell(page: Page, path: string, viewport: { width
   expect(metrics.navRight, `${path} rack rail nav ends inside the viewport at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
 }
 
-test("renders the map-first operator header and pages", async ({ page }) => {
-  await page.goto("/overview");
+test("renders the rack-first operator shell and pages", async ({ page }) => {
+  await page.goto("/simple");
 
   await expect(page.locator("header[aria-label='Application header']")).toHaveCount(0);
   const rail = page.locator("aside.rack-rail");
@@ -353,7 +371,7 @@ test("renders the map-first operator header and pages", async ({ page }) => {
   await expect(rail).not.toContainText(/Test Mode|Local lab setup|New kit|Operator|Advanced/);
   await expect(rail).not.toContainText(/Windows|OVF|Global/);
 
-  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Rack elevation" })).toBeVisible();
   await page.goto("/lab-setup");
   await expect(page).toHaveURL(/\/simple/);
   await expect(page.getByRole("heading", { name: "Rack elevation" })).toBeVisible();
@@ -404,11 +422,11 @@ test("renders the map-first operator header and pages", async ({ page }) => {
   await expect(page).toHaveURL(/\/simple/);
   await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
   await page.goto("/settings");
-  await expect(page).toHaveURL(/\/overview/);
-  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/simple/);
+  await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
 
   await page.goto("/control-center");
-  await expect(page).toHaveURL(/\/overview/);
+  await expect(page).toHaveURL(/\/simple/);
 });
 
 test("advanced-only audit and workflow proof routes stay off the operator surface", async ({ page }) => {
@@ -606,7 +624,7 @@ test("saved kits only manages kit selection and subnet-derived creation", async 
   expect(payload.address_plan.subnet).toBe("192.168.210.0/24");
   expect(payload.address_plan.cisco_management).toBe("192.168.210.204");
   expect(payload.address_plan.netapp_cluster_mgmt).toBe("192.168.210.220");
-  await expect(page).toHaveURL(/\/overview$/);
+  await expect(page).toHaveURL(/\/simple$/);
 
   await page.goto("/lab-profiles");
   await expect(home).toContainText("Rack 08 Edge Lab");
@@ -675,7 +693,7 @@ test("new kit build type stays explicit while the subnet is entered normally", a
   expect(payload.features.vcenter_enabled).toBe(false);
   expect(payload.features.storage_protocol).toBe("none");
   expect(payload.global_settings.netapp_enabled).toBe(false);
-  await expect(page).toHaveURL(/\/overview$/);
+  await expect(page).toHaveURL(/\/simple$/);
 });
 
 test("saved kits switch and history stay behind the selected-kit decision", async ({ page }) => {
@@ -739,167 +757,14 @@ test("saved kits switch and history stay behind the selected-kit decision", asyn
   });
   await changePanel.getByRole("button", { name: "Use this kit" }).click();
   await activateRequest;
-  await expect(page).toHaveURL(/\/overview$/);
-  await expect(page.getByTestId("operator-home")).toContainText("Rack 07 Edge Lab");
-});
-
-test("operator home answers the next action without dashboard clutter", async ({ page }) => {
-  await page.goto("/overview");
-
-  const home = page.getByTestId("operator-home");
-  await expect(home).toBeVisible();
-  await expect(home).toContainText("Current Lab");
-  await expect(home).toContainText("Server + NetApp + vCenter");
-  await expect(home.getByRole("img", { name: /ready, .*blocked, .*not checked/ })).toHaveCount(1);
-  await expect(home.getByTestId("operator-home-primary-action")).toHaveCount(1);
-  await expect(home.getByTestId("operator-home-primary-action")).toBeVisible();
-  await expect(home.getByTestId("operator-home-primary-action")).toContainText("Review Build Plan");
-  await expect(home.getByTestId("operator-home-view-details")).toHaveCount(0);
-  await expect(home.getByText("View all device details")).toHaveCount(0);
-  const currentState = home.getByLabel("Current state summary");
-  const attention = currentState.getByLabel("Needs your attention");
-  await expect(attention).toContainText("Cisco firmware");
-  await expect(attention.locator(".operator-rail-blocker")).toHaveCount(2);
-  await expect(attention).toContainText("HPE Storage firmware");
-  await expect(attention).toContainText("ROMMON baseline missing/manual review");
-  await expect(attention).not.toContainText(/more items? .*device details/i);
-  await expect(attention.getByText("Firmware needs proof")).toHaveCount(0);
-
-  await expect(page.locator("section[aria-label='Overview reference']")).toHaveCount(0);
-  await expect(page.locator("section[aria-label='Scenario setup lanes']")).toHaveCount(0);
-  await expect(page.locator("[data-region-id='lab-safety']")).toHaveCount(0);
-  await expect(page.locator("[data-region-id='topology']")).toHaveCount(0);
-  await expect(page.locator("section[aria-label='Lab topology'], section[aria-label='Living lab topology']")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Readiness at a glance" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Firmware Compliance" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Active Blockers" })).toHaveCount(0);
-  await expect(page.locator("nav").getByText("Edit Config")).toHaveCount(0);
-  await expect(page.locator("nav").getByText("Settings")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Shared profile policy" })).toHaveCount(0);
-
-  await expect(page.getByRole("heading", { name: "Lab Values" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Currently Accessible" })).toHaveCount(0);
-  await expect(page.getByText(/what is healthy/i)).toHaveCount(0);
-  await expect(page.getByText(/what is next/i)).toHaveCount(0);
-  await expect(page.getByText("Artifact")).toHaveCount(0);
-  await expect(home).not.toContainText("Provider");
-  await expect(home).not.toContainText("provider");
-  await expect(home).not.toContainText("runtime");
-  await expect(home).not.toContainText("dependency graph");
-  await expect(home).not.toContainText("raw");
-  await expect(home).not.toContainText("logs");
-  await expect(home).not.toContainText("console");
-  await expect(home).not.toContainText(/CISCO_[A-Z_]+/);
-  await expect(page.getByText("Change this page")).toHaveCount(0);
-});
-
-test("operator home gives a clear kit action when no kit is selected", async ({ page }) => {
-  labProfileScenario = "none";
-  await page.goto("/overview");
-
-  const home = page.getByTestId("operator-home");
-  const primary = home.getByTestId("operator-home-primary-action");
-  await expect(home).toContainText("Choose a lab kit before running setup.");
-  await expect(home).toContainText("Select or create a kit to load the address plan and readiness checks.");
-  await expect(home).not.toContainText("No kit selected is in");
-  await expect(home).toContainText("Select or create a kit before checking readiness.");
-  await expect(primary).toHaveCount(1);
-  await expect(primary).toBeEnabled();
-  await expect(primary).toContainText("Create or select a kit");
-  await expect(primary).not.toContainText("Opening");
-
-  await primary.click();
-  await expect(page).toHaveURL(/\/lab-profiles#new$/);
-});
-
-test("map-first overview makes the topology the home surface", async ({ page }) => {
-  await page.goto("/overview");
-
-  const layout = page.locator(".operator-home-layout");
-  const mapColumn = layout.locator(".operator-home-map-column");
-  const map = mapColumn.locator("section[aria-label='Lab topology'], section[aria-label='Living lab topology']");
-  const rail = layout.getByRole("complementary", { name: "Operator Home status and next action" });
-
-  await expect(map).toBeVisible();
-  await expect(rail).toBeVisible();
-  await expect(layout.locator(".operator-home-map-column")).toHaveCount(1);
-  await expect(layout.locator(".operator-home-rail")).toHaveCount(1);
-  const headingBox = await map.locator("h2").first().boundingBox();
-  expect(headingBox, "topology device-count heading has a layout box").not.toBeNull();
-  await expect(map.locator(".system-setup-picker"), "system setup picker is retired from the map header").toHaveCount(0);
-  await expect(map).toContainText("Cisco Switch");
-  await expect(map).toContainText(/subnet 192\.168\.1\.0\/24/i);
-  await expect(rail.getByTestId("operator-home-primary-action")).toHaveCount(1);
-  await expect(rail.locator(".operator-rail-primary")).toHaveCount(1);
-  await expect(page.getByTestId("lab-build-journey")).toHaveCount(0);
-  await expect(rail).not.toContainText(/provider|runtime|payload/i);
-});
-
-test("overview topology nodes stay compact and move setup into direct drawers", async ({ page }) => {
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  const map = topology.getByLabel("Device topology");
-  const nodes = map.locator(".overview-node");
-  await expect(nodes).toHaveCount(5);
-  for (let index = 0; index < 5; index += 1) {
-    const node = nodes.nth(index);
-    await expect(node.locator(".overview-node-label")).toHaveCount(1);
-    await expect(node.locator(".overview-node-meta")).toHaveCount(1);
-  }
-  await expect(topology.locator(".topology-node-faceplate, .topology-node-chips")).toHaveCount(0);
-  await expect(map).not.toContainText(/BMC read-only checks|Direct host management|VLAN 220/i);
-
-  await topology.getByRole("button", { name: /^Cisco Switch,/ }).click();
-  const switchDrawer = page.getByLabel("Cisco Switch setup");
-  await expect(switchDrawer).toBeVisible();
-  await expect(switchDrawer.getByLabel("Management IP", { exact: true })).toHaveValue("192.168.1.204");
-  await expect(switchDrawer.getByRole("heading", { name: "Access" })).toBeVisible();
-  await expect(switchDrawer.getByRole("heading", { name: "Network" })).toBeVisible();
-  await expect(switchDrawer.getByRole("heading", { name: "Services" })).toBeVisible();
-  await expect(switchDrawer).not.toContainText(/Apply Bootstrap|Factory reset|Upgrade firmware/i);
-});
-
-test("operator home opens one ordered build plan with one primary action", async ({ page }) => {
-  await page.goto("/overview");
-  const latestRequest = page.waitForRequest((request) => request.url().includes("/api/v1/lab-build/runs/latest"));
-  await page.getByTestId("operator-home-primary-action").click();
-  await expect(page).toHaveURL(/\/run-center$/);
-  expect(new URL((await latestRequest).url()).searchParams.get("kit_id")).toBe("runtime-profile");
-
-  const journey = page.getByTestId("lab-build-journey");
-  const plan = journey.getByLabel("Build Plan");
-  await expect(page.locator(".page-title-block .eyebrow")).toHaveText("Run");
-  await expect(journey).toBeVisible();
-  await expect(page.getByTestId("operator-home")).toHaveCount(0);
-  await expect(plan.getByRole("heading", { name: "This lab is ready to follow one ordered build plan." })).toBeVisible();
-  await expect(plan.getByLabel("Plan summary")).toContainText("8 stages");
-  await expect(plan.locator(".lab-build-summary > div")).toHaveCount(0);
-  await expect(plan).not.toContainText("checks are ready");
-  await expect(plan).toContainText("Network, iLO, and local storage are proven before Start Build.");
-  await expect(plan.getByLabel("Next build step")).toContainText("Boot the ESXi installer");
-  await expect(plan.getByLabel("Next build step")).toContainText("Pauses for your approval");
-  await expect(plan.getByLabel("Next build step").getByRole("listitem")).toHaveCount(0);
-  await expect(plan.getByLabel("Next build step")).not.toContainText("Configure the management network");
-  expect(((await plan.getByLabel("Next build step").textContent()) || "").match(/Boot the ESXi installer/g)).toHaveLength(1);
-  await expect(plan.getByLabel("Ordered build steps")).not.toBeVisible();
-  await plan.getByText("View full build sequence").click();
-  await expect(plan.getByLabel("Ordered build steps")).toBeVisible();
-  await expect(plan.getByLabel("Ordered build steps").getByRole("listitem")).toHaveCount(8);
-  await expect(plan.getByLabel("Ordered build steps")).toContainText("Shared storage must be ready before the compute host can use it.");
-  await expect(plan.getByTestId("lab-build-primary-action")).toHaveCount(1);
-  await expect(plan.getByTestId("lab-build-primary-action")).toContainText("Start Build");
-  await expect(journey.getByRole("button", { name: "Close build journey" })).toHaveCount(0);
-  await expect(plan).not.toContainText("provider");
-  await expect(plan).not.toContainText("payload");
-  await expect(plan).not.toContainText("dependency graph");
+  await expect(page).toHaveURL(/\/simple$/);
+  await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
+  expect(profileState.active_profile.name).toBe("Rack 07 Edge Lab");
 });
 
 test("build plan keeps its next action visible without mobile overflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/overview");
-  await page.getByTestId("operator-home-primary-action").click();
-  await expect(page).toHaveURL(/\/run-center$/);
+  await page.goto("/run-center");
 
   const journey = page.getByTestId("lab-build-journey");
   await expect(journey.getByTestId("lab-build-primary-action")).toBeVisible();
@@ -909,9 +774,7 @@ test("build plan keeps its next action visible without mobile overflow", async (
 });
 
 test("run console pauses at a guarded change without exposing duplicate consoles", async ({ page }) => {
-  await page.goto("/overview");
-  await page.getByTestId("operator-home-primary-action").click();
-  await expect(page).toHaveURL(/\/run-center$/);
+  await page.goto("/run-center");
   await page.getByTestId("lab-build-primary-action").click();
 
   const journey = page.getByTestId("lab-build-journey");
@@ -928,15 +791,13 @@ test("run console pauses at a guarded change without exposing duplicate consoles
   await expect(page.getByText("Operator Console")).toHaveCount(0);
 
   await runConsole.getByRole("button", { name: "Open lab map" }).click();
-  await expect(page).toHaveURL(/\/overview$/);
+  await expect(page).toHaveURL(/\/simple$/);
   await expect(page.getByTestId("lab-build-journey")).toHaveCount(0);
-  await expect(page.locator("section[aria-label='Lab topology'], section[aria-label='Living lab topology']")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
 });
 
 test("guarded build continuation submits exact waiting evidence", async ({ page }) => {
-  await page.goto("/overview");
-  await page.getByTestId("operator-home-primary-action").click();
-  await expect(page).toHaveURL(/\/run-center$/);
+  await page.goto("/run-center");
   await page.getByTestId("lab-build-primary-action").click();
 
   const resumeRequest = page.waitForRequest((request) => (
@@ -955,9 +816,7 @@ test("guarded build continuation submits exact waiting evidence", async ({ page 
 
 test("running builds can only refresh status", async ({ page }) => {
   await page.route("**/api/v1/lab-build/runs/latest?*", (route) => json(route, labBuildRunningRun()));
-  await page.goto("/overview");
-  await page.getByTestId("operator-home-primary-action").click();
-  await expect(page).toHaveURL(/\/run-center$/);
+  await page.goto("/run-center");
 
   const console = page.getByLabel("Run Console");
   await expect(console.getByTestId("lab-build-primary-action")).toContainText("Refresh Status");
@@ -967,9 +826,7 @@ test("running builds can only refresh status", async ({ page }) => {
 
 test("failed build shows one completion report and retry only when safe", async ({ page }) => {
   await page.route("**/api/v1/lab-build/runs", (route) => json(route, labBuildFailedRun()));
-  await page.goto("/overview");
-  await page.getByTestId("operator-home-primary-action").click();
-  await expect(page).toHaveURL(/\/run-center$/);
+  await page.goto("/run-center");
   await page.getByTestId("lab-build-primary-action").click();
 
   const report = page.getByLabel("Completion Report");
@@ -985,178 +842,6 @@ test("failed build shows one completion report and retry only when safe", async 
   await expect(report.getByLabel("Technical build log")).not.toBeVisible();
 });
 
-test("overview keeps map links explicit without legacy device details", async ({ page }) => {
-  await page.goto("/overview");
-
-  await expect(page.locator("section[aria-label='Lab topology'], section[aria-label='Living lab topology']")).toBeVisible();
-  await expect(page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" })).toHaveCount(0);
-  await expect(page.getByTestId("operator-home-view-details")).toHaveCount(0);
-
-  const topology = page.locator("section[aria-label='Lab topology'], section[aria-label='Living lab topology']");
-  const zonedMap = topology.getByLabel("Zoned lab map");
-  if (await zonedMap.count()) {
-    await expect(zonedMap).toBeVisible();
-    await expect(zonedMap).toContainText("Management");
-    await expect(zonedMap).toContainText("Storage & compute");
-    await expect(zonedMap).toContainText("vCenter");
-    await expect(zonedMap).toContainText("Cisco Switch");
-    await expect(zonedMap).toContainText("HPE Gen10");
-    await expect(zonedMap).toContainText("NetApp ONTAP");
-    await expect(topology.getByLabel("Current lab links")).toContainText(/NFS 10G path|iSCSI 10G planned/);
-    const currentMapLinkClasses = await topology.locator(".topology-link").evaluateAll((links) => links.map((link) => link.getAttribute("class") || ""));
-    expect(currentMapLinkClasses.length, "current topology renders connection lines").toBeGreaterThan(0);
-    expect(
-      currentMapLinkClasses.every((className) => /\btopology-link-(reachable|unreachable)\b/.test(className)),
-      "current topology lines are explicitly green/red reachable states"
-    ).toBe(true);
-  } else {
-    await expect(topology).toContainText("Cisco Switch");
-    await expect(topology).toContainText("NetApp ONTAP");
-    const overviewLinkClasses = await topology.locator(".overview-link").evaluateAll((links) => links.map((link) => link.getAttribute("class") || ""));
-    expect(overviewLinkClasses.length, "legacy topology renders connection lines").toBeGreaterThan(0);
-    expect(
-      overviewLinkClasses.every((className) => /\bis-(reachable|unreachable)\b/.test(className)),
-      "legacy topology lines are explicitly green/red reachable states"
-    ).toBe(true);
-  }
-  await expect(page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" })).toHaveCount(0);
-});
-
-test("overview map does not mark configured providers reachable without live evidence", async ({ page }) => {
-  const staleProviders = providerStatuses().map((provider) => ({
-    ...provider,
-    checked_at: null,
-    freshness: "not_checked",
-    is_current: false,
-    last_probe_time: null,
-    source_type: "not_checked",
-    status: "ready"
-  }));
-  const staleValidation = labValidation();
-  staleValidation.validation_items = staleValidation.validation_items.map((item) => ({
-    ...item,
-    freshness: "not_checked",
-    last_checked: null,
-    source_type: "not_checked",
-    status: "not_checked"
-  }));
-  const staleVcenter = {
-    ...vcenterNetappReadiness(),
-    checked_at: null,
-    checks: { vm_inventory_visible: { count: 0, visible: false } },
-    freshness: "not_checked",
-    is_current: false,
-    source_type: "not_checked",
-    status: "not_checked"
-  };
-  await page.route("**/api/v1/providers/status", (route) => json(route, staleProviders));
-  await page.route("**/api/v1/lab/validation", (route) => json(route, staleValidation));
-  await page.route("**/api/v1/lab/vcenter-netapp/readiness", (route) => json(route, staleVcenter));
-
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await expect
-    .poll(() => topology.locator(".overview-link").count(), {
-      message: "overview map renders connection lines"
-    })
-    .toBeGreaterThan(0);
-  await expect(topology.locator(".overview-link.is-reachable")).toHaveCount(0);
-  await expect(topology.locator(".overview-link:not(.is-unreachable)")).toHaveCount(0);
-});
-
-test("overview map ignores stale positive iLO validation when provider access is not checked", async ({ page }) => {
-  const notCheckedProviders = providerStatuses().map((provider) => ({
-    ...provider,
-    checked_at: null,
-    freshness: "unknown",
-    is_current: false,
-    last_probe_time: null,
-    source_type: "not_checked",
-    status: "ready"
-  }));
-  const staleValidation = labValidation();
-  staleValidation.validation_items = staleValidation.validation_items.map((item) =>
-    item.id === "ilo"
-      ? {
-          ...item,
-          freshness: "current",
-          last_checked: "2026-07-18T13:23:38.251258+00:00",
-          source_type: "live_probe",
-          status: "ready"
-        }
-      : {
-          ...item,
-          freshness: "not_checked",
-          last_checked: null,
-          source_type: "not_checked",
-          status: "not_checked"
-        }
-  );
-  await page.route("**/api/v1/providers/status", (route) => json(route, notCheckedProviders));
-  await page.route("**/api/v1/lab/validation", (route) => json(route, staleValidation));
-
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await expect(topology.getByRole("button", { name: "HPE iLO, Not checked" })).toBeVisible();
-  const iloLink = topology.locator("[aria-label='Cisco switch to HPE iLO not reachable']");
-  await expect(iloLink).toHaveClass(/is-unreachable/);
-});
-
-test("overview map keeps iLO locked when proof is not bound to the current access target", async ({ page }) => {
-  await page.route("**/api/v1/providers/ilo-redfish/access-settings?*", (route) =>
-    json(route, iloAccessSettings({
-      host: "192.168.1.11",
-      last_probe_target_matches_access_host: false,
-      last_probe_target_source: "active_lab_profile"
-    }))
-  );
-  await page.route("**/api/v1/lab/validation", (route) => json(route, labValidationNotChecked()));
-
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await expect(topology.getByRole("button", { name: "HPE iLO, Not checked" })).toBeVisible();
-  await expect(topology.locator("[aria-label='Cisco switch to HPE iLO not reachable']")).toHaveClass(/is-unreachable/);
-});
-
-test("overview map shows the proven current iLO address while keeping the planned address separate", async ({ page }) => {
-  const plannedMismatchProviders = providerStatuses().map((provider) =>
-    provider.id === "ilo-redfish"
-      ? {
-          ...provider,
-          configuration: {
-            ...provider.configuration,
-            last_probe_target_matches_active_profile: false,
-            last_probe_target_matches_configured_candidates: true,
-            last_probe_status: "ok"
-          },
-          status: "ready"
-        }
-      : provider
-  );
-  await page.route("**/api/v1/providers/status", (route) => json(route, plannedMismatchProviders));
-  await page.route("**/api/v1/providers/ilo-redfish/access-settings?*", (route) =>
-    json(route, iloAccessSettings({
-      host: "192.168.1.11",
-      last_probe_target_matches_access_host: true,
-      last_probe_target_source: "operator_first_contact"
-    }))
-  );
-
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  const iloNode = topology.getByRole("button", { name: "HPE iLO, Ready" });
-  await expect(iloNode).toBeVisible();
-  await expect(iloNode).toContainText("192.168.1.11");
-  await iloNode.click();
-  const firstContact = page.getByLabel("iLO access credentials");
-  await expect(firstContact).toContainText("Planned final iLO: 192.168.1.201");
-  await expect(firstContact.getByLabel("iLO proof route")).toContainText("192.168.1.11");
-});
-
 test("editing the visible iLO target invalidates proof until that exact target is rechecked", async ({ page }) => {
   await page.route("**/api/v1/providers/ilo-redfish/access-settings?*", (route) =>
     json(route, iloAccessSettings({
@@ -1166,11 +851,10 @@ test("editing the visible iLO target invalidates proof until that exact target i
       last_probe_target_source: "operator_first_contact"
     }))
   );
-  await page.goto("/overview");
+  await page.goto("/simple");
 
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await topology.getByRole("button", { name: /^HPE iLO,/ }).click();
-  const firstContact = page.getByLabel("iLO access credentials");
+  const configurator = await openRackIloConfigurator(page);
+  const firstContact = configurator.getByLabel("iLO access credentials");
   const proof = firstContact.getByLabel("iLO first-contact proof");
   await expect(firstContact.getByLabel("iLO host or initial IP")).toHaveValue("192.168.1.11");
   await expect(proof).toContainText("May go green");
@@ -1195,6 +879,13 @@ test("iLO access-settings failure falls back to the initial current address, nev
     (plan as Record<string, unknown>).ilo_initial = "192.168.1.11";
   }
   await page.route("**/api/v1/lab/profiles*", (route) => json(route, profiles));
+  await page.route("**/api/v1/device-inventory", (route) => json(route, [
+    inventoryDevice("f2c1a9d0-4b31-4a5e-9d10-000000000001", "cisco_switch", "Cisco Switch", "192.168.1.204"),
+    inventoryDevice("f2c1a9d0-4b31-4a5e-9d10-000000000002", "ilo", "HPE iLO", "192.168.1.11"),
+    inventoryDevice("f2c1a9d0-4b31-4a5e-9d10-000000000003", "esxi_host", "ESXi Host", "192.168.1.203"),
+    inventoryDevice("f2c1a9d0-4b31-4a5e-9d10-000000000004", "netapp", "NetApp ONTAP", "192.168.1.220"),
+    inventoryDevice("f2c1a9d0-4b31-4a5e-9d10-000000000005", "vcenter", "vCenter", "192.168.1.205")
+  ]));
   await page.route("**/api/v1/providers/ilo-redfish/access-settings?*", (route) =>
     route.fulfill({
       body: JSON.stringify({ detail: "iLO access settings unavailable" }),
@@ -1202,258 +893,15 @@ test("iLO access-settings failure falls back to the initial current address, nev
       status: 500
     })
   );
-  await page.goto("/overview");
+  await page.goto("/server");
 
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await topology.getByRole("button", { name: /^HPE iLO,/ }).click();
-  const firstContact = page.getByLabel("iLO access credentials");
+  const workspace = page.locator("section[aria-label='Server configuration workspace']");
+  await workspace.getByRole("tab", { name: /iLO & access/ }).click();
+  const firstContact = workspace.getByLabel("iLO access credentials");
   await expect(firstContact.getByLabel("iLO host or initial IP")).toHaveValue("192.168.1.11");
   await expect(firstContact.getByLabel("iLO proof route")).toContainText("192.168.1.11");
   await expect(firstContact.getByLabel("iLO first-contact proof")).toContainText("Map locked");
   await expect(firstContact.getByRole("link", { name: "Open iLO web UI" })).toHaveAttribute("href", "https://192.168.1.11");
-});
-
-test("overview iLO drawer puts first contact before planned config and runs the standalone access check", async ({ page }) => {
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await topology.getByRole("button", { name: /^HPE iLO,/ }).click();
-  const drawer = page.getByLabel("HPE iLO setup");
-  await expect(drawer).toBeVisible();
-  const firstContact = drawer.getByLabel("iLO access credentials");
-  await expect(firstContact).toBeVisible();
-  await expect(firstContact).toContainText("Sign in and first contact");
-  await expect(firstContact.getByLabel("iLO username / UID")).toBeVisible();
-  await expect(firstContact.getByLabel("iLO password")).toBeVisible();
-  await expect(firstContact.getByRole("button", { name: "Check this iLO IP" })).toBeVisible();
-  const iloSetup = drawer.getByLabel("iLO setup settings");
-  await expect(iloSetup).toContainText("DNS Name");
-  await expect(iloSetup).toContainText("NTP Servers");
-  await expect(iloSetup).toContainText("SNMP Version");
-  await expect(iloSetup).toContainText("System Location");
-  await expect(iloSetup).toContainText("Disable all IPv6 options");
-  await expect(iloSetup).toContainText("Local users");
-  await expect(iloSetup.getByRole("button", { name: "Save iLO setup plan" })).toBeVisible();
-  await expect(drawer.getByRole("heading", { name: "Sign-in", exact: true })).toHaveCount(0);
-  await expect(drawer.getByRole("button", { name: "Save sign-in" })).toHaveCount(0);
-  const drawerOrder = await drawer.locator(".map-drawer-body").evaluate((body) =>
-    Array.from(body.children).map((child) => child.getAttribute("aria-label") || child.textContent || "")
-  );
-  expect(drawerOrder.findIndex((item) => item.includes("iLO access credentials"))).toBeLessThan(
-    drawerOrder.findIndex((item) => item.includes("iLO config plan"))
-  );
-
-  await firstContact.getByLabel("iLO host or initial IP").fill("192.168.1.201");
-  await firstContact.getByLabel("iLO username / UID").fill("Administrator");
-  await firstContact.getByLabel("iLO password").fill("secret");
-  const accessSave = page.waitForRequest((request) =>
-    request.method() === "PUT" &&
-    new URL(request.url()).pathname === "/api/v1/providers/ilo-redfish/access-settings"
-  );
-  const accessCheck = page.waitForRequest((request) =>
-    request.method() === "POST" &&
-    actionIdFromRunPath(new URL(request.url()).pathname) === "ilo.reachability"
-  );
-  await firstContact.getByRole("button", { name: "Check this iLO IP" }).click();
-  const accessSaveRequest = await accessSave;
-  expect(new URL(accessSaveRequest.url()).searchParams.get("device_id")).toBe("f2c1a9d0-4b31-4a5e-9d10-000000000002");
-  const payload = accessSaveRequest.postDataJSON() as Record<string, unknown>;
-  expect(payload).toMatchObject({
-    host: "192.168.1.201",
-    password: "secret",
-    username: "Administrator",
-    verify_tls: false
-  });
-  const accessCheckPayload = (await accessCheck).postDataJSON() as Record<string, unknown>;
-  expect(accessCheckPayload).toMatchObject({
-    device_id: "f2c1a9d0-4b31-4a5e-9d10-000000000002",
-    ilo_host: "192.168.1.201"
-  });
-  await expect(firstContact).toContainText("iLO access check finished");
-});
-
-test("operator home shows actionable blockers once in plain language", async ({ page }) => {
-  const blocked = labValidation();
-  blocked.overall_status = "blocked";
-  blocked.next_action = "Set the Cisco switch management IP, then refresh readiness.";
-  blocked.top_blocker = {
-    copyable_command: "make provider-lab-cisco-setup-readiness",
-    current_value: "missing",
-    evidence_links: [],
-    expected_value: "192.168.1.204",
-    problem: "CISCO_MGMT_NOT_CONFIGURED - Cisco management IP is not ready.",
-    recommended_action: "Open Network and set the Cisco switch management IP.",
-    recheck_command: "make provider-lab-cisco-setup-readiness",
-    source: "CISCO_MGMT_NOT_CONFIGURED",
-    where_to_fix: "Cisco switch setup"
-  };
-  blocked.validation_items = [
-    {
-      ...blocked.validation_items[0],
-      current_state: "Management IP is missing",
-      next_action: "Set the Cisco switch management IP.",
-      setup_summary: "Cisco switch management IP is not ready.",
-      status: "blocked"
-    },
-    ...blocked.validation_items.slice(1)
-  ];
-  await page.route("**/api/v1/lab/validation", (route) => json(route, blocked));
-
-  await page.goto("/overview");
-
-  const home = page.getByTestId("operator-home");
-  await expect(home.getByLabel("Needs your attention")).toContainText("Cisco management IP is not ready.");
-  await expect(home.getByLabel("Needs your attention")).toContainText("Select Cisco switch on the map");
-  await expect(home.getByLabel("Needs your attention")).not.toContainText("CISCO_MGMT_NOT_CONFIGURED");
-  await expect(home.locator(".operator-rail-blocker").filter({ hasText: "Cisco management IP is not ready." })).toHaveCount(1);
-  await expect(page.locator("section[aria-label='Lab topology'], section[aria-label='Living lab topology']")).toBeVisible();
-});
-
-test("zoned map opens the device workspace directly", async ({ page }) => {
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await expect(topology).toBeVisible();
-  const status = topology.locator(".overview-map-pills");
-  await expect(status).toContainText("Live lab");
-  await expect(status).toContainText("Subnet matches host");
-  await expect(status).not.toContainText("topology items ready");
-
-  const linkClasses = await topology.locator(".overview-link").evaluateAll((links) =>
-    links.map((link) => link.getAttribute("class") || "")
-  );
-  expect(linkClasses.length, "overview map renders connection lines").toBeGreaterThan(0);
-  expect(
-    linkClasses.every((className) => /\bis-(reachable|unreachable)\b/.test(className)),
-    "overview map lines expose only explicit reachable or unreachable states"
-  ).toBe(true);
-
-  const vcenterNode = topology.getByRole("button", { name: /^vCenter,/ });
-  await expect(vcenterNode).toContainText("vCenter");
-  await expect(vcenterNode).not.toContainText("direct ESXi inventory");
-  await expect(vcenterNode).not.toContainText("created by this app");
-
-  await topology.getByRole("button", { name: /^Cisco Switch,/ }).click();
-  const switchDrawer = page.getByLabel("Cisco Switch setup");
-  await expect(switchDrawer).toBeVisible();
-  await expect(switchDrawer.getByRole("heading", { name: "Cisco Switch" })).toBeVisible();
-  await expect(switchDrawer.getByLabel("Management IP", { exact: true })).toHaveValue("192.168.1.204");
-  await expect(switchDrawer.getByRole("button", { name: "Save changes" })).toBeVisible();
-  await expect(switchDrawer).toContainText("hardware untouched");
-  await expect(switchDrawer).not.toContainText(/Apply|Factory reset|Rebuild|Upgrade/i);
-  await switchDrawer.getByRole("button", { name: "Close device panel" }).click();
-  await expect(switchDrawer).toHaveCount(0);
-
-  await topology.getByRole("button", { name: /^HPE iLO,/ }).click();
-  const iloDrawer = page.getByLabel("HPE iLO setup");
-  await expect(iloDrawer).toBeVisible();
-  await expect(iloDrawer.getByRole("heading", { name: "HPE iLO" })).toBeVisible();
-  await expect(iloDrawer.getByLabel("iLO IP", { exact: true })).toHaveValue("192.168.1.201");
-  await expect(iloDrawer.getByLabel("Initial iLO IP", { exact: true })).toBeVisible();
-  const firstContact = iloDrawer.getByLabel("iLO access credentials");
-  await expect(firstContact).toContainText("Sign in and first contact");
-  await expect(firstContact.getByLabel("iLO username / UID")).toBeVisible();
-  await expect(firstContact.getByLabel("iLO password")).toBeVisible();
-  await expect(firstContact.getByRole("button", { name: "Save iLO access" })).toBeVisible();
-  await expect(iloDrawer.getByRole("heading", { name: "Sign-in", exact: true })).toHaveCount(0);
-  await expect(iloDrawer).not.toContainText(/Reset Server Power|Boot ESXi Installer|Apply RAID/i);
-});
-
-test("overview device drawers never expose destructive primary actions", async ({ page }) => {
-  const workflowPosts: string[] = [];
-  page.on("request", (request) => {
-    if (request.method() === "POST" && new URL(request.url()).pathname.includes("/workflows/actions/")) {
-      workflowPosts.push(new URL(request.url()).pathname);
-    }
-  });
-
-  await page.goto("/overview");
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  for (const item of [
-    { button: /^Cisco Switch,/, drawer: "Cisco Switch setup" },
-    { button: /^HPE iLO,/, drawer: "HPE iLO setup" },
-    { button: /^ESXi Host,/, drawer: "ESXi Host setup" },
-    { button: /^NetApp ONTAP,/, drawer: "NetApp ONTAP setup" },
-    { button: /^vCenter,/, drawer: "vCenter setup" }
-  ] as const) {
-    await topology.getByRole("button", { name: item.button }).click();
-    const drawer = page.getByLabel(item.drawer);
-    await expect(drawer).toBeVisible();
-    await expect(drawer.getByRole("button", { name: /apply|factory reset|rebuild|upgrade|power reset/i })).toHaveCount(0);
-    await expect(drawer.getByRole("link", { name: /apply|factory reset|rebuild|upgrade|power reset/i })).toHaveCount(0);
-    await expect(drawer).toContainText(/hardware untouched|does not probe or change hardware/i);
-    await drawer.getByRole("button", { name: "Close device panel" }).click();
-  }
-
-  expect(workflowPosts, "opening and inspecting direct setup drawers runs no workflow").toEqual([]);
-});
-
-test("overview device workspace advanced safe checks expose only read-only workflow actions", async ({ page }) => {
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  for (const item of [
-    { button: /^Cisco Switch,/, drawer: "Cisco Switch setup" },
-    { button: /^HPE iLO,/, drawer: "HPE iLO setup" },
-    { button: /^ESXi Host,/, drawer: "ESXi Host setup" },
-    { button: /^NetApp ONTAP,/, drawer: "NetApp ONTAP setup" },
-    { button: /^vCenter,/, drawer: "vCenter setup" }
-  ] as const) {
-    await topology.getByRole("button", { name: item.button }).click();
-    const drawer = page.getByLabel(item.drawer);
-    await expect(drawer.locator("details, .design-workspace-advanced, .design-device-action-list")).toHaveCount(0);
-    await expect(drawer.getByRole("button", { name: /apply|reset|rebuild|upgrade/i })).toHaveCount(0);
-    await drawer.getByRole("button", { name: "Close device panel" }).click();
-  }
-
-  await topology.getByLabel("Local storage offshoot from HPE iLO").click();
-  const raidDrawer = page.getByLabel("Local RAID planner drawer");
-  await expect(raidDrawer.getByLabel("Local RAID inventory required")).toBeVisible();
-  await expect(raidDrawer.getByLabel("Selectable local RAID drive bays from iLO inventory")).toHaveCount(0);
-  await expect(raidDrawer.getByRole("button", { name: /Apply RAID|Reset HPE RAID|Factory reset|Boot ESXi Installer/i })).toHaveCount(0);
-});
-
-test("overview device matrix opens one unified editor per map node", async ({ page }) => {
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  const cases = [
-    { button: /^Cisco Switch,/, drawer: "Cisco Switch setup", fields: ["Management IP", "DNS servers"] },
-    { button: /^HPE iLO,/, drawer: "HPE iLO setup", fields: ["iLO IP", "Initial iLO IP"] },
-    { button: /^ESXi Host,/, drawer: "ESXi Host setup", fields: ["ESXi IP", "Embedded NIC"] },
-    { button: /^NetApp ONTAP,/, drawer: "NetApp ONTAP setup", fields: ["Cluster mgmt IP", "SVM mgmt IP"] },
-    { button: /^vCenter,/, drawer: "vCenter setup", fields: ["vCenter IP", "ESXi host"] }
-  ] as const;
-
-  for (const item of cases) {
-    await topology.getByRole("button", { name: item.button }).click();
-    const drawer = page.getByLabel(item.drawer);
-    await expect(drawer).toBeVisible();
-    for (const field of item.fields) {
-      await expect(drawer.getByLabel(field, { exact: true }), `${item.drawer} exposes ${field} inline`).toBeVisible();
-    }
-    await expect(drawer.locator("input")).not.toHaveCount(0);
-    await expect(drawer.getByRole("button", { name: "Save changes" })).toBeVisible();
-    await expect(drawer.getByRole("link", { name: /Open full setup|Open setup/i })).toHaveCount(0);
-    await expect(page.locator("aside.map-drawer")).toHaveCount(1);
-    await drawer.getByRole("button", { name: "Close device panel" }).click();
-  }
-});
-
-test("overview device drawer avoids duplicate setup links when checks are unavailable", async ({ page }) => {
-  workflowActionsOverride = [];
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await topology.getByRole("button", { name: /^ESXi Host,/ }).click();
-  const drawer = page.getByLabel("ESXi Host setup");
-
-  await expect(drawer).toBeVisible();
-  await expect(drawer.getByLabel("ESXi IP", { exact: true })).toHaveValue("192.168.1.203");
-  await expect(drawer.getByRole("link", { name: /Open setup|Open full setup/i })).toHaveCount(0);
-  await expect(drawer).not.toContainText("No read-only test registered");
-  await expect(drawer.getByRole("button", { name: /apply|reset|rebuild|upgrade/i })).toHaveCount(0);
-  await expect(page.locator("aside.map-drawer")).toHaveCount(1);
 });
 
 test("setup pages avoid self-linking when read-only checks are unavailable", async ({ page }) => {
@@ -1467,20 +915,6 @@ test("setup pages avoid self-linking when read-only checks are unavailable", asy
   await expect(workspace.getByLabel("Server workspace checks")).not.toBeVisible();
   await expect(workspace.getByRole("link", { name: "Open setup" })).toHaveCount(0);
   await expect(workspace).not.toContainText("No read-only test registered");
-});
-
-test("overview device drawer resolves values from the saved active profile", async ({ page }) => {
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await topology.getByRole("button", { name: /^Cisco Switch,/ }).click();
-  const drawer = page.getByLabel("Cisco Switch setup");
-
-  await expect(drawer.getByLabel("Management IP", { exact: true })).toHaveValue("192.168.1.204");
-  await expect(drawer.getByLabel("Management VLAN", { exact: true })).toHaveValue("10");
-  await expect(drawer.getByLabel("DNS servers", { exact: true })).not.toHaveValue("");
-  await expect(drawer.getByLabel("Management IP", { exact: true })).not.toHaveValue("Not planned");
-  await expect(drawer).toContainText("Saves the plan only");
 });
 
 test("setup faceplate element clicks reveal concise details only after intent", async ({ page }) => {
@@ -1541,70 +975,11 @@ test("setup faceplate element clicks reveal concise details only after intent", 
   await expect(serverWorkspace.getByText("Server drive map", { exact: true })).toBeVisible();
 });
 
-test("topology directs storage exceptions to the NetApp setup drawer", async ({ page }) => {
-  const validation = labValidation();
-  validation.validation_items = validation.validation_items.map((item) => (
-    item.id === "netapp"
-      ? { ...item, current_state: "Not reachable", next_action: "Refresh NetApp readiness.", status: "blocked" }
-      : item
-  ));
-  await page.route("**/api/v1/lab/validation", (route) => json(route, validation));
-  await page.route("**/api/v1/providers/status", (route) => json(route, [
-    providerStatus("cisco-console", "Cisco", "network", "ready"),
-    providerStatus("ilo-redfish", "HPE iLO", "server", "ready"),
-    providerStatus("esxi-readonly", "ESXi", "virtualization", "ready"),
-    providerStatus("netapp-ontap", "NetApp ONTAP", "storage", "blocked")
-  ]));
-  await page.goto("/overview");
-
-  const home = page.getByTestId("operator-home");
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await expect(home.getByLabel("Needs your attention")).toContainText(/NetApp|not reachable|Refresh/i);
-  await expect(topology.locator("[aria-label='ESXi host to NetApp ONTAP not reachable']")).toHaveClass(/is-unreachable/);
-
-  await topology.getByRole("button", { name: /^NetApp ONTAP,/ }).click();
-  const drawer = page.getByLabel("NetApp ONTAP setup");
-  await expect(drawer.getByLabel("Cluster mgmt IP", { exact: true })).toHaveValue("192.168.1.220");
-  await expect(drawer.getByRole("link", { name: /Open Storage/i })).toHaveCount(0);
-});
-
-test("overview map makes single-server local RAID mode unmistakable", async ({ page }) => {
-  labProfileScenario = "single";
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  const map = topology.getByLabel("Device topology");
-  const localStorage = topology.getByRole("button", { name: "Local storage offshoot from HPE iLO" });
-  await expect(localStorage).toBeVisible();
-  await expect(localStorage).toContainText("primary datastore");
-  await expect(map).toContainText("HPE iLO");
-  await expect(map).toContainText("Cisco Switch");
-  await expect(map).not.toContainText("NetApp ONTAP");
-
-  await localStorage.click();
-  const planner = page.getByLabel("Local RAID planner drawer").locator(".local-raid-planner");
-  await expect(planner).toContainText("Drive bay RAID planner");
-  await planner.getByRole("button", { name: /Read storage from iLO/ }).click();
-  await expect(planner.getByLabel("Selectable local RAID drive bays")).toContainText("Bay 5");
-  await planner.getByRole("button", { name: /Bay 5/ }).click();
-  await planner.getByRole("button", { name: "Hot spare", exact: true }).click();
-  await planner.getByLabel("RAID level for Datastore array").selectOption("RAID10");
-  await expect(planner.getByLabel("Local RAID group connections")).toContainText("Drive bays: 5");
-  await expect(planner.getByLabel("Local RAID draft summary")).toContainText("RAID10");
-  await planner.getByRole("button", { name: "Save visual RAID plan" }).click();
-  await expect(planner).toContainText("Hardware untouched");
-  await expect(planner).not.toContainText(/Apply RAID|Reset HPE RAID|Factory reset|Boot ESXi Installer/i);
-});
-
-test("overview flags saved subnet mismatch and keeps kit changes available", async ({ page }) => {
+test("rack home keeps kit changes available", async ({ page }) => {
   healthHostIpv4Addresses = ["10.10.8.99", "172.20.10.3"];
-  await page.goto("/overview");
+  await page.goto("/simple");
 
-  const topology = page.locator("section[aria-label='Lab topology'], section[aria-label='Living lab topology']");
-
-  await expect(topology).toContainText("Subnet mismatch");
-  await expect(topology).toContainText("Active setup targets 192.168.1.0/24");
-  await expect(topology).toContainText("10.10.8.99");
+  await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
 
   const editSubnet = page.locator("aside.rack-rail").getByRole("link", { name: "Create or change kit" });
   await expect(editSubnet).toHaveAttribute("href", "/lab-profiles#new");
@@ -1620,7 +995,7 @@ test("overview routes kit changes to Saved Kits without running workflows", asyn
     await route.continue();
   });
 
-  await page.goto("/overview");
+  await page.goto("/simple");
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await expect(topology.locator("section[aria-label='System setup picker']")).toHaveCount(0);
@@ -1628,58 +1003,6 @@ test("overview routes kit changes to Saved Kits without running workflows", asyn
   await expect(page).toHaveURL(/\/lab-profiles#new$/);
   await expect(page.getByRole("heading", { name: "Saved Kits", exact: true })).toBeVisible();
   expect(workflowRunAttempted).toBe(false);
-});
-
-test("overview keeps the surface map-first until a node opens its direct setup drawer", async ({ page }) => {
-  healthHostIpv4Addresses = ["10.10.8.99", "172.20.10.3"];
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await expect(topology.getByLabel("Device topology")).toBeVisible();
-  await expect(page.locator("[aria-label='Design mode rack composer'], [aria-label='Design topology blueprint']")).toHaveCount(0);
-  await expect(page.locator("[aria-label='Device workspace overlay']")).toHaveCount(0);
-  await expect(topology).toContainText("Subnet mismatch");
-
-  await topology.getByRole("button", { name: /^Cisco Switch,/ }).click();
-  const drawer = page.getByLabel("Cisco Switch setup");
-  await expect(drawer).toBeVisible();
-  await expect(drawer.getByLabel("Management IP", { exact: true })).toHaveValue("192.168.1.204");
-  await expect(drawer.getByLabel("Management VLAN", { exact: true })).toHaveValue("10");
-  await expect(drawer.getByRole("button", { name: "Save changes" })).toBeVisible();
-  await expect(drawer.locator("details, .design-blueprint-stage, .design-rack-stage")).toHaveCount(0);
-  await expect(drawer.getByRole("button", { name: /Apply Bootstrap|Upgrade|Factory reset/i })).toHaveCount(0);
-});
-
-test("overview map surface stays stable and scalable", async ({ page }) => {
-  await page.setViewportSize({ width: 1366, height: 900 });
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  const map = topology.getByLabel("Device topology");
-  await expect(map).toBeVisible();
-  await expect(map.locator(".overview-node")).toHaveCount(5);
-  await expect(topology.locator(".overview-link")).not.toHaveCount(0);
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow).toBeLessThanOrEqual(1);
-  const box = await topology.boundingBox();
-  expect(box).not.toBeNull();
-  expect(box?.width ?? 0).toBeGreaterThan(700);
-});
-
-test("overview mobile topology keeps every current device reachable", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 860 });
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  const map = topology.getByLabel("Device topology");
-  await expect(map).toBeVisible();
-  await expect(map.locator(".overview-node")).toHaveCount(5);
-  await expect(topology.getByRole("button", { name: /^Cisco Switch,/ })).toBeVisible();
-  await expect(topology.getByRole("button", { name: /^HPE iLO,/ })).toBeVisible();
-  await expect(topology.getByRole("button", { name: /^ESXi Host,/ })).toBeVisible();
-  await expect(topology.getByRole("button", { name: /^NetApp ONTAP,/ })).toBeVisible();
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow).toBeLessThanOrEqual(1);
 });
 
 test("operator surfaces stay responsive across mobile and desktop widths", async ({ page }) => {
@@ -1701,81 +1024,6 @@ test("operator surfaces stay responsive across mobile and desktop widths", async
     await expectResponsiveShell(page, route, { width: 390, height: 900 });
     await expectResponsiveShell(page, route, { width: 1280, height: 900 });
   }
-});
-
-test("overview direct edits stay local until the operator saves the plan", async ({ page }) => {
-  const profileWrites: string[] = [];
-  page.on("request", (request) => {
-    const path = new URL(request.url()).pathname;
-    if (request.method() !== "GET" && path.startsWith("/api/v1/lab-profiles")) profileWrites.push(path);
-  });
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await topology.getByRole("button", { name: /^ESXi Host,/ }).click();
-  let drawer = page.getByLabel("ESXi Host setup");
-  const esxiIp = drawer.getByLabel("ESXi IP", { exact: true });
-  await expect(esxiIp).toHaveValue("192.168.1.203");
-  await esxiIp.fill("192.168.1.250");
-  await drawer.getByRole("button", { name: "Close device panel" }).click();
-
-  await topology.getByRole("button", { name: /^ESXi Host,/ }).click();
-  drawer = page.getByLabel("ESXi Host setup");
-  await expect(drawer.getByLabel("ESXi IP", { exact: true })).toHaveValue("192.168.1.203");
-  expect(profileWrites, "closing an unsaved drawer never commits profile or hardware state").toEqual([]);
-});
-
-test("overview retires setup lanes in favor of the single-server map", async ({ page }) => {
-  labProfileScenario = "single";
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await expect(topology).toContainText(/3 devices/);
-  await expect(topology.getByRole("button", { name: /^Cisco Switch,/ })).toBeVisible();
-  await expect(topology.getByRole("button", { name: /^HPE iLO,/ })).toBeVisible();
-  await expect(topology.getByRole("button", { name: /^ESXi Host,/ })).toBeVisible();
-  await expect(topology.getByRole("button", { name: /^NetApp ONTAP,|^vCenter,/ })).toHaveCount(0);
-  await expect(topology.getByLabel("Local storage offshoot from HPE iLO")).toContainText("primary datastore");
-  await expect(page.locator("section[aria-label='Scenario setup lanes'], .system-setup-picker")).toHaveCount(0);
-});
-
-test("single-server map opens local datastore guidance beside the ESXi setup drawer", async ({ page }) => {
-  labProfileScenario = "single";
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await expect(topology.getByRole("button", { name: /^NetApp ONTAP,|^vCenter,/ })).toHaveCount(0);
-
-  await topology.getByRole("button", { name: /^ESXi Host,/ }).click();
-  const esxiDrawer = page.getByLabel("ESXi Host setup");
-  await expect(esxiDrawer.getByLabel("ESXi IP", { exact: true })).toHaveValue("192.168.1.203");
-  await expect(esxiDrawer.getByLabel("iLO IP", { exact: true })).toHaveCount(0);
-  await expect(esxiDrawer.getByRole("button", { name: /Rebuild|Install|Apply/i })).toHaveCount(0);
-  await esxiDrawer.getByRole("button", { name: "Close device panel" }).click();
-
-  await topology.getByLabel("Local storage offshoot from HPE iLO").click();
-  const raidDrawer = page.getByLabel("Local RAID planner drawer");
-  await expect(raidDrawer).toContainText("No iLO drive inventory yet.");
-  await raidDrawer.getByRole("button", { name: /Read storage from iLO/ }).click();
-  await expect(raidDrawer.getByLabel("Local RAID context")).toContainText("Server-local datastore");
-  await expect(raidDrawer.getByRole("button", { name: /Apply RAID|Reset HPE RAID|Factory reset/i })).toHaveCount(0);
-});
-
-test("overview removes superseded layout and console surfaces from operator mode", async ({ page }) => {
-  await page.goto("/overview");
-  const home = page.getByTestId("operator-home");
-  await expect(home).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Change this page" })).toHaveCount(0);
-  await expect(page.locator("[data-region-id='topology']")).toHaveCount(0);
-  await expect(page.locator("section[aria-label='Lab topology'], section[aria-label='Living lab topology']")).toBeVisible();
-  await expect(page.locator("details.advanced-drawer")).toHaveCount(0);
-  await expect(page.getByText("Discover Console")).toHaveCount(0);
-  await expect(page.getByText("Refresh Cisco Console")).toHaveCount(0);
-  await expect(page.getByText("Refresh NetApp Consoles")).toHaveCount(0);
-
-  await expect(page.locator("section[aria-label='Lab topology'], section[aria-label='Living lab topology']")).toBeVisible();
-  await expect(page.getByTestId("operator-home-view-details")).toHaveCount(0);
-  await expect(page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" })).toHaveCount(0);
 });
 
 test("storage page defaults to canonical NetApp workspace and hides protocol internals", async ({ page }) => {
@@ -1870,221 +1118,10 @@ test("storage NetApp workspace reveals migrated NFS iSCSI previews and guarded b
   await expect(guardedApply).toContainText("Apply iSCSI stays behind the existing backend gate");
 });
 
-test("single-server map removes vCenter and keeps direct ESXi setup separate from iLO", async ({ page }) => {
-  labProfileScenario = "single";
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await expect(topology.getByRole("button", { name: /^vCenter,|^NetApp ONTAP,/ })).toHaveCount(0);
-  await expect(topology.getByLabel("Local storage offshoot from HPE iLO")).toContainText("primary datastore");
-
-  await topology.getByRole("button", { name: /^ESXi Host,/ }).click();
-  const drawer = page.getByLabel("ESXi Host setup");
-  await expect(drawer.getByLabel("ESXi IP", { exact: true })).toBeVisible();
-  await expect(drawer.getByLabel("iLO IP", { exact: true })).toHaveCount(0);
-  await expect(drawer.getByLabel("vCenter IP", { exact: true })).toHaveCount(0);
-  await expect(drawer.getByRole("button", { name: /Rebuild|Install|Apply|Reset/i })).toHaveCount(0);
-});
-
-test("top nav and map device drawers keep setup direct without dead settings drawers", async ({ page }) => {
-  await page.goto("/overview");
-
-  const rail = page.locator("aside.rack-rail");
-  await expect(rail.getByRole("navigation", { name: "Lab Builder navigation" }).getByRole("link")).toHaveCount(7);
-  await expect(rail.getByRole("link", { name: "Create or change kit" })).toHaveAttribute("href", "/lab-profiles#new");
-  await expect(rail.getByRole("button", { name: "Settings" })).toHaveCount(0);
-  await expect(page.locator(".system-setup-picker, section.tab-settings-drawer")).toHaveCount(0);
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  const linkClasses = await topology.locator(".overview-link").evaluateAll((links) =>
-    links.map((link) => link.getAttribute("class") || "")
-  );
-  expect(linkClasses.length).toBeGreaterThan(0);
-  expect(linkClasses.every((className) => /\bis-(reachable|unreachable)\b/.test(className))).toBe(true);
-
-  for (const device of [
-    { button: /^Cisco Switch,/, drawer: "Cisco Switch setup", field: "Management IP" },
-    { button: /^HPE iLO,/, drawer: "HPE iLO setup", field: "iLO IP" },
-    { button: /^ESXi Host,/, drawer: "ESXi Host setup", field: "ESXi IP" },
-    { button: /^NetApp ONTAP,/, drawer: "NetApp ONTAP setup", field: "Cluster mgmt IP" },
-    { button: /^vCenter,/, drawer: "vCenter setup", field: "vCenter IP" }
-  ] as const) {
-    await topology.getByRole("button", { name: device.button }).click();
-    const drawer = page.getByLabel(device.drawer);
-    await expect(drawer.getByLabel(device.field, { exact: true })).toBeVisible();
-    await expect(drawer.getByRole("button", { name: "Save changes" })).toBeVisible();
-    await expect(drawer.locator("details")).toHaveCount(0);
-    await drawer.getByRole("button", { name: "Close device panel" }).click();
-  }
-
-  await topology.getByLabel("Local storage offshoot from HPE iLO").click();
-  const raidDrawer = page.getByLabel("Local RAID planner drawer");
-  await expect(raidDrawer).toContainText("No iLO drive inventory yet.");
-  await raidDrawer.getByRole("button", { name: /Read storage from iLO/ }).click();
-  await expect(raidDrawer.getByLabel("Local RAID context")).toContainText("boot/staging");
-  await expect(raidDrawer.getByRole("button", { name: /Apply RAID|Reset HPE RAID|Factory reset|Boot ESXi Installer/i })).toHaveCount(0);
-});
-
-test("overview map keeps single-server local storage as an iLO offshoot", async ({ page }) => {
-  labProfileScenario = "single";
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await expect(topology.getByRole("button", { name: /^HPE iLO,/ })).toBeVisible();
-  await expect(topology.getByRole("button", { name: /^ESXi Host,/ })).toBeVisible();
-  await expect(topology.getByRole("button", { name: /^NetApp ONTAP,/ })).toHaveCount(0);
-  await expect(topology.getByRole("button", { name: /^vCenter,/ })).toHaveCount(0);
-  const localStorage = topology.getByLabel("Local storage offshoot from HPE iLO");
-  await expect(localStorage).toContainText("Local storage");
-  await expect(localStorage).toContainText("primary datastore");
-  await expect(topology.locator(".overview-link-offshoot")).toHaveCount(1);
-  await localStorage.click();
-  const raidDrawer = page.getByLabel("Local RAID planner drawer");
-  await expect(raidDrawer).toContainText("No iLO drive inventory yet.");
-  await raidDrawer.getByRole("button", { name: /Read storage from iLO/ }).click();
-  await expect(raidDrawer.locator(".local-raid-planner")).toContainText("Server-local datastore");
-  await raidDrawer.getByRole("button", { name: /Bay 6/ }).click();
-  await raidDrawer.getByRole("button", { name: "Hot spare", exact: true }).click();
-  await raidDrawer.getByLabel("RAID level for Datastore array").selectOption("RAID10");
-  await raidDrawer.getByRole("button", { name: "Save visual RAID plan" }).click();
-  await expect(raidDrawer).toContainText("Visual RAID plan saved");
-  await expect(raidDrawer).not.toContainText(/Apply RAID|Reset HPE RAID|Factory reset|Boot ESXi Installer/i);
-  await raidDrawer.getByRole("button", { name: "Close local RAID planner" }).click();
-
-  await topology.getByRole("button", { name: /^HPE iLO,/ }).click();
-  let drawer = page.getByLabel("HPE iLO setup");
-  await expect(drawer).toBeVisible();
-  await expect(drawer.getByLabel("iLO IP", { exact: true })).toBeVisible();
-  await expect(drawer.getByLabel("ESXi IP", { exact: true })).toHaveCount(0);
-  await drawer.getByRole("button", { name: "Close device panel" }).click();
-
-  await topology.getByRole("button", { name: /^ESXi Host,/ }).click();
-  drawer = page.getByLabel("ESXi Host setup");
-  await expect(drawer).toBeVisible();
-  await expect(drawer.getByLabel("ESXi IP", { exact: true })).toBeVisible();
-  await expect(drawer.getByLabel("iLO IP", { exact: true })).toHaveCount(0);
-});
-
-
-test("overview local storage reads only from the current iLO access host", async ({ page }) => {
-  let discoveryReads = 0;
-  page.on("request", (request) => {
-    if (
-      request.method() === "GET" &&
-      new URL(request.url()).pathname === "/api/v1/providers/ilo-redfish/hpe-storage-discovery"
-    ) {
-      discoveryReads += 1;
-    }
-  });
-  await page.route("**/api/v1/providers/ilo-redfish/access-settings?*", (route) =>
-    json(route, iloAccessSettings({
-      fallback_hosts: ["192.168.1.201"],
-      host: "192.168.1.11",
-      host_source: "runtime_env",
-      last_probe_status: "not_checked",
-      last_probe_target_matches_access_host: false
-    }))
-  );
-
-  await page.goto("/overview");
-  await expect.poll(() => discoveryReads).toBeGreaterThan(0);
-  const mapDiscoveryReads = discoveryReads;
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await topology.getByLabel("Local storage offshoot from HPE iLO").click();
-  const raidDrawer = page.getByLabel("Local RAID planner drawer");
-  await expect(raidDrawer).toContainText("No iLO drive inventory yet.");
-  expect(discoveryReads, "opening local storage does not fetch or display unbound inventory").toBe(mapDiscoveryReads);
-
-  const exactRead = page.waitForRequest((request) =>
-    request.method() === "POST" &&
-    actionIdFromRunPath(new URL(request.url()).pathname) === "raid.discovery"
-  );
-  await raidDrawer.getByRole("button", { name: "Read storage from iLO 192.168.1.11" }).click();
-
-  const exactReadPayload = (await exactRead).postDataJSON() as Record<string, unknown>;
-  expect(exactReadPayload).toEqual({
-    device_id: "f2c1a9d0-4b31-4a5e-9d10-000000000002",
-    ilo_host: "192.168.1.11"
-  });
-  const liveDriveGrid = raidDrawer.getByLabel("Selectable local RAID drive bays from iLO inventory");
-  await expect(liveDriveGrid).toContainText("Bay 1");
-  await expect(liveDriveGrid).toContainText("Live: ESXi OS · RAID1");
-  await expect(liveDriveGrid).toContainText("Live: VM datastore · RAID5");
-  await expect(liveDriveGrid).toContainText("Live: Hot spare");
-  expect(discoveryReads).toBeGreaterThan(mapDiscoveryReads);
-});
-
-
-test("overview local storage stays locked when exact-target evidence is blocked", async ({ page }) => {
-  let discoveryReads = 0;
-  let failedExactRead = false;
-  page.on("request", (request) => {
-    if (
-      request.method() === "GET" &&
-      new URL(request.url()).pathname === "/api/v1/providers/ilo-redfish/hpe-storage-discovery"
-    ) {
-      discoveryReads += 1;
-    }
-  });
-  await page.route("**/api/v1/providers/ilo-redfish/access-settings?*", (route) =>
-    json(
-      route,
-      iloAccessSettings({
-        fallback_hosts: ["192.168.1.201"],
-        host: "192.168.1.11",
-        host_source: "runtime_env",
-        last_probe_status: failedExactRead ? "failed" : "ok",
-        last_probe_target_matches_access_host: true
-      })
-    )
-  );
-  await page.route("**/api/v1/providers/ilo-redfish/hpe-storage-discovery?*", (route) =>
-    json(
-      route,
-      failedExactRead
-        ? {
-            ...hpeStorageDiscovery(),
-            blockers: ["Exact-target iLO storage inventory was not available."],
-            controllers: [],
-            logical_drives: [],
-            physical_drives: [],
-            storage_inventory_available: false
-          }
-        : hpeStorageDiscovery()
-    )
-  );
-  await page.route("**/api/v1/workflows/actions/raid.discovery/run", (route) => {
-    failedExactRead = true;
-    return json(route, {
-      ...workflowActionRun("raid.discovery"),
-      blockers: ["Exact-target iLO storage inventory was not available."],
-      evidence_status: "blocked",
-      status: "failed"
-    });
-  });
-
-  await page.goto("/overview");
-  await expect.poll(() => discoveryReads).toBeGreaterThan(0);
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await expect(topology.getByRole("button", { name: "HPE iLO, Ready" })).toBeVisible();
-  await expect(topology.locator("[aria-label='Local storage path reachable']")).toHaveClass(/is-reachable/);
-  await topology.getByLabel("Local storage offshoot from HPE iLO").click();
-  const raidDrawer = page.getByLabel("Local RAID planner drawer");
-  await raidDrawer.getByRole("button", { name: "Read storage from iLO 192.168.1.11" }).click();
-
-  await expect(raidDrawer).toContainText("Exact-target iLO storage inventory was not available.");
-  await expect(raidDrawer.getByLabel("Selectable local RAID drive bays from iLO inventory")).toHaveCount(0);
-  await expect(topology.getByRole("button", { name: "HPE iLO, Ready" })).toHaveCount(0);
-  await expect(topology.locator("[aria-label='Local storage path not reachable']")).toHaveClass(/is-unreachable/);
-});
-
-
 test("operator button matrix keeps default actions simple and safe", async ({ page }) => {
   const forbiddenDefaultCopy = /ACKNOWLEDGE|NETAPP_ISCSI_SETUP|APPLY NETAPP ISCSI SETUP|Apply iSCSI|Factory reset|Reset HPE RAID|Boot ESXi Installer|PROVIDER_MODE|PROVIDER MODE/i;
   const surfaces: Array<{ label: string; path: string; primary: () => ReturnType<Page["locator"]> }> = [
-    { label: "Overview", path: "/overview", primary: () => page.getByTestId("operator-home-primary-action") },
+    { label: "Rack home", path: "/simple", primary: () => page.getByRole("button", { name: "Add equipment" }) },
     { label: "Lab Defaults", path: "/setup/defaults", primary: () => page.locator(".lab-defaults-actions .operator-primary-button") },
     { label: "Network", path: "/network", primary: () => page.locator("section[aria-label='Cisco switch workspace'] > .design-device-primary-action .design-plan-action") },
     { label: "Server", path: "/server", primary: () => page.locator("section[aria-label='Server configuration workspace'] .operator-primary-button") },
@@ -2674,30 +1711,7 @@ test("virtualization surface has no horizontal overflow on mobile", async ({ pag
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
-test("map switch drawer shows direct access settings without proof clutter", async ({ page }) => {
-  await page.goto("/overview");
-
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await topology.getByRole("button", { name: /^Cisco Switch,/ }).click();
-  const drawer = page.getByLabel("Cisco Switch setup");
-
-  await expect(drawer).toBeVisible();
-  await expect(drawer.getByLabel("Management IP", { exact: true })).toHaveValue("192.168.1.204");
-  await expect(drawer.getByLabel("Management VLAN", { exact: true })).toHaveValue("10");
-  await expect(drawer.getByLabel("Storage VLAN", { exact: true })).toHaveCount(0);
-  await expect(drawer.getByRole("heading", { name: "Sign-in" })).toBeVisible();
-  await expect(drawer.getByRole("link", { name: /Open full setup/i })).toHaveCount(0);
-  await expect(drawer.locator("details, .design-schema-inventory")).toHaveCount(0);
-  await expect(drawer).not.toContainText(/ACKNOWLEDGE DEVICE RECONFIGURATION|current-intent diff|raw proof/i);
-  await expect(drawer.getByRole("button", { name: /Apply Bootstrap|Factory reset|Upgrade/i })).toHaveCount(0);
-});
-
 test("Cisco current-intent drift stays on the canonical read-only evidence surface", async ({ page }) => {
-  await page.goto("/overview");
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await topology.getByRole("button", { name: /^Cisco Switch,/ }).click();
-  await expect(page.getByLabel("Cisco Switch setup")).not.toContainText("Refresh live evidence");
-
   await page.goto("/network");
   const advanced = await openWorkspaceAdvanced(page, "Cisco switch");
   const controls = advanced.getByLabel("Cisco workspace network controls");
@@ -2961,7 +1975,7 @@ test("validation next action matches lab safety acknowledgement blockers", async
 
   const readiness = page.getByLabel("Readiness Check");
   await expect(readiness).toContainText("Required lab acknowledgement flags are missing before real lab probes.");
-  await expect(readiness.getByRole("link", { name: "Review lab safety" })).toHaveAttribute("href", "/overview#lab-safety");
+  await expect(readiness.getByRole("link", { name: "Review lab safety" })).toHaveAttribute("href", "/simple");
   await expect(readiness.getByRole("link", { name: "Fix firmware" })).toHaveCount(0);
 });
 
@@ -2976,45 +1990,6 @@ test("validation no-kit state does not show stale loading feedback", async ({ pa
 
   await expect(page.getByLabel("Readiness Check")).toBeVisible();
   await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
-});
-
-test("storage iSCSI evidence and guarded apply stay off the Overview drawer", async ({ page }) => {
-  await page.goto("/overview");
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await topology.getByRole("button", { name: /^NetApp ONTAP,/ }).click();
-  const mapDrawer = page.getByLabel("NetApp ONTAP setup");
-  await expect(mapDrawer.getByRole("button", { name: /Apply iSCSI|Factory reset/i })).toHaveCount(0);
-  await expect(mapDrawer).not.toContainText("NETAPP_ISCSI_SETUP_APPLY");
-
-  await page.goto("/storage");
-  const advanced = await openWorkspaceAdvanced(page, "NetApp ONTAP");
-  const controls = advanced.getByLabel("NetApp workspace storage controls");
-  const guardedApply = advanced.getByLabel("Guarded iSCSI apply");
-
-  const previewResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/v1/providers/netapp-ontap/iscsi-setup-preview")
-  );
-  await controls.getByRole("button", { name: "Preview iSCSI" }).click();
-  await expect((await previewResponse).ok()).toBeTruthy();
-  await expect(controls).toContainText(/Preview iSCSI:/);
-
-  const applyResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/v1/providers/netapp-ontap/iscsi-setup-apply") &&
-    response.request().method() === "POST"
-  );
-  await guardedApply.getByRole("button", { name: /Apply iSCSI/ }).click();
-  await expect((await applyResponse).ok()).toBeTruthy();
-  await expect(guardedApply).toContainText("1/4 satisfied");
-  await expect(guardedApply).toContainText(/ONTAP writes not attempted/);
-  await expect(guardedApply).toContainText(/NETAPP_ISCSI_SETUP_CONFIRM="APPLY NETAPP ISCSI SETUP"/);
-
-  const validateResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/v1/providers/netapp-ontap/iscsi-setup-validate") &&
-    response.request().method() === "POST"
-  );
-  await controls.getByRole("button", { name: "Validate iSCSI" }).click();
-  await expect((await validateResponse).ok()).toBeTruthy();
-  await expect(controls).toContainText(/Validate iSCSI:/);
 });
 
 test("advanced proof is collapsed and operator labels hide raw statuses", async ({ page }) => {
@@ -3033,7 +2008,7 @@ test("advanced proof is collapsed and operator labels hide raw statuses", async 
   await expect(page.getByText("manual_review")).toHaveCount(0);
   await expect(page.getByText("not_configured_yet")).toHaveCount(0);
 
-  await page.goto("/overview");
+  await page.goto("/simple");
   await expect(page.getByText("local-lab-readwrite")).toHaveCount(0);
   await expect(page.getByText(/PROVIDER_MODE/)).toHaveCount(0);
 });
@@ -3192,7 +2167,7 @@ test("saved lab setup global defaults use active profile values and never render
 });
 
 test("legacy settings paths redirect to the current home and the contextual drawer is removed", async ({ page }) => {
-  await page.goto("/overview");
+  await page.goto("/simple");
   await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
   await expect(page.locator("section.tab-settings-drawer")).toHaveCount(0);
 
@@ -3201,8 +2176,8 @@ test("legacy settings paths redirect to the current home and the contextual draw
   await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
 
   await page.goto("/settings");
-  await expect(page).toHaveURL(/\/overview/);
-  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/simple/);
+  await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
 });
 
 test("safe read-only page action still invokes the workflow runner", async ({ page }) => {
@@ -3553,32 +2528,9 @@ test("workflow runner surfaces network API failures", async ({ page }) => {
   await expect(page.getByText("Network error while requesting /api/v1/workflows/actions/build-verification.run-full/run.")).toBeVisible();
 });
 
-test("overview device inventory adds, opens known and generic panels, and removes devices", async ({ page }) => {
-  await page.goto("/overview");
-  for (const name of ["Cisco Switch", "HPE iLO", "ESXi Host", "NetApp ONTAP"]) {
-    await expect(page.getByText(name, { exact: true })).toBeVisible();
-  }
-
-  await page.getByRole("button", { name: "Add device" }).click();
-  await page.getByLabel("Device type").fill("packet_broker");
-  await page.getByLabel("Device name").fill("Packet Broker A");
-  await page.getByLabel("Device host").fill("packet-a.local");
-  await page.getByRole("button", { name: "Save device" }).click();
-  await expect(page.getByText("Packet Broker A", { exact: true })).toBeVisible();
-
-  await page.getByText("Packet Broker A", { exact: true }).click();
-  await expect(page.getByLabel("Packet Broker A details")).toContainText("packet-a.local");
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Delete device" }).click();
-  await expect(page.getByText("Packet Broker A", { exact: true })).toHaveCount(0);
-
-  await page.getByText("Cisco Switch", { exact: true }).click();
-  await expect(page.getByLabel("Cisco Switch setup")).toBeVisible();
-});
-
 test("DHCP inventory devices show observed addresses as read-only evidence", async ({ page }) => {
-  await page.goto("/overview");
-  await page.getByRole("button", { name: "Add device" }).click();
+  await page.goto("/simple");
+  await page.getByRole("button", { name: "Add equipment" }).click();
   await page.getByLabel("Device type").fill("packet_broker");
   await page.getByLabel("Device name").fill("DHCP Packet Broker");
   await page.getByLabel("Device addressing mode").selectOption("dhcp");
@@ -3588,9 +2540,12 @@ test("DHCP inventory devices show observed addresses as read-only evidence", asy
   await expect(host).toHaveAttribute("placeholder", "No address observed yet");
   await expect(page.getByText("Assigned by the network, not editable.")).toBeVisible();
 
-  await page.getByRole("button", { name: "Save device" }).click();
-  await expect(page.getByText("DHCP Packet Broker", { exact: true })).toBeVisible();
-  await expect(page.getByText("No address observed yet · DHCP", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Add to rack" }).click();
+  const inspector = page.locator(".rack-inspector");
+  await expect(inspector.getByRole("heading", { name: "DHCP Packet Broker" })).toBeVisible();
+  await expect(inspector).toContainText("DHCP");
+  await expect(inspector).toContainText("Observed address");
+  await expect(inspector).toContainText("Not observed");
 });
 
 test("rack workspace and runbook are reachable from the nav and render", async ({ page }) => {
@@ -3598,7 +2553,7 @@ test("rack workspace and runbook are reachable from the nav and render", async (
   page.on("request", (request) => {
     if (request.method() !== "GET") mutations.push(`${request.method()} ${new URL(request.url()).pathname}`);
   });
-  await page.goto("/overview");
+  await page.goto("/simple");
   const nav = page.locator("aside.rack-rail").getByRole("navigation", { name: "Lab Builder navigation" });
 
   await nav.getByRole("link", { name: "Rack home" }).click();
@@ -3609,10 +2564,23 @@ test("rack workspace and runbook are reachable from the nav and render", async (
   await expect(page.locator(".rack-drive")).toHaveCount(8);
   await expect(page.locator(".rack-drive.is-free")).toHaveCount(6);
   await page.locator(".rack-unit[aria-label='Open Cisco Switch']").click();
-  await expect(page.locator(".rack-inspector").getByRole("heading", { name: "Cisco Switch" })).toBeVisible();
-  await expect(page.locator(".rack-inspector")).toContainText("192.168.1.204");
-  await expect(page.getByText("Remove from lab")).toHaveCount(0);
+  const inspector = page.locator(".rack-inspector");
+  await expect(inspector.getByRole("heading", { name: "Cisco Switch" })).toBeVisible();
+  await expect(inspector).toContainText("192.168.1.204");
+  const removeButton = inspector.getByRole("button", { name: "Remove from rack" });
+  await expect(removeButton).toBeVisible();
+  await removeButton.click();
+  const removeDialog = page.locator(".rack-remove-overlay");
+  await expect(removeDialog).toBeVisible();
+  await expect(removeDialog.locator(".rack-remove-panel")).toContainText("Cisco Switch");
+  await removeDialog.getByRole("button", { name: "Keep it" }).click();
+  await expect(removeDialog).toHaveCount(0);
   expect(mutations).toEqual([]);
+
+  await removeButton.click();
+  await page.locator(".rack-remove-panel").getByRole("button", { name: "Remove from rack" }).click();
+  await expect(page.locator(".rack-unit[aria-label='Open Cisco Switch']")).toHaveCount(0);
+  expect(mutations).toEqual(["DELETE /api/v1/device-inventory/f2c1a9d0-4b31-4a5e-9d10-000000000001"]);
 
   await page.getByRole("navigation", { name: "Lab Builder navigation" }).getByRole("link", { name: "Runbook" }).click();
   await expect(page.getByRole("heading", { name: "Build the lab, in order" })).toBeVisible();
@@ -5953,11 +4921,8 @@ test("iLO settings prefill from device values when nothing is saved yet", async 
     json(route, iloDiscoveredSettingsFixture())
   );
 
-  await page.goto("/overview");
-  await page.getByRole("region", { name: "Lab topology" }).getByRole("button", { name: /^HPE iLO,/ }).click();
-
-  const settings = page.locator("section[aria-label='iLO setup settings']");
-  await expect(settings).toBeVisible();
+  await page.goto("/simple");
+  const settings = await openRackIloSettings(page);
   await expect(settings).toContainText("Pre-filled with values read from the device");
   await expect(settings.getByLabel("DNS Name")).toHaveValue("DOP-X87-iLOSrv4");
   await expect(settings.getByLabel("Subnet Mask / Prefix")).toHaveValue("255.255.255.0");
@@ -5987,10 +4952,8 @@ test("saved iLO settings win over discovered device values", async ({ page }) =>
     json(route, iloDiscoveredSettingsFixture())
   );
 
-  await page.goto("/overview");
-  await page.getByRole("region", { name: "Lab topology" }).getByRole("button", { name: /^HPE iLO,/ }).click();
-
-  const settings = page.locator("section[aria-label='iLO setup settings']");
+  await page.goto("/simple");
+  const settings = await openRackIloSettings(page);
   const dnsName = settings.getByLabel("DNS Name");
   await expect(dnsName).toHaveValue("operator-chosen-name");
   // The operator's saved value differs from the device value, so no
@@ -6023,10 +4986,8 @@ test("editing a prefilled iLO setting saves the operator's value through the unc
     json(route, iloDiscoveredSettingsFixture())
   );
 
-  await page.goto("/overview");
-  await page.getByRole("region", { name: "Lab topology" }).getByRole("button", { name: /^HPE iLO,/ }).click();
-
-  const settings = page.locator("section[aria-label='iLO setup settings']");
+  await page.goto("/simple");
+  const settings = await openRackIloSettings(page);
   const dnsName = settings.getByLabel("DNS Name");
   await expect(dnsName).toHaveValue("DOP-X87-iLOSrv4");
   await dnsName.fill("renamed-by-operator");
@@ -6038,30 +4999,6 @@ test("editing a prefilled iLO setting saves the operator's value through the unc
   expect(network.hostname).toBe("renamed-by-operator");
   // Untouched prefilled values ride along as the operator's accepted values.
   expect(network.gateway).toBe("192.168.1.1");
-});
-
-test("clicking a device before the inventory loads still opens its drawer and survives the swap", async ({ page }) => {
-  // Hold the inventory response so the map renders profile-derived fallback
-  // nodes first — the state an operator clicks into on a slow backend.
-  await page.route("**/api/v1/device-inventory", async (route) => {
-    if (route.request().method() !== "GET") return route.fallback();
-    await new Promise((resolve) => setTimeout(resolve, 2500));
-    return json(route, [
-      inventoryDevice("f2c1a9d0-4b31-4a5e-9d10-00000000000a", "ilo", "HPE iLO", "192.168.1.201")
-    ]);
-  });
-
-  await page.goto("/overview");
-  const topology = page.getByRole("region", { name: "Lab topology" });
-  await topology.getByRole("button", { name: /^HPE iLO,/ }).click();
-
-  // Drawer opens immediately from the fallback node...
-  const drawer = page.getByLabel("HPE iLO setup");
-  await expect(drawer).toBeVisible();
-
-  // ...and stays open once the UUID inventory nodes replace the fallback,
-  // now carrying the inventory actions.
-  await expect(drawer.getByRole("button", { name: "Edit inventory details" })).toBeVisible({ timeout: 10_000 });
 });
 
 test("iLO DHCP mode shows discovered addresses and saves no static address intent", async ({ page }) => {
@@ -6081,10 +5018,8 @@ test("iLO DHCP mode shows discovered addresses and saves no static address inten
     json(route, iloDiscoveredSettingsFixture())
   );
 
-  await page.goto("/overview");
-  await page.getByRole("region", { name: "Lab topology" }).getByRole("button", { name: /^HPE iLO,/ }).click();
-
-  const settings = page.locator("section[aria-label='iLO setup settings']");
+  await page.goto("/simple");
+  const settings = await openRackIloSettings(page);
   // "DHCP" is a substring of several field labels (Use DHCP Time, the DHCPv6
   // toggles) — anchor on the exact field span instead.
   const dhcp = settings
@@ -6126,13 +5061,11 @@ test("iLO DHCP mode shows discovered addresses and saves no static address inten
 });
 
 test("local RAID draft starts from the live discovered layout instead of the canned template", async ({ page }) => {
-  await page.goto("/overview");
-  await page.getByRole("region", { name: "Lab topology" })
-    .getByRole("button", { name: "Local storage offshoot from HPE iLO" }).click();
+  labProfileScenario = "single";
+  await page.goto("/storage");
+  await page.getByText("Plan ports and bays").click();
 
   const planner = page.locator("section[aria-label='Local RAID planner']");
-  await expect(planner).toContainText("No iLO drive inventory yet.");
-  await planner.getByRole("button", { name: /Read storage from iLO/ }).click();
 
   await expect(planner).toContainText("draft starts from the last device-read layout");
   // Fixture live layout: RAID1 volume on bays 1-2, RAID5 volume on bays
@@ -6149,11 +5082,10 @@ test("local RAID draft starts from the live discovered layout instead of the can
 });
 
 test("local storage drawer renders cross-view vSAN readiness by paired physical bay", async ({ page }) => {
-  await page.goto("/overview");
-  await page.getByRole("region", { name: "Lab topology" })
-    .getByRole("button", { name: "Local storage offshoot from HPE iLO" }).click();
+  labProfileScenario = "single";
+  await page.goto("/storage");
+  await page.getByText("Plan ports and bays").click();
   const planner = page.locator("section[aria-label='Local RAID planner']");
-  await planner.getByRole("button", { name: /Read storage from iLO/ }).click();
   const vsan = planner.getByRole("region", { name: "vSAN readiness" });
   await expect(vsan).toContainText("Mixed: drives outside RAID volumes pass through raw");
   await expect(vsan).toContainText("6 drives / 10.48 TiB passthrough-ready for vSAN");
@@ -6179,12 +5111,11 @@ test("local RAID draft refuses the live seed when volume members cannot be paire
     json(route, mismatched)
   );
 
-  await page.goto("/overview");
-  await page.getByRole("region", { name: "Lab topology" })
-    .getByRole("button", { name: "Local storage offshoot from HPE iLO" }).click();
+  labProfileScenario = "single";
+  await page.goto("/storage");
+  await page.getByText("Plan ports and bays").click();
 
   const planner = page.locator("section[aria-label='Local RAID planner']");
-  await planner.getByRole("button", { name: /Read storage from iLO/ }).click();
 
   // Bays render from inventory, but the seed is refused: no device-read
   // claim, and the draft stays on the canned template (bay 7 is not spare).
@@ -6215,11 +5146,10 @@ test("local RAID live seed pairs DL380 cross-view members through hardware finge
     }
   }));
   await page.route("**/api/v1/providers/ilo-redfish/hpe-storage-discovery?*", (route) => json(route, crossView));
-  await page.goto("/overview");
-  await page.getByRole("region", { name: "Lab topology" })
-    .getByRole("button", { name: "Local storage offshoot from HPE iLO" }).click();
+  labProfileScenario = "single";
+  await page.goto("/storage");
+  await page.getByText("Plan ports and bays").click();
   const planner = page.locator("section[aria-label='Local RAID planner']");
-  await planner.getByRole("button", { name: /Read storage from iLO/ }).click();
   await expect(planner).toContainText("draft starts from the last device-read layout");
   await expect(planner.locator("button.local-raid-bay").filter({ hasText: "Bay 1" }).first()).toHaveClass(/is-boot/);
   await expect(planner.locator("button.local-raid-bay").filter({ hasText: "Bay 3" }).first()).toHaveClass(/is-datastore/);

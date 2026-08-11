@@ -638,130 +638,6 @@ const validationIntentRegions: UiIntentRegion[] = [
   { id: "advanced-proof", label: "Validation proof", kind: "drawer", collapsible: true }
 ];
 
-export function OperatorOverviewPage({
-  health,
-  labProfileError = "",
-  labProfileLoading = false,
-  labProfileState,
-  onReloadLabProfile
-}: OperatorPageProps) {
-  const navigate = useNavigate();
-  const activeProfile = activeLabProfile(labProfileState);
-  const address = activeAddressPlan(activeProfile);
-  const features = activeProfile?.features ?? null;
-  const [providers, setProviders] = useState<ProviderStatus[]>([]);
-  const [validation, setValidation] = useState<LabValidationSummary | null>(null);
-  const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
-  const [vcenterNetapp, setVcenterNetapp] = useState<ProviderProbeResult | null>(null);
-  const [buildVerification, setBuildVerification] = useState<ProviderProbeResult | null>(null);
-  const [iloAccessSettings, setIloAccessSettings] = useState<IloAccessSettings | null>(null);
-  const [iloAccessByDeviceId, setIloAccessByDeviceId] = useState<Record<string, IloAccessSettings | null>>({});
-  const [hpeStorageDiscovery, setHpeStorageDiscovery] = useState<HpeStorageDiscovery | null>(null);
-  const [deviceInventory, setDeviceInventory] = useState<DeviceInventoryItem[]>([]);
-  const [error, setError] = useState("");
-
-  async function load() {
-    setError("");
-    try {
-      const nextDeviceInventory = await safeApi(api.deviceInventory, [] as DeviceInventoryItem[]);
-      const primaryIloDevice = primaryIloInventoryDevice(nextDeviceInventory);
-      const iloDevices = nextDeviceInventory.filter((device) => rackInlineDeviceKind(device) === "ilo");
-      const [
-        nextProviders,
-        nextValidation,
-        nextFirmware,
-        nextVcenterNetapp,
-        nextBuildVerification,
-        nextIloAccessEntries,
-        nextHpeStorageDiscovery
-      ] = await Promise.all([
-        safeApi(api.providers, [] as ProviderStatus[]),
-        safeApi(api.labValidation, null),
-        safeApi(api.firmwareSummary, [] as FirmwareSummary[]),
-        safeApi(api.vcenterNetappReadiness, null),
-        safeApi(api.buildVerification, null),
-        Promise.all(iloDevices.map(async (device) => (
-          [device.id, await safeApi(() => api.iloAccessSettings(device.id), null)] as const
-        ))),
-        primaryIloDevice
-          ? safeApi(() => api.hpeStorageDiscovery(primaryIloDevice.id), null)
-          : Promise.resolve(null)
-      ]);
-      const nextIloAccessByDeviceId = Object.fromEntries(nextIloAccessEntries);
-      const nextIloAccessSettings = primaryIloDevice ? nextIloAccessByDeviceId[primaryIloDevice.id] ?? null : null;
-      setProviders(Array.isArray(nextProviders) ? nextProviders : []);
-      setValidation(nextValidation);
-      setFirmwareSummaries(Array.isArray(nextFirmware) ? nextFirmware : []);
-      setVcenterNetapp(nextVcenterNetapp);
-      setBuildVerification(nextBuildVerification);
-      setIloAccessSettings(nextIloAccessSettings);
-      setIloAccessByDeviceId(nextIloAccessByDeviceId);
-      setHpeStorageDiscovery(nextHpeStorageDiscovery);
-      setDeviceInventory(Array.isArray(nextDeviceInventory) ? nextDeviceInventory : []);
-      if (onReloadLabProfile) {
-        await onReloadLabProfile();
-      }
-    } catch (err) {
-      setError(errorMessage(err));
-    }
-  }
-
-  useEffect(() => {
-    void load();
-  }, []);
-  const accessRows = useMemo(
-    () => overviewAccessRows({ address, iloAccessSettings, providers, validation, vcenterNetapp }),
-    [address, iloAccessSettings, providers, validation, vcenterNetapp]
-  );
-  const operatorHome = useMemo(
-    () => buildOperatorHomeModel({
-      address,
-      buildVerification,
-      features,
-      firmwareSummaries,
-      profile: activeProfile,
-      providers,
-      validation,
-      vcenterNetapp
-    }),
-    [activeProfile, address, buildVerification, features, firmwareSummaries, providers, validation, vcenterNetapp]
-  );
-
-  return (
-    <OperatorPage title="Overview">
-      <div className="operator-home-layout">
-        <div className="operator-home-map-column">
-          <OverviewLabMap
-            accessRows={accessRows}
-            activeProfile={activeProfile}
-            address={address}
-            features={features}
-            health={health}
-            hpeStorageDiscovery={hpeStorageDiscovery}
-            inventory={deviceInventory}
-            iloAccessByDeviceId={iloAccessByDeviceId}
-            iloAccessSettings={iloAccessSettings}
-            labProfileState={labProfileState}
-            onReload={async () => {
-              await onReloadLabProfile?.();
-              await load();
-            }}
-            vcenterNetapp={vcenterNetapp}
-          />
-        </div>
-        <aside className="operator-home-rail" aria-label="Operator Home status and next action">
-          <OperatorHomeView
-            error={error || labProfileError}
-            loading={labProfileLoading}
-            model={operatorHome}
-            onPrimaryAction={() => navigate(operatorHome.NextAction.Target === "kit" ? "/lab-profiles#new" : "/run-center")}
-          />
-        </aside>
-      </div>
-    </OperatorPage>
-  );
-}
-
 export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }: OperatorPageProps) {
   const activeProfile = activeLabProfile(labProfileState);
   const address = activeAddressPlan(activeProfile);
@@ -1716,7 +1592,7 @@ function devicePageForRackInline(device: DeviceInventoryItem): string {
   if (kind === "netapp") return "/storage";
   if (kind === "vcenter" || kind === "esxi_host") return "/virtualization";
   if (kind === "server" || kind === "ilo") return "/server";
-  return "/overview";
+  return "/simple";
 }
 
 function serverComputeAccessCardModel({
@@ -1899,7 +1775,7 @@ function ServerSetupShapePanel({
 
         <div className="server-action-strip" aria-label="Server actions">
           <ActionLink to="/firmware-upgrades">Firmware</ActionLink>
-          <ActionLink to="/overview#topology-map">Open map workspace</ActionLink>
+          <ActionLink to="/simple">Open rack</ActionLink>
           <ActionLink to="/validation">Validation</ActionLink>
         </div>
 
@@ -5139,7 +5015,7 @@ function VirtualizationSetupShapePanel({
         />
 
         <div className="server-action-strip" aria-label="Virtualization actions">
-          <ActionLink to="/overview#topology-map">Open map workspace</ActionLink>
+          <ActionLink to="/simple">Open rack</ActionLink>
           <ActionLink to="/validation">Validation</ActionLink>
         </div>
 
@@ -5848,7 +5724,7 @@ function validationItemIsReady(status: string): boolean {
 function validationFixTarget(item: LabValidationItem | undefined, blockerText = ""): { label: string; to: string } {
   const blocker = blockerText.toLowerCase();
   if (textIncludes(blocker, ["acknowledge", "acknowledgement", "acknowledgment", "lab_acknowledge", "lab safety", "safety gate", "real lab gate"])) {
-    return { label: "Review lab safety", to: "/overview#lab-safety" };
+    return { label: "Review lab safety", to: "/simple" };
   }
   const text = `${item?.id ?? ""} ${item?.category ?? ""} ${item?.stage ?? ""} ${item?.label ?? ""}`.toLowerCase();
   if (textIncludes(text, ["cisco", "network", "switch"])) return { label: "Fix Cisco switch", to: "/network" };
@@ -5957,9 +5833,9 @@ function ValidationSetupShapePanel({
         />
 
         <div className="server-action-strip" aria-label="Validation actions">
-          <ActionLink to="/overview">Overview</ActionLink>
+          <ActionLink to="/simple">Rack</ActionLink>
           <ActionLink to="/audit-events">Audit Log</ActionLink>
-          <ActionLink to="/overview#topology-map">Map workspace</ActionLink>
+          <ActionLink to="/simple">Rack</ActionLink>
         </div>
 
         <RemediationLadder
@@ -7313,158 +7189,6 @@ function MapDeviceGlyph({ kind }: { kind: MapDeviceKind }) {
   );
 }
 
-function MapDeviceEditor({
-  node,
-  activeProfile,
-  address,
-  features,
-  global,
-  storageProtocol,
-  onClose,
-  onReload
-}: {
-  node: MapNodeModel;
-  activeProfile: LabProfile | null;
-  address: LabAddressPlan;
-  features: LabProfileFeatures | null;
-  global: LabProfile["global_settings"] | null;
-  storageProtocol: string;
-  onClose: () => void;
-  onReload: () => Promise<void> | void;
-}) {
-  const [edit, setEdit] = useState<Record<string, string>>(() =>
-    mapDeviceEditStateFrom(node.kind, activeProfile, address, features, global)
-  );
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const [inventoryEditing, setInventoryEditing] = useState(false);
-  const profileKey = `${node.kind}:${activeProfile?.id ?? "none"}:${activeProfile?.version ?? 0}`;
-
-  useEffect(() => {
-    setEdit(mapDeviceEditStateFrom(node.kind, activeProfile, address, features, global));
-    setMessage("");
-    setError("");
-  }, [profileKey, address, features, global]);
-
-  const config = mapDeviceEditorConfig(node.kind, storageProtocol);
-  const statusLabel = topologyNodeStateLabel(node.tone);
-  const statusClass = node.tone === "ready" || node.tone === "created" ? "ready" : node.tone === "warning" || node.tone === "offline" ? "blocked" : "unknown";
-
-  function update(key: string, value: string) {
-    setEdit((current) => ({ ...current, [key]: value }));
-    setMessage("");
-  }
-
-  async function save() {
-    if (!activeProfile) {
-      setError("Load the active lab setup before editing device values.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      const payload = mapDeviceProfilePayload(node.kind, activeProfile, edit);
-      if (activeProfile.source === "saved") {
-        await api.updateLabProfile(activeProfile.id, payload);
-      } else {
-        const saved = await api.createLabProfile(payload);
-        await api.activateLabProfile(saved.id);
-      }
-      await onReload();
-      setMessage("Saved. Hardware untouched.");
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removeInventoryDevice() {
-    if (!node.inventory || !window.confirm("Remove this device from the visual inventory? Provider configuration and real hardware will not be changed.")) return;
-    setBusy(true);
-    try {
-      await api.deleteDevice(node.inventory.id);
-      onClose();
-      await onReload();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <aside className="map-drawer" aria-label={`${node.title} setup`}>
-      <div className="map-drawer-head">
-        <div className={`map-drawer-glyph map-drawer-glyph-${node.kind}`} aria-hidden="true">
-          <svg viewBox="-52 -28 104 56" width="40" height="24"><MapDeviceGlyph kind={node.kind} /></svg>
-        </div>
-        <div className="map-drawer-head-text">
-          <p className="operator-kicker">{node.subtitle}</p>
-          <h3>{node.title}</h3>
-          <span className={`map-status-pill ${statusClass}`}>{statusLabel}</span>
-        </div>
-        <button className="map-drawer-close" type="button" onClick={onClose} aria-label="Close device panel">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6L6 18" /></svg>
-        </button>
-      </div>
-      <div className="map-drawer-body">
-        {node.inventory && <div className="map-editor-actions"><button onClick={() => setInventoryEditing(true)} type="button">Edit inventory details</button><button className="danger" onClick={removeInventoryDevice} type="button">Delete device</button></div>}
-        {node.kind !== "ilo" && (
-          <DeviceCredentialsPanel groupId={CREDENTIAL_GROUP_BY_DEVICE_KIND[node.kind]} />
-        )}
-        {node.kind === "ilo" && node.inventory && (
-          <>
-            <IloAccessSettingsPanel
-              deviceId={node.inventory.id}
-              initialHost={edit.iloInitial}
-              plannedHost={edit.ilo}
-              onReload={onReload}
-            />
-            <IloSetupIntentWorkspacePanel deviceId={node.inventory.id} />
-          </>
-        )}
-        {node.kind === "ilo" && !node.inventory && (
-          <p className="operator-action-message">Waiting for this iLO inventory record before loading device-scoped access and setup intent.</p>
-        )}
-        {config.groups.map((group) => (
-          <div className="map-field-group" key={group.title}>
-            <div className="map-field-group-head">
-              <h4>{group.title}</h4>
-              <small>{group.hint}</small>
-            </div>
-            <div className="map-field-grid">
-              {group.fields.map((field) => (
-                <label className={field.wide ? "wide" : ""} key={field.key}>
-                  <span>{field.label}</span>
-                  <input
-                    className={field.mono ? "is-mono" : ""}
-                    onChange={(event) => update(field.key, event.target.value)}
-                    value={edit[field.key] ?? ""}
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="map-drawer-foot">
-        <span className="map-drawer-safe">Saves the plan only — hardware untouched.</span>
-        <div className="map-drawer-foot-actions">
-          {message && <span className="map-drawer-msg">{message}</span>}
-          {error && <span className="map-drawer-msg is-error">{error}</span>}
-          <button className="map-drawer-save" type="button" disabled={busy || !activeProfile} onClick={() => void save()}>
-            {busy ? "Saving…" : "Save changes"}
-          </button>
-        </div>
-      </div>
-      {inventoryEditing && node.inventory && <DeviceInventoryForm device={node.inventory} onClose={() => setInventoryEditing(false)} onReload={onReload} />}
-    </aside>
-  );
-}
-
 const CREDENTIAL_GROUP_BY_DEVICE_KIND: Partial<Record<MapDeviceKind, string>> = {
   network: "cisco",
   esxi: "esxi",
@@ -8483,735 +8207,6 @@ function optionalBooleanFromSelect(value: string): boolean | null {
   if (value === "true") return true;
   if (value === "false") return false;
   return null;
-}
-
-function OverviewLabMap({
-  accessRows,
-  activeProfile,
-  address,
-  features,
-  health,
-  hpeStorageDiscovery,
-  inventory,
-  iloAccessByDeviceId,
-  iloAccessSettings,
-  labProfileState,
-  onReload,
-  vcenterNetapp
-}: {
-  accessRows: AccessRow[];
-  activeProfile: LabProfile | null;
-  address: LabAddressPlan;
-  features: LabProfileFeatures | null;
-  health?: HealthLike;
-  hpeStorageDiscovery: HpeStorageDiscovery | null;
-  inventory: DeviceInventoryItem[];
-  iloAccessByDeviceId: Record<string, IloAccessSettings | null>;
-  iloAccessSettings: IloAccessSettings | null;
-  labProfileState: LabProfileList | null;
-  onReload: () => Promise<void> | void;
-  vcenterNetapp: ProviderProbeResult | null;
-}) {
-  const global = activeProfile?.global_settings ?? null;
-  const netappInScope = features?.netapp_enabled !== false;
-  const vcenterInScope = features?.vcenter_enabled === true;
-  const runtimeReady = Boolean(health);
-  const realRuntime = health?.operator_runtime_mode === "real_lab" || health?.provider_mode === "local-lab-readwrite";
-  const runtimeLabel = runtimeReady ? (realRuntime ? "Live lab · read-only checks" : "Test mode · no hardware touched") : "Checking status";
-  const runtimeClass = runtimeReady ? (realRuntime ? "topology-pill-live" : "topology-pill-test") : "topology-pill-runtime-unknown";
-  const subnetState = topologySubnetState(address.subnet, health);
-  const storageProtocol = asString(features?.storage_protocol) || (netappInScope ? "nfs" : "local");
-  const serverModelLabel = topologyServerModelLabel(activeProfile?.devices?.server_model);
-  const primaryIloDevice = primaryIloInventoryDevice(inventory);
-  const primaryIloDeviceId = primaryIloDevice?.id ?? "";
-
-  const ciscoStatus = topologyStatusFromAccess(accessRows, "Cisco");
-  const iloStatus = topologyStatusFromAccess(accessRows, "iLO");
-  const esxiStatus = topologyStatusFromAccess(accessRows, "ESXi");
-  const netappStatus = topologyStatusFromAccess(accessRows, "NetApp");
-  const vmStatus = topologyStatusFromAccess(accessRows, "VM inventory");
-  const localStorageStatus = topologyLocalStorageStatus(hpeStorageDiscovery, iloAccessSettings);
-  const localStorageTone = topologyConnectionTone([iloStatus, localStorageStatus]);
-  let localStoragePosition = MAP_NODE_LAYOUT.localStorage;
-
-  const nodes: MapNodeModel[] = [
-    {
-      id: "cisco", kind: "network", title: "Cisco Switch", subtitle: "Network fabric",
-      meta: displayAddress(address.cisco_management), status: ciscoStatus, tone: topologyTone(ciscoStatus),
-      ...MAP_NODE_LAYOUT.cisco
-    },
-    {
-      id: "ilo", kind: "ilo", title: "HPE iLO", subtitle: `${serverModelLabel} management`,
-      meta: displayAddress(iloAccessSettings?.host || address.ilo), status: iloStatus, tone: topologyTone(iloStatus),
-      ...MAP_NODE_LAYOUT.ilo
-    },
-    {
-      id: "esxi", kind: "esxi", title: "ESXi Host", subtitle: `${serverModelLabel} compute`,
-      meta: displayAddress(address.esxi_management), status: esxiStatus, tone: topologyTone(esxiStatus),
-      ...MAP_NODE_LAYOUT.esxi
-    }
-  ];
-  if (netappInScope) {
-    nodes.push({
-      id: "netapp", kind: "storage", title: "NetApp ONTAP", subtitle: `Shared storage · ${storageProtocol.toUpperCase()}`,
-      meta: displayAddress(address.netapp_cluster_mgmt), status: netappStatus, tone: topologyTone(netappStatus),
-      ...MAP_NODE_LAYOUT.netapp
-    });
-  }
-  if (vcenterInScope) {
-    nodes.push({
-      id: "vcenter", kind: "virtualization", title: "vCenter", subtitle: "VM management",
-      meta: topologyVmMapTarget(vcenterNetapp, true, address), status: vmStatus, tone: topologyTone(vmStatus, "created"),
-      ...MAP_NODE_LAYOUT.vcenter
-    });
-  }
-
-  // The inventory is the source of truth for what renders — but only when it
-  // actually loaded. An empty result (endpoint failed/unavailable) must not
-  // blank the map; the profile-derived nodes above stay as the fallback.
-  if (inventory.length > 0) {
-    nodes.splice(0, nodes.length, ...inventory.map((device, index) => {
-      const deviceAccess = iloAccessByDeviceId[device.id] ?? null;
-      const deviceIloStatus = rackInlineDeviceKind(device) === "ilo" ? scopedIloAccessStatus(deviceAccess) : iloStatus;
-      const status = inventoryDeviceStatus(device.device_type, { ciscoStatus, esxiStatus, iloStatus: deviceIloStatus, netappStatus, vmStatus });
-      const host = rackInlineDeviceKind(device) === "ilo" ? deviceAccess?.host || device.host : device.host;
-      return {
-        id: device.id,
-        inventory: device,
-        kind: inventoryMapKind(device.device_type),
-        title: device.display_name,
-        subtitle: inventoryTypeLabel(device.device_type),
-        meta: `${host ? displayAddress(host) : "No address observed yet"}${device.dhcp_enabled ? " · DHCP" : ""}`,
-        status,
-        tone: topologyTone(status, device.device_type === "vcenter" ? "created" : undefined),
-        x: 105 + (index % 4) * 180,
-        y: 85 + Math.floor(index / 4) * 145
-      };
-    }));
-  }
-  const mapHeight = Math.max(460, 150 + Math.ceil(nodes.length / 4) * 145);
-  localStoragePosition = { x: 680, y: mapHeight - 70 };
-
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selectedNode = nodes.find((node) => node.id === selectedId) ?? null;
-  const localStorageSelected = selectedId === "local-storage";
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-
-  // A click during the initial load selects a profile-derived node (role id
-  // like "ilo"); once the inventory arrives those nodes are replaced by
-  // UUID-id inventory nodes and the selection would silently die. Re-point it
-  // at the matching device so the drawer the operator asked for still opens.
-  useEffect(() => {
-    if (!selectedId || selectedId === "local-storage" || byId.has(selectedId)) return;
-    const roleByLegacyId: Record<string, string> = {
-      cisco: "cisco_switch",
-      ilo: "ilo",
-      esxi: "esxi_host",
-      netapp: "netapp",
-      vcenter: "vcenter"
-    };
-    const role = roleByLegacyId[selectedId];
-    const replacement = role ? nodes.find((node) => node.inventory?.device_type === role) : undefined;
-    setSelectedId(replacement ? replacement.id : null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- nodes/byId are rebuilt every render; inventory is the real trigger
-  }, [selectedId, inventory]);
-
-  // Inventory node ids are database UUIDs, so the classic role-to-role links
-  // resolve through the first node of each device type. Repeated devices of a
-  // type beyond the first render as standalone nodes without inferred links —
-  // no invented cabling.
-  const nodeIdForRole = (role: string): string => {
-    const byType = nodes.find((node) => node.inventory?.device_type === role);
-    if (byType) return byType.id;
-    return role === "cisco_switch" ? "cisco" : role === "esxi_host" ? "esxi" : role;
-  };
-
-  type MapLink = { from: string; fromLabel: string; to: string; toLabel: string; status: TopologyNodeTone };
-  const roleLink = (fromRole: string, fromLabel: string, toRole: string, toLabel: string, status: TopologyNodeTone): MapLink => ({
-    from: nodeIdForRole(fromRole),
-    fromLabel,
-    to: nodeIdForRole(toRole),
-    toLabel,
-    status
-  });
-  const rawLinks: MapLink[] = [
-    roleLink("cisco_switch", "Cisco switch", "ilo", "HPE iLO", topologyConnectionTone([ciscoStatus, iloStatus])),
-    roleLink("cisco_switch", "Cisco switch", "esxi_host", "ESXi host", topologyConnectionTone([ciscoStatus, esxiStatus])),
-    roleLink("cisco_switch", "Cisco switch", "vcenter", "vCenter", topologyConnectionTone([ciscoStatus, vmStatus])),
-    roleLink("esxi_host", "ESXi host", "netapp", "NetApp ONTAP", topologyConnectionTone([esxiStatus, netappStatus])),
-    roleLink("netapp", "NetApp ONTAP", "vcenter", "vCenter", topologyConnectionTone([netappStatus, vmStatus])),
-    roleLink("esxi_host", "ESXi host", "vcenter", "vCenter", topologyConnectionTone([esxiStatus, vmStatus]))
-  ];
-  const links = rawLinks.filter((link) => byId.has(link.from) && byId.has(link.to));
-  const primaryIlo = nodes.find((node) => node.inventory?.device_type === "ilo");
-  const [addOpen, setAddOpen] = useState(false);
-
-  function linkClass(status: TopologyNodeTone): string {
-    return topologyToneReachability(status) === "reachable" ? "is-reachable" : "is-unreachable";
-  }
-
-  function nodeStatusClass(tone: TopologyNodeTone): string {
-    if (tone === "ready" || tone === "created") return "is-ready";
-    if (tone === "warning" || tone === "offline") return "is-blocked";
-    return "is-unknown";
-  }
-
-  return (
-    <section className="overview-map" aria-label="Lab topology">
-      <div className="overview-map-head">
-        <div>
-          <p className="operator-kicker">Lab topology</p>
-          <h2>{nodes.length} devices · subnet {displayAddress(address.subnet)}</h2>
-        </div>
-        <div className="overview-map-head-actions">
-          <button className="operator-primary-button" onClick={() => setAddOpen(true)} type="button">Add device</button>
-          <div className="overview-map-pills">
-            <span className={`topology-pill ${runtimeClass}`}><CheckCircle2 size={14} /> {runtimeLabel}</span>
-            <span className={`topology-pill topology-pill-subnet-${subnetState.status}`}><Route size={14} /> {subnetState.label}</span>
-          </div>
-        </div>
-      </div>
-
-      {subnetState.status !== "matches" && (
-        <div className={`topology-subnet-notice topology-subnet-notice-${subnetState.status}`}>
-          <div>
-            <strong>{subnetState.status === "mismatch" ? "Subnet mismatch" : "Subnet not proven"}</strong>
-            <span>{subnetState.detail}</span>
-          </div>
-        </div>
-      )}
-
-      <div className={`overview-map-stage ${selectedNode || localStorageSelected ? "is-open" : ""}`}>
-        <div className="overview-map-canvas">
-          <svg className="overview-map-svg" viewBox={`0 0 760 ${mapHeight}`} role="img" aria-label="Device topology">
-            <g className="overview-map-links">
-              {primaryIlo && <path
-                className={`overview-link overview-link-offshoot ${linkClass(localStorageTone)}`}
-                d={`M ${primaryIlo.x} ${primaryIlo.y} L ${localStoragePosition.x} ${localStoragePosition.y}`}
-                aria-label={`Local storage path ${topologyToneReachabilityLabel(localStorageTone)}`}
-              />}
-              {links.map((link) => {
-                const a = byId.get(link.from)!;
-                const b = byId.get(link.to)!;
-                return (
-                  <path
-                    key={`${link.from}-${link.to}`}
-                    className={`overview-link ${linkClass(link.status)}`}
-                    d={`M ${a.x} ${a.y} L ${b.x} ${b.y}`}
-                    aria-label={`${link.fromLabel} to ${link.toLabel} ${topologyToneReachabilityLabel(link.status)}`}
-                  />
-                );
-              })}
-            </g>
-            {nodes.map((node) => (
-              <g
-                key={node.id}
-                className={`overview-node ${nodeStatusClass(node.tone)} ${selectedId === node.id ? "is-selected" : ""} ${node.tone === "ready" || node.tone === "created" ? "is-live" : ""}`}
-                transform={`translate(${node.x},${node.y})`}
-                role="button"
-                tabIndex={0}
-                aria-label={`${node.title}, ${topologyNodeStateLabel(node.tone)}`}
-                onClick={() => setSelectedId(node.id)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(node.id); }
-                }}
-              >
-                <circle className="overview-node-pulse" cx="0" cy="0" r="30" />
-                <circle className="overview-node-ring" cx="0" cy="0" r="36" />
-                <MapDeviceGlyph kind={node.kind} />
-                <text className="overview-node-label" x="0" y="44" textAnchor="middle">{node.title}</text>
-                <text className="overview-node-meta" x="0" y="57" textAnchor="middle">{node.meta}</text>
-              </g>
-            ))}
-            <g
-              aria-label="Local storage offshoot from HPE iLO"
-              className={`overview-storage-offshoot ${nodeStatusClass(localStorageTone)} ${localStorageSelected ? "is-selected" : ""}`}
-              onClick={() => setSelectedId("local-storage")}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId("local-storage"); }
-              }}
-              role="button"
-              tabIndex={0}
-              transform={`translate(${localStoragePosition.x},${localStoragePosition.y})`}
-            >
-              <rect x="-50" y="-23" width="100" height="84" rx="10" className="offshoot-hit-target" />
-              <rect x="-38" y="-15" width="76" height="30" rx="7" className="offshoot-body" />
-              <rect x="-25" y="-7" width="42" height="14" rx="3" className="offshoot-drive" />
-              <circle cx="28" cy="0" r="3.5" className="offshoot-led" />
-              <text className="overview-node-label" x="0" y="33" textAnchor="middle">Local storage</text>
-              <text className="overview-node-meta" x="0" y="46" textAnchor="middle">{netappInScope ? "boot / staging RAID" : "primary datastore"}</text>
-            </g>
-          </svg>
-          <div className="overview-map-legend" aria-label="Legend">
-            <span><i className="legend-ready" /> Reachable</span>
-            <span><i className="legend-blocked" /> Not reachable</span>
-            <span><i className="legend-unknown" /> Not checked</span>
-          </div>
-        </div>
-
-        {selectedNode && (!selectedNode.inventory || isKnownInventoryType(selectedNode.inventory.device_type)) && (
-          <MapDeviceEditor
-            key={selectedNode.id}
-            node={selectedNode}
-            activeProfile={activeProfile}
-            address={address}
-            features={features}
-            global={global}
-            storageProtocol={storageProtocol}
-            onClose={() => setSelectedId(null)}
-            onReload={onReload}
-          />
-        )}
-        {selectedNode && selectedNode.inventory && !isKnownInventoryType(selectedNode.inventory.device_type) && (
-          <GenericDevicePanel device={selectedNode.inventory} onClose={() => setSelectedId(null)} onReload={onReload} />
-        )}
-        {localStorageSelected && (
-          <LocalRaidPlannerDrawer
-            activeProfile={activeProfile}
-            address={address}
-            features={features}
-            iloAccessHost={iloAccessSettings?.host ?? null}
-            iloDeviceId={primaryIloDeviceId || null}
-            netappInScope={netappInScope}
-            onClose={() => setSelectedId(null)}
-            onReload={onReload}
-          />
-        )}
-      </div>
-      {addOpen && <DeviceInventoryForm onClose={() => setAddOpen(false)} onReload={onReload} />}
-    </section>
-  );
-}
-
-function inventoryMapKind(deviceType: string): MapDeviceKind {
-  if (deviceType === "cisco_switch") return "network";
-  if (deviceType === "ilo") return "ilo";
-  if (deviceType === "esxi_host") return "esxi";
-  if (deviceType === "netapp") return "storage";
-  return "virtualization";
-}
-
-function inventoryTypeLabel(deviceType: string): string {
-  return deviceType.split("_").map((part) => part ? `${part[0].toUpperCase()}${part.slice(1)}` : part).join(" ");
-}
-
-function isKnownInventoryType(deviceType: string): boolean {
-  // vCenter has a dedicated editor drawer too (kind "virtualization").
-  return ["ilo", "cisco_switch", "esxi_host", "netapp", "vcenter"].includes(deviceType);
-}
-
-function inventoryDeviceStatus(
-  deviceType: string,
-  statuses: { ciscoStatus: string; esxiStatus: string; iloStatus: string; netappStatus: string; vmStatus: string }
-): string {
-  if (deviceType === "cisco_switch") return statuses.ciscoStatus;
-  if (deviceType === "ilo") return statuses.iloStatus;
-  if (deviceType === "esxi_host") return statuses.esxiStatus;
-  if (deviceType === "netapp") return statuses.netappStatus;
-  if (deviceType === "vcenter") return statuses.vmStatus;
-  return "not checked";
-}
-
-function GenericDevicePanel({ device, onClose, onReload }: { device: DeviceInventoryItem; onClose: () => void; onReload: () => Promise<void> | void }) {
-  const [editing, setEditing] = useState(false);
-  const [error, setError] = useState("");
-  async function remove() {
-    if (!window.confirm("Remove this device from the visual inventory? Provider configuration and real hardware will not be changed.")) return;
-    try {
-      await api.deleteDevice(device.id);
-      onClose();
-      await onReload();
-    } catch (err) {
-      setError(errorMessage(err));
-    }
-  }
-  return (
-    <aside className="map-device-editor" aria-label={`${device.display_name} details`}>
-      <div className="map-device-editor-head"><div><p className="operator-kicker">Inventory device</p><h3>{device.display_name}</h3></div><button onClick={onClose} type="button">Close</button></div>
-      <dl className="lab-defaults-facts"><div><dt>Type</dt><dd>{inventoryTypeLabel(device.device_type)}</dd></div><div><dt>Addressing</dt><dd>{device.dhcp_enabled ? "DHCP" : "Static"}</dd></div><div><dt>{device.dhcp_enabled ? "Observed address" : "Host"}</dt><dd>{device.host || (device.dhcp_enabled ? "No address observed yet" : "Not assigned")}</dd></div><div><dt>Notes</dt><dd>{device.notes || "No notes"}</dd></div></dl>
-      {error && <div className="operator-feedback error">{error}</div>}
-      <div className="map-editor-actions"><button onClick={() => setEditing(true)} type="button">Edit</button><button className="danger" onClick={remove} type="button">Delete device</button></div>
-      {editing && <DeviceInventoryForm device={device} onClose={() => setEditing(false)} onReload={onReload} />}
-    </aside>
-  );
-}
-
-function LabTopologyMap({
-  accessRows,
-  activeProfile,
-  address,
-  features,
-  firmwareSummaries,
-  health,
-  labProfileState,
-  onReload,
-  vcenterNetapp,
-  workflowActions
-}: {
-  accessRows: AccessRow[];
-  activeProfile: LabProfile | null;
-  address: LabAddressPlan;
-  features: LabProfileFeatures | null;
-  firmwareSummaries: FirmwareSummary[];
-  health?: HealthLike;
-  labProfileState: LabProfileList | null;
-  onReload: () => Promise<void> | void;
-  vcenterNetapp: ProviderProbeResult | null;
-  workflowActions: WorkflowAction[];
-}) {
-  const netappInScope = features?.netapp_enabled !== false;
-  const vcenterInScope = features?.vcenter_enabled === true;
-  const vmInScope = vcenterInScope || netappInScope;
-  const runtimeReady = Boolean(health);
-  const realRuntime = health?.operator_runtime_mode === "real_lab" || health?.provider_mode === "local-lab-readwrite";
-  const runtimeLabel = runtimeReady
-    ? (realRuntime ? "Live lab - read-only checks" : "Test mode - no hardware touched")
-    : "Checking status";
-  const runtimeClass = runtimeReady ? (realRuntime ? "topology-pill-live" : "topology-pill-test") : "topology-pill-runtime-unknown";
-  const subnetState = topologySubnetState(address.subnet, health);
-  const primaryIloDevice = usePrimaryIloInventoryDevice();
-  const primaryIloDeviceId = primaryIloDevice?.id ?? "";
-  const [workspaceTarget, setWorkspaceTarget] = useState<DesignPartId>("switch");
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [workspaceOpen, setWorkspaceOpen] = useState(false);
-  const [localRaidPlannerOpen, setLocalRaidPlannerOpen] = useState(false);
-  const [localRaidDiscovery, setLocalRaidDiscovery] = useState<HpeStorageDiscovery | null>(null);
-  const [localRaidDiscoveryLoading, setLocalRaidDiscoveryLoading] = useState(false);
-  const [localRaidDiscoveryError, setLocalRaidDiscoveryError] = useState("");
-  const [mapFitEnabled, setMapFitEnabled] = useState(false);
-  const [mapOverflowing, setMapOverflowing] = useState(false);
-  const mapCanvasRef = useRef<HTMLDivElement | null>(null);
-  const mapPlaneRef = useRef<HTMLDivElement | null>(null);
-  const ciscoStatus = topologyStatusFromAccess(accessRows, "Cisco");
-  const iloStatus = topologyStatusFromAccess(accessRows, "iLO");
-  const esxiStatus = topologyStatusFromAccess(accessRows, "ESXi");
-  const netappStatus = topologyStatusFromAccess(accessRows, "NetApp");
-  const datastoreStatus = topologyStatusFromAccess(accessRows, "Datastore");
-  const vmStatus = topologyStatusFromAccess(accessRows, "VM inventory");
-  const serverStatus = topologyWorstStatus([iloStatus, esxiStatus]);
-  const storageProtocol = asString(features?.storage_protocol) || (netappInScope ? "nfs" : "local");
-  const datastoreLabel = netappInScope ? datastoreName(vcenterNetapp) : "Local ESXi datastore";
-  const serverModelLabel = topologyServerModelLabel(activeProfile?.devices?.server_model);
-  const nodes: TopologyNode[] = [
-    {
-      details: "C9300 - L3 core",
-      icon: topologyIndustryIcon("switch"),
-      id: "cisco",
-      meta: displayAddress(address.cisco_management),
-      page: "/overview#topology-map",
-      status: ciscoStatus,
-      title: "Cisco Switch",
-      tone: topologyTone(ciscoStatus),
-      zone: "management"
-    },
-    {
-      details: "iLO 5 - server management",
-      icon: topologyIndustryIcon("ilo"),
-      id: "ilo",
-      meta: displayAddress(address.ilo),
-      page: "/overview#topology-map",
-      status: iloStatus,
-      title: "HPE iLO",
-      tone: topologyTone(iloStatus),
-      zone: "management"
-    },
-    {
-      details: `${serverModelLabel} - ${netappInScope ? "ESXi host" : "local RAID host"}`,
-      icon: topologyIndustryIcon("server"),
-      id: "server",
-      meta: displayAddress(address.esxi_management),
-      page: "/overview#topology-map",
-      status: serverStatus,
-      title: `HPE ${serverModelLabel.replace(/^DL360\s+/i, "")}`,
-      tone: topologyTone(serverStatus),
-      zone: "storage"
-    }
-  ];
-
-  if (netappInScope) {
-    nodes.push(
-      {
-        details: `ONTAP - ${storageProtocol.toUpperCase()} storage`,
-        icon: topologyIndustryIcon("netapp"),
-        id: "netapp",
-        meta: displayAddress(address.netapp_cluster_mgmt),
-        page: "/overview#topology-map",
-        status: netappStatus,
-        title: "NetApp ONTAP",
-        tone: topologyTone(netappStatus),
-        zone: "storage"
-      },
-      {
-        details: "VM storage path",
-        icon: topologyIndustryIcon("datastore"),
-        id: "datastore",
-        meta: datastoreVisibleStatus(vcenterNetapp) === "ready" ? "mounted" : "not mounted",
-        page: "/overview#topology-map",
-        status: datastoreStatus,
-        title: "Datastore",
-        tone: topologyTone(datastoreStatus),
-        zone: "storage"
-      }
-    );
-  }
-
-  if (vmInScope) {
-    nodes.push({
-      details: vcenterInScope ? "VCSA - VM management" : "ESXi - direct host",
-      icon: topologyIndustryIcon(vcenterInScope ? "vcenter" : "hypervisor"),
-      id: "vcenter",
-      meta: topologyVmMapTarget(vcenterNetapp, vcenterInScope, address),
-      page: "/overview#topology-map",
-      status: vmStatus,
-      title: vcenterInScope ? "vCenter" : "Direct ESXi VM",
-      tone: topologyTone(vmStatus, "created"),
-      zone: "management"
-    });
-  }
-
-  const selectedTopologyNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
-  const links = topologyLinks({ datastoreStatus, iloStatus, netappInScope, netappStatus, serverStatus, storageProtocol, vmInScope, vmStatus });
-  const storageOrbitNodes = nodes.filter((node) => node.zone === "storage");
-  const localRaidServerPart: DesignPartId = asString(activeProfile?.devices?.server_model).toLowerCase() === "gen10plus" ? "server-gen10plus" : "server-gen10";
-  const localRaidDefaultSettings = topologyDefaultDeviceSettings({
-    address,
-    netappInScope,
-    storageProtocol,
-    vcenterInScope
-  })[localRaidServerPart];
-  const localRaidKey = localRaidDraftKey(activeProfile, address, netappInScope);
-  const localRaidInitialDraft = localRaidReadDraft(localRaidKey, localRaidDefaultDraft(localRaidDefaultSettings, netappInScope));
-  useEffect(() => {
-    const canvas = mapCanvasRef.current;
-    const plane = mapPlaneRef.current;
-    if (!canvas || !plane) return;
-    const canvasEl = canvas;
-    const planeEl = plane;
-
-    function measureOverflow() {
-      const canvasBox = canvasEl.getBoundingClientRect();
-      const planeBox = planeEl.getBoundingClientRect();
-      const overflowing = planeBox.width > canvasBox.width - 36 || planeBox.height > canvasBox.height - 88;
-      setMapOverflowing(overflowing);
-      if (!overflowing) setMapFitEnabled(false);
-    }
-
-    measureOverflow();
-    const observer = new ResizeObserver(measureOverflow);
-    observer.observe(canvasEl);
-    observer.observe(planeEl);
-    return () => observer.disconnect();
-  }, [links.length, netappInScope, nodes.length, workspaceOpen]);
-
-  function openNodeWorkspace(nodeId: string) {
-    setWorkspaceTarget(topologyNodeFaceplatePart(nodeId, netappInScope));
-    setSelectedNodeId(nodeId);
-    setLocalRaidPlannerOpen(false);
-    setWorkspaceOpen(true);
-  }
-
-  function closeNodeWorkspace() {
-    setWorkspaceOpen(false);
-    setSelectedNodeId(null);
-  }
-
-  async function loadLocalRaidDiscovery() {
-    setLocalRaidDiscoveryLoading(true);
-    setLocalRaidDiscoveryError("");
-    try {
-      if (!primaryIloDeviceId) throw new Error("Select an iLO inventory device before reading local storage.");
-      setLocalRaidDiscovery(await api.hpeStorageDiscovery(primaryIloDeviceId));
-    } catch (err) {
-      setLocalRaidDiscovery(null);
-      setLocalRaidDiscoveryError(errorMessage(err));
-    } finally {
-      setLocalRaidDiscoveryLoading(false);
-    }
-  }
-
-  async function runLocalRaidInventoryRead() {
-    if (!primaryIloDeviceId) {
-      throw new Error("Select an iLO inventory device before reading local storage.");
-    }
-    const access = await api.iloAccessSettings(primaryIloDeviceId);
-    const targetHost = asString(access.host || primaryIloDevice?.host);
-    if (!targetHost) {
-      throw new Error("Save the selected iLO first-contact IP before reading local storage.");
-    }
-    await api.runWorkflowAction("raid.discovery", { device_id: primaryIloDeviceId, ilo_host: targetHost });
-    await loadLocalRaidDiscovery();
-    await onReload();
-  }
-
-  function openLocalRaidPlanner() {
-    setWorkspaceOpen(false);
-    setSelectedNodeId(null);
-    setLocalRaidPlannerOpen(true);
-    void loadLocalRaidDiscovery();
-  }
-
-  return (
-    <section className="lab-topology-map" id="topology-map" aria-label="Living lab topology">
-      <div className="lab-topology-head">
-        <div>
-            <p className="operator-kicker">Lab topology</p>
-          <h2>{nodes.length} devices - subnet {displayAddress(address.subnet)}</h2>
-        </div>
-        <div className="lab-topology-head-actions">
-          <div className="lab-topology-pills" aria-label="Topology status">
-            <span className={`topology-pill ${runtimeClass}`}><CheckCircle2 size={14} /> {runtimeLabel}</span>
-            <span className={`topology-pill topology-pill-subnet-${subnetState.status}`}><Route size={14} /> {subnetState.label}</span>
-          </div>
-        </div>
-      </div>
-
-      {subnetState.status !== "matches" && (
-        <div className={`topology-subnet-notice topology-subnet-notice-${subnetState.status}`}>
-          <div>
-            <strong>{subnetState.status === "mismatch" ? "Subnet mismatch" : "Subnet not proven"}</strong>
-            <span>{subnetState.detail}</span>
-          </div>
-          <Link to="/lab-profiles#new">Create or change kit</Link>
-        </div>
-      )}
-
-      <div
-        className={`lab-topology-canvas zones-canvas map-first-canvas ${netappInScope ? "has-netapp" : "single-server"} ${mapFitEnabled ? "is-fit" : ""}`}
-        aria-label="Zoned lab map"
-        data-workspace-open={workspaceOpen ? "true" : undefined}
-        ref={mapCanvasRef}
-      >
-        <div className="topology-map-plane" ref={mapPlaneRef}>
-          <div className="topology-zone topology-zone-management topology-zone-band" aria-hidden="true">
-            <span>Management network</span>
-          </div>
-          <div className="topology-zone topology-zone-storage topology-zone-band" aria-hidden="true">
-            <span>{netappInScope ? "Storage & compute" : "Local RAID"}</span>
-          </div>
-          <div className="topology-zone-node-flow topology-orbit-node-flow topology-management-orbit" aria-label="Management zone devices">
-            {nodes.filter((node) => node.zone === "management").map((node) => (
-                <TopologyMapNodeCard
-                  className={`topology-orbit-node topology-orbit-${node.id}`}
-                  node={node}
-                  onOpenWorkspace={openNodeWorkspace}
-                  selected={selectedNodeId === node.id}
-                  key={node.id}
-                />
-              ))}
-          </div>
-          <div className="topology-zone-node-flow topology-orbit-node-flow topology-storage-orbit" aria-label={netappInScope ? "Storage fabric zone devices" : "Local RAID zone devices"}>
-            {storageOrbitNodes.map((node) => (
-                <TopologyMapNodeCard
-                  className={`topology-orbit-node topology-orbit-${node.id}`}
-                  node={node}
-                  onOpenWorkspace={openNodeWorkspace}
-                  selected={selectedNodeId === node.id}
-                  key={node.id}
-                />
-              ))}
-          </div>
-        </div>
-          {mapOverflowing && (
-            <button
-              className="topology-map-fit-button"
-              onClick={() => setMapFitEnabled((enabled) => !enabled)}
-              type="button"
-              aria-label={mapFitEnabled ? "Reset map zoom" : "Fit map to viewport"}
-            >
-              {mapFitEnabled ? "1:1" : "Fit"}
-            </button>
-          )}
-          {!netappInScope && (
-            <button className="topology-local-raid-hero" aria-label="Local RAID mode summary" onClick={openLocalRaidPlanner} type="button">
-              <HardDrive size={15} />
-              <div>
-                <strong>Server-local RAID is the storage fabric</strong>
-                <span>Click to choose drive bays, RAID groups, and spares. No NetApp or vCenter nodes are in scope.</span>
-              </div>
-            </button>
-          )}
-          <svg className="lab-topology-links" viewBox="0 0 1000 620" role="img" aria-label="Current lab links">
-            {links.map((link) => (
-              <g
-                aria-label={`${link.label} ${topologyLinkReachabilityLabel(link.reachability)}`}
-                className={`topology-link topology-link-${link.status} topology-link-${link.reachability}`}
-                key={link.id}
-              >
-                <path d={link.path} id={link.id} />
-                <title>{link.label} {topologyLinkReachabilityLabel(link.reachability)}</title>
-                <text textAnchor="middle" x={link.labelX} y={link.labelY}>{link.label}</text>
-              </g>
-            ))}
-          </svg>
-      </div>
-
-      {workspaceOpen && (
-        <div className="topology-workspace-overlay" aria-label="Device workspace overlay">
-          <div className="topology-workspace-backdrop" onClick={closeNodeWorkspace} />
-          <aside className="topology-workspace-drawer" aria-label="Device workspace drawer">
-            <div className="topology-workspace-drawer-head">
-              <span>Device setup</span>
-              <button className="topology-workspace-close" type="button" onClick={closeNodeWorkspace}>Close</button>
-            </div>
-            <LabDesignComposer
-              activeProfile={activeProfile}
-              address={address}
-              features={features}
-              firmwareSummaries={firmwareSummaries}
-              health={health}
-              initialSelectedDevice={workspaceTarget}
-              onReload={onReload}
-              subnetState={subnetState}
-              workspaceMode="drawer"
-              workspaceNodeStatus={selectedTopologyNode?.status}
-              workspaceNodeTone={selectedTopologyNode?.tone}
-              workspaceOnly
-              workflowActions={workflowActions}
-            />
-          </aside>
-        </div>
-      )}
-
-      {localRaidPlannerOpen && (
-        <div className="topology-workspace-overlay" aria-label="Local RAID planner overlay">
-          <div className="topology-workspace-backdrop" onClick={() => setLocalRaidPlannerOpen(false)} />
-          <aside className="topology-workspace-drawer local-raid-topology-drawer" aria-label="Local RAID planner drawer">
-            <div className="topology-workspace-drawer-head">
-              <span>Local storage</span>
-              <button className="topology-workspace-close" type="button" onClick={() => setLocalRaidPlannerOpen(false)}>Close</button>
-            </div>
-            <LocalStorageRaidPlanner
-              discovery={localRaidDiscovery}
-              discoveryError={localRaidDiscoveryError}
-              discoveryLoading={localRaidDiscoveryLoading}
-              hideHead
-              iloDeviceId={primaryIloDeviceId}
-              initialDraft={localRaidInitialDraft}
-              inventoryRunLabel="Read storage from iLO"
-              netappInScope={netappInScope}
-              onCommit={(nextSettings, draft) => {
-                localRaidWriteDraft(localRaidKey, draft);
-                return "Visual RAID plan saved to this browser draft. Hardware untouched.";
-              }}
-              onReloadDiscovery={loadLocalRaidDiscovery}
-              onRunInventory={runLocalRaidInventoryRead}
-              requiresInventory
-              settings={localRaidDefaultSettings}
-              storageProtocol={storageProtocol}
-            />
-          </aside>
-        </div>
-      )}
-
-      <div className="lab-topology-footer">
-        <div className="topology-legend" aria-label="Topology legend">
-          <span><i className="legend-dot legend-ready" /> Reachable</span>
-          <span><i className="legend-dot legend-warning" /> Not reachable</span>
-          <span><i className="legend-dot legend-offline" /> Not checked</span>
-        </div>
-      </div>
-    </section>
-  );
 }
 
 function CiscoConsoleIdentityPanel({
@@ -15687,7 +14682,7 @@ function SetupLanesPanel({
   const lanes: SetupLane[] = [
     setupLane({
       access: ilo,
-      actionLabel: "Open map workspace",
+      actionLabel: "Open rack",
       advanced: valuesForLabels(labValues, ["iLO IP", "Subnet", "Gateway", "DNS", "NTP"]),
       basics: [
         { label: "Access", value: targetOrUnset(ilo) },
@@ -15699,11 +14694,11 @@ function SetupLanesPanel({
       need: "Server management access before destructive setup or firmware work.",
       nextAction: laneNextAction(ilo, "Open the iLO or server workspace from the map and run read-only checks."),
       title: "Server Access",
-      to: "/overview#topology-map",
+      to: "/simple",
       validation: firstBlocker || "Validation will confirm iLO access and firmware evidence."
     }),
     setupLane({
-      actionLabel: "Open map workspace",
+      actionLabel: "Open rack",
       advanced: [
         { label: "Local storage mode", value: isSingleServer ? "Primary datastore path" : "Boot and staging only" },
         { label: "Drive count", value: "Detected by RAID preview" },
@@ -15721,12 +14716,12 @@ function SetupLanesPanel({
       nextAction: "Open the server workspace for read-only RAID checks; apply remains guarded in Validation.",
       status: isSingleServer ? statusForAccess(esxi) : statusBadgeForTone(firmwareStatus),
       title: "RAID And Local Storage",
-      to: "/overview#topology-map",
+      to: "/simple",
       validation: "Server page validates controller, drive count, and destructive safety acknowledgement."
     }),
     setupLane({
       access: cisco,
-      actionLabel: "Open map workspace",
+      actionLabel: "Open rack",
       advanced: valuesForLabels(labValues, ["Cisco IP", "VLAN", "MTU", "Gateway"]),
       basics: [
         { label: "Management", value: targetOrUnset(cisco) },
@@ -15738,12 +14733,12 @@ function SetupLanesPanel({
       need: "Network needs to be predictable before hosts and storage attach to it.",
       nextAction: laneNextAction(cisco, "Open the Cisco workspace from the map and run Live Switch Check."),
       title: "Cisco Network",
-      to: "/overview#topology-map",
+      to: "/simple",
       validation: "Network validation checks management IP, console path, and saved switch intent."
     }),
     setupLane({
       access: esxi,
-      actionLabel: "Open map workspace",
+      actionLabel: "Open rack",
       advanced: valuesForLabels(labValues, ["ESXi IP", "Datastore name", "NTP", "DNS"]),
       basics: [
         { label: "Management", value: targetOrUnset(esxi) },
@@ -15755,12 +14750,12 @@ function SetupLanesPanel({
       need: "Hypervisor setup must match the deployment scenario.",
       nextAction: laneNextAction(esxi, "Open the ESXi or vCenter workspace from the map and run live checks."),
       title: "ESXi Host",
-      to: "/overview#topology-map",
+      to: "/simple",
       validation: datastore?.status === "accessible" ? "Datastore is visible." : "Validation will check host access and datastore visibility."
     }),
     setupLane({
       access: netapp,
-      actionLabel: "Open map workspace",
+      actionLabel: "Open rack",
       advanced: valuesForLabels(labValues, ["NetApp cluster IP", "NetApp NFS LIF", "NetApp console", "Datastore name"]),
       basics: [
         { label: "Mode", value: isSingleServer ? "Not required for single-server local storage" : "Shared storage" },
@@ -15773,12 +14768,12 @@ function SetupLanesPanel({
       nextAction: isSingleServer ? "No action required for local-storage scenario." : laneNextAction(netapp, "Open the NetApp workspace from the map and run NetApp Live Check."),
       status: isSingleServer ? "plan_only" : statusForAccess(netapp),
       title: "ONTAP Storage",
-      to: "/overview#topology-map",
+      to: "/simple",
       validation: isSingleServer ? "Marked not applicable by scenario." : "Storage validation checks management, NFS, iSCSI, and datastore mount state."
     }),
     setupLane({
       access: vcenter,
-      actionLabel: "Open map workspace",
+      actionLabel: "Open rack",
       advanced: valuesForLabels(labValues, ["vCenter IP", "Datastore name", "Feature toggles"]),
       basics: [
         { label: "Mode", value: isSingleServer ? "Optional" : "Shared lab control plane" },
@@ -15791,7 +14786,7 @@ function SetupLanesPanel({
       nextAction: isSingleServer ? "No action required unless vCenter is selected." : laneNextAction(vcenter, "Open the vCenter workspace from the map and run vCenter Live Check."),
       status: isSingleServer ? "plan_only" : statusForAccess(vcenter),
       title: "vCenter And VM Handoff",
-      to: "/overview#topology-map",
+      to: "/simple",
       validation: "Validation confirms inventory visibility and datastore attachment."
     })
   ];
@@ -15965,7 +14960,7 @@ function NetworkReferencePanel({
       role: "Switch management",
       status: networkStatus,
       targetState: displayAddress(address.cisco_management),
-      to: "/overview#topology-map",
+      to: "/simple",
       currentState: asString(ciscoReadiness?.message) || currentView.summary
     },
     {
@@ -15997,7 +14992,7 @@ function NetworkReferencePanel({
       role: "Access guard",
       status: managementConfigured ? "ready" : "not_checked",
       targetState: displayAddress(address.cisco_management),
-      to: "/overview#topology-map",
+      to: "/simple",
       currentState: boolStateLabel(managementConfigured)
     }
   ];
@@ -18619,9 +17614,9 @@ function overviewProviderCards({
   const byInventoryName = new Map(inventoryRows.map((row) => [row.item.toLowerCase(), row]));
   const byWorkspaceName = new Map(workspaceRows.map((row) => [row.title.toLowerCase(), row]));
   return [
-    overviewProviderCard("HPE iLO", "Server management", "/overview#topology-map", "Open workspace", byAccessName, byInventoryName, byWorkspaceName, "hpe ilo", "ilo"),
-    overviewProviderCard("Cisco Switch", "Network", "/overview#topology-map", "Open workspace", byAccessName, byInventoryName, byWorkspaceName, "cisco switch", "cisco"),
-    overviewProviderCard("NetApp ONTAP", "Storage", "/overview#topology-map", "Open workspace", byAccessName, byInventoryName, byWorkspaceName, "netapp ontap", "netapp")
+    overviewProviderCard("HPE iLO", "Server management", "/simple", "Open workspace", byAccessName, byInventoryName, byWorkspaceName, "hpe ilo", "ilo"),
+    overviewProviderCard("Cisco Switch", "Network", "/simple", "Open workspace", byAccessName, byInventoryName, byWorkspaceName, "cisco switch", "cisco"),
+    overviewProviderCard("NetApp ONTAP", "Storage", "/simple", "Open workspace", byAccessName, byInventoryName, byWorkspaceName, "netapp ontap", "netapp")
   ];
 }
 

@@ -34,7 +34,7 @@ import {
   OperatorFirmwareUpgradesPage,
   OperatorLabDefaultsPage,
   OperatorNetworkPage,
-  OperatorOverviewPage,
+
   OperatorServerPage,
   OperatorStoragePage,
   OperatorTabStateProvider,
@@ -750,18 +750,7 @@ function App() {
           <OperatorTabStateProvider>
             <Routes>
               <RouterRoute path="/" element={<Navigate to="/simple" replace />} />
-              <RouterRoute
-                path="/overview"
-                element={
-                  <OperatorOverviewPage
-                    health={health}
-                    labProfileError={labProfileError}
-                    labProfileLoading={labProfileLoading}
-                    labProfileState={labProfileState}
-                    onReloadLabProfile={loadLabProfileState}
-                  />
-                }
-              />
+              <RouterRoute path="/overview" element={<Navigate to="/simple" replace />} />
               <RouterRoute path="/simple" element={<SimpleLabPage />} />
               <RouterRoute path="/rack" element={<Navigate to="/simple" replace />} />
               <RouterRoute path="/simple-steps" element={<SimpleStepsPage />} />
@@ -790,14 +779,14 @@ function App() {
               <RouterRoute path="/hardware" element={<Navigate to="/simple" replace />} />
               <RouterRoute path="/run-center" element={<RunCenter />} />
               <RouterRoute path="/run" element={<RunCenter />} />
-              <RouterRoute path="/control-center" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/control-center" element={<Navigate to="/simple" replace />} />
               <RouterRoute path="/firmware" element={<Navigate to="/firmware-upgrades" replace />} />
               <RouterRoute path="/golden-state" element={<Navigate to="/validation" replace />} />
               <RouterRoute path="/validation-reports" element={<Navigate to="/validation" replace />} />
               <RouterRoute path="/verification" element={<Navigate to="/validation" replace />} />
               <RouterRoute path="/lab-validation" element={<Navigate to="/validation" replace />} />
               <RouterRoute path="/reports" element={<Navigate to="/validation" replace />} />
-              <RouterRoute path="/settings" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/settings" element={<Navigate to="/simple" replace />} />
               <RouterRoute path="/requests" element={<RequestListPage />} />
               <RouterRoute path="/requests/new" element={<NewRequest />} />
               <RouterRoute path="/requests/:id" element={<RequestDetail />} />
@@ -831,7 +820,7 @@ function App() {
               />
               <RouterRoute path="/artifacts" element={<Navigate to="/validation" replace />} />
               <RouterRoute path="/media" element={<MediaInventoryPage />} />
-              <RouterRoute path="/providers" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/providers" element={<Navigate to="/simple" replace />} />
             </Routes>
           </OperatorTabStateProvider>
         </AppShell>
@@ -1490,7 +1479,7 @@ function Dashboard() {
       description="A quiet operating summary for the current lab and workflow queue."
       issueArea="dashboard"
       onSectionChange={(sectionId) => setActiveSection(sectionId as DashboardSectionId)}
-      primaryAction={{ icon: <Layers size={16} />, label: "Open Overview", to: "/overview" }}
+      primaryAction={{ icon: <Layers size={16} />, label: "Open rack", to: "/simple" }}
       sections={dashboardSections}
       title="Dashboard"
       actions={<ButtonLink to="/requests/new" icon={<Plus size={16} />} label="New VM" />}
@@ -1525,8 +1514,8 @@ function Dashboard() {
             ]}
           />
           <NextActionCard
-            detail={nextActionItems[0]?.actionLabel ?? "Open Overview to review the active lab values."}
-            to="/overview"
+            detail={nextActionItems[0]?.actionLabel ?? "Open the rack to review the active lab values."}
+            to="/simple"
           />
           <BlockerSummary blockers={blockerMessages} />
         </div>
@@ -2102,8 +2091,8 @@ function RunCenter() {
       <LabBuildJourney
         error={error}
         loading={loading}
-        onClose={() => navigate("/overview")}
-        onOpenDetails={() => navigate("/overview")}
+        onClose={() => navigate("/simple")}
+        onOpenDetails={() => navigate("/simple")}
         onRefresh={() => void refreshBuild()}
         onReload={() => void loadBuildJourney()}
         onResume={() => void resumeBuild()}
@@ -7159,7 +7148,7 @@ function LabProfileManager({
       setForm(blankLabProfileForm());
       setFormInitialized(true);
       await onActivateProfile(saved.id);
-      navigate("/overview");
+      navigate("/simple");
     } catch (err) {
       setSaveError((err as Error).message);
     } finally {
@@ -7172,7 +7161,7 @@ function LabProfileManager({
     setBusyAction(`activate-${profileId}`);
     try {
       await onActivateProfile(profileId);
-      navigate("/overview");
+      navigate("/simple");
     } catch (err) {
       setSaveError((err as Error).message);
     } finally {
@@ -7212,7 +7201,7 @@ function LabProfileManager({
               </div>
             </div>
             <div className="form-actions saved-kits-home-actions">
-              <Link className={continueKitIsPrimary ? "button-link primary" : "button-link"} to="/overview">
+              <Link className={continueKitIsPrimary ? "button-link primary" : "button-link"} to="/simple">
                 <Route size={16} />
                 Continue with this kit
               </Link>
@@ -13317,7 +13306,7 @@ function ReportIssueCard({ issue }: { issue: ReportIssue }) {
           <dt>Source stage</dt>
           <dd>
             {issue.source_stage_id ? (
-              <Link to="/overview">
+              <Link to="/simple">
                 {issue.source_stage_label || issue.source_stage_id}
               </Link>
             ) : (
@@ -13911,7 +13900,7 @@ function SettingsPage({
       description="Lab profile, local settings, and safety metadata without repeating provider diagnostics."
       issueArea="settings"
       onSectionChange={(sectionId) => setActiveSection(sectionId as SettingsSectionId)}
-      primaryAction={{ icon: <Layers size={16} />, label: "Open Overview", to: "/overview" }}
+      primaryAction={{ icon: <Layers size={16} />, label: "Open rack", to: "/simple" }}
       sections={sections}
       title="Settings"
       actions={

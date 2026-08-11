@@ -22266,6 +22266,21 @@ button.design-ilo-port:hover {
 .rack-server-input-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .rack-server-network-defaults { margin-top: 2px; }.rack-server-save-row { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }.rack-server-safe-copy { color: #67818b; font-size: 10px; font-weight: 750; }
 
+.rack-action.is-remove { color: #a3312a; }
+.rack-action.is-remove:hover { background: #fdf3f2; border-color: #d98079; color: #8f2620; }
+.rack-remove-overlay { align-items: center; background: rgba(16, 36, 44, .46); bottom: 0; display: flex; justify-content: center; left: 0; padding: 20px; position: fixed; right: 0; top: 0; z-index: 80; }
+.rack-remove-panel { background: #fff; border-radius: 14px; box-shadow: 0 24px 60px rgba(15, 33, 40, .3); max-width: 430px; padding: 22px 24px; width: 100%; }
+.rack-remove-panel h2 { font-size: 19px; letter-spacing: -.02em; margin: 4px 0 10px; }
+.rack-remove-panel p { color: #4d6771; font-size: 12px; line-height: 1.6; margin: 0 0 8px; }
+.rack-remove-safe { background: #f1f8f7; border: 1px solid #cfe6e4; border-radius: 8px; color: #0b666a !important; padding: 9px 11px; }
+.rack-remove-error { background: #fdf3f2; border: 1px solid #edc4c0; border-radius: 8px; color: #a3312a !important; padding: 9px 11px; }
+.rack-remove-actions { display: flex; gap: 9px; justify-content: flex-end; margin-top: 16px; }
+.rack-remove-actions button { background: #fff; border: 1px solid #bfd0d7; border-radius: 9px; color: #15313b; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 750; padding: 10px 16px; }
+.rack-remove-actions button:hover:not(:disabled) { border-color: #0a8f93; }
+.rack-remove-actions button.is-destructive { background: #b3392f; border-color: #b3392f; color: #fff; }
+.rack-remove-actions button.is-destructive:hover:not(:disabled) { background: #972c23; border-color: #972c23; }
+.rack-remove-actions button:disabled { cursor: not-allowed; opacity: .6; }
+
 /* Drill-down below the rack: what is inside a machine, then one item's setup. */
 .machine-inside, .machine-config { background: #fff; border: 1px solid var(--rack-line); border-radius: 14px; margin: 0 clamp(18px, 3vw, 38px) clamp(14px, 2vw, 20px); padding: 16px 20px 18px; }
 .machine-config { border-color: #0c8e91; }
