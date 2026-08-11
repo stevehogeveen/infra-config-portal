@@ -634,6 +634,12 @@ def _health_status_from_probe(
     status = _probe_status(result)
     if not status:
         return "not_checked"
+    if (
+        isinstance(result, dict)
+        and result.get("target_fingerprint")
+        and not target_matches_candidates
+    ):
+        return "target_mismatch"
     if status == "ok":
         return "ready" if target_matches_candidates else "target_mismatch"
     if status in {"blocked", "failed"}:

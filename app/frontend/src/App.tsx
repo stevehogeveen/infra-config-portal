@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { createContext, FormEvent, ReactNode, SetStateAction, useContext, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link, Navigate, NavLink, Route as RouterRoute, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, Route as RouterRoute, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { api } from "./api";
 import { LabBuildJourney } from "./components/operator/LabBuildJourney";
@@ -41,7 +41,7 @@ import {
   OperatorValidationPage,
   OperatorVirtualizationPage
 } from "./operatorPages";
-import { SimpleLabPage, SimpleStepsPage } from "./simplePages";
+import { RackRail, SimpleLabPage, SimpleStepsPage } from "./simplePages";
 import type {
   ArtifactRecord,
   AuditEvent,
@@ -857,8 +857,8 @@ function AppShell({
   const location = useLocation();
   const isRackWorkspace = location.pathname === "/simple";
   return (
-    <div className={`app-shell app-shell-${uiMode} ${isRackWorkspace ? "app-shell-rack" : ""}`}>
-      {!isRackWorkspace && <ShellTopNav />}
+    <div className={`app-shell app-shell-${uiMode}`}>
+      <RackRail />
       <main className={`content ${isRackWorkspace ? "content-rack" : ""}`}>
         {health?.dev_test_banner && <DevTestBanner message={health.dev_test_banner} />}
         {children}
@@ -1191,29 +1191,6 @@ function pageTitleForRoute(pathname: string) {
   return labels[segment] ?? labelize(segment);
 }
 
-function ShellTopNav() {
-  return (
-    <header className="shell-topbar" aria-label="Application header">
-      <Link className="shell-brand" to="/simple" aria-label="Lab Builder rack home">
-        <span className="shell-brand-mark"><Server size={22} /></span>
-        <span className="shell-brand-copy"><b>Lab Builder</b><small>Operator</small></span>
-      </Link>
-      <nav className="top-nav" aria-label="Primary navigation">
-        <NavLink to="/simple" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Rack</NavLink>
-        <NavLink to="/simple-steps" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Runbook</NavLink>
-        <NavLink to="/setup/defaults" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Lab Defaults</NavLink>
-        <NavLink to="/firmware-upgrades" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Firmware</NavLink>
-        <NavLink to="/run" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Run Center</NavLink>
-        <NavLink to="/reports" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Reports</NavLink>
-      </nav>
-      <div className="shell-topbar-actions">
-        <Link className="kit-manage-link" to="/lab-profiles#new" aria-label="Create or change kit">
-          Create or change kit
-        </Link>
-      </div>
-    </header>
-  );
-}
 
 function displayKitName(profile: LabProfile | null | undefined): string {
   const name = profile?.name?.trim() || "";
@@ -14401,6 +14378,7 @@ async function copyWorkflowActionToClipboard(action: WorkflowAction) {
 function ProviderStatusPage() {
   const { activeContext, activeProfile } = useLabProfileContext();
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [iloProbeDeviceId, setIloProbeDeviceId] = useState("");
   const [ciscoSetupReadiness, setCiscoSetupReadiness] = useState<CiscoSetupReadiness | null>(null);
   const [ciscoSetupWizardPlan, setCiscoSetupWizardPlan] = useState<CiscoSetupWizardPlan | null>(null);
   const [ciscoBootstrapRequirements, setCiscoBootstrapRequirements] = useState<CiscoBootstrapRequirements | null>(null);
@@ -14428,6 +14406,12 @@ function ProviderStatusPage() {
         api.buildVerification()
       ]);
       setProviders(providerStatuses);
+      void api.deviceInventory()
+        .then((devices) => {
+          const primaryIlo = devices.find((device) => /(^|[^a-z0-9])(ilo|bmc)([^a-z0-9]|$)/i.test(device.device_type));
+          setIloProbeDeviceId(primaryIlo?.id ?? "");
+        })
+        .catch(() => setIloProbeDeviceId(""));
       setFirmwareCompliance(firmwareGate);
       setFullRebuildSummary(fullRebuild);
       setBuildVerification(certification);
@@ -14452,7 +14436,7 @@ function ProviderStatusPage() {
     setBusyProvider(provider.id);
     setError("");
     try {
-      const result = await api.probeProvider(provider.id);
+      const result = await api.probeProvider(provider.id, provider.id === "ilo-redfish" ? iloProbeDeviceId : null);
       setProbeResults((current) => ({ ...current, [provider.id]: result }));
       await load();
     } catch (err) {
@@ -16667,6 +16651,7 @@ function CiscoConsoleDetails({
 }
 
 function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
+  const [iloDeviceId, setIloDeviceId] = useState("");
   const [readiness, setReadiness] = useState<IloUpgradeReadiness | null>(null);
   const [baselinePreview, setBaselinePreview] = useState<IloBaselinePreview | null>(null);
   const [baselineReadiness, setBaselineReadiness] = useState<IloBaselineReadiness | null>(null);
@@ -16698,6 +16683,22 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
 
   useEffect(() => {
     let cancelled = false;
+    void api.deviceInventory()
+      .then((devices) => {
+        if (cancelled) return;
+        const primary = devices.find((device) => /(^|[^a-z0-9])(ilo|bmc)([^a-z0-9]|$)/i.test(device.device_type));
+        setIloDeviceId(primary?.id ?? "");
+      })
+      .catch(() => {
+        if (!cancelled) setIloDeviceId("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
     setError("");
     setSetupError("");
     setRaidError("");
@@ -16724,14 +16725,18 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
         });
     };
 
-    loadPart("iLO upgrade readiness", api.iloUpgradeReadiness(), setReadiness, (message) => appendError(setError, message));
-    loadPart("iLO baseline preview", api.iloBaselinePreview(), setBaselinePreview, (message) => appendError(setError, message));
-    loadPart("iLO baseline readiness", api.iloBaselineReadiness(), setBaselineReadiness, (message) => appendError(setError, message));
-    loadPart("iLO setup intent", api.iloSetupIntent(), setSetupIntent, (message) => appendError(setSetupError, message));
-    loadPart("iLO setup plan", api.iloSetupPlanPreview(), setSetupPlan, (message) => appendError(setSetupError, message));
-    loadPart("HPE storage discovery", api.hpeStorageDiscovery(), setRaidDiscovery, (message) => appendError(setRaidError, message));
-    loadPart("HPE RAID intent", api.hpeRaidIntent(), setRaidIntent, (message) => appendError(setRaidError, message));
-    loadPart("HPE RAID plan", api.hpeRaidPlanPreview(), setRaidPlan, (message) => appendError(setRaidError, message));
+    if (iloDeviceId) {
+      loadPart("iLO upgrade readiness", api.iloUpgradeReadiness(iloDeviceId), setReadiness, (message) => appendError(setError, message));
+      loadPart("iLO baseline preview", api.iloBaselinePreview(iloDeviceId), setBaselinePreview, (message) => appendError(setError, message));
+      loadPart("iLO baseline readiness", api.iloBaselineReadiness(iloDeviceId), setBaselineReadiness, (message) => appendError(setError, message));
+      loadPart("iLO setup intent", api.iloSetupIntent(iloDeviceId), setSetupIntent, (message) => appendError(setSetupError, message));
+      loadPart("iLO setup plan", api.iloSetupPlanPreview(iloDeviceId), setSetupPlan, (message) => appendError(setSetupError, message));
+      loadPart("HPE storage discovery", api.hpeStorageDiscovery(iloDeviceId), setRaidDiscovery, (message) => appendError(setRaidError, message));
+    }
+    if (iloDeviceId) {
+      loadPart("HPE RAID intent", api.hpeRaidIntent(iloDeviceId), setRaidIntent, (message) => appendError(setRaidError, message));
+      loadPart("HPE RAID plan", api.hpeRaidPlanPreview(iloDeviceId), setRaidPlan, (message) => appendError(setRaidError, message));
+    }
     loadPart("HPE RAID apply plan", api.hpeRaidApplyPlan(), setRaidApplyPlan, (message) => appendError(setRaidError, message));
     loadPart("HPE RAID pending check", api.hpeRaidPending(), setRaidPending, (message) => appendError(setRaidError, message));
     loadPart("HPE RAID reset plan", api.hpeRaidResetPlan(), setRaidResetPlan, (message) => appendError(setRaidError, message));
@@ -16739,15 +16744,16 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
     return () => {
       cancelled = true;
     };
-  }, [provider.last_probe_time, provider.status]);
+  }, [iloDeviceId, provider.last_probe_time, provider.status]);
 
   async function saveSetupIntent(payload: IloSetupIntentWrite) {
     setSetupBusy(true);
     setSetupError("");
     setSetupSavedMessage("");
     try {
-      const saved = await api.saveIloSetupIntent(payload);
-      const plan = await api.iloSetupPlanPreview();
+      if (!iloDeviceId) throw new Error("Add an iLO device to rack inventory before saving setup intent.");
+      const saved = await api.saveIloSetupIntent(iloDeviceId, payload);
+      const plan = await api.iloSetupPlanPreview(iloDeviceId);
       setSetupIntent(saved);
       setSetupPlan(plan);
       setSetupSavedMessage("Saved desired iLO setup intent. Apply remains disabled.");
@@ -16763,10 +16769,11 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
     setRaidError("");
     setRaidSavedMessage("");
     try {
-      const saved = await api.saveHpeRaidIntent(payload);
+      if (!iloDeviceId) throw new Error("Add an iLO device to rack inventory before saving RAID intent.");
+      const saved = await api.saveHpeRaidIntent(iloDeviceId, payload);
       const [discovery, plan] = await Promise.all([
-        api.hpeStorageDiscovery(),
-        api.hpeRaidPlanPreview()
+        api.hpeStorageDiscovery(iloDeviceId),
+        api.hpeRaidPlanPreview(iloDeviceId)
       ]);
       const applyPlan = await api.hpeRaidApplyPlan();
       const [pending, resetPlan] = await Promise.all([
@@ -16808,9 +16815,10 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
     setRaidPostApplyBusy(true);
     setRaidError("");
     try {
+      if (!iloDeviceId) throw new Error("Add an iLO device to rack inventory before reading its storage state.");
       const validation = await api.validateHpeRaidAfterReset();
       const [discovery, pending, esxiReadiness] = await Promise.all([
-        api.hpeStorageDiscovery(),
+        api.hpeStorageDiscovery(iloDeviceId),
         api.hpeRaidPending(),
         api.esxiInstallReadiness()
       ]);
@@ -16842,10 +16850,10 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
       <div className="provider-callout">
         <strong>{missingFields.length ? "Configuration missing" : "Configuration present"}</strong>
         <p>
-          iLO host, username, and password values are stored only in local environment configuration and
-          are exposed here as presence flags.
+          iLO host, username, and password values are stored locally for the selected rack device and are exposed here as presence flags.
         </p>
       </div>
+      {!iloDeviceId && <p className="provider-missing-fields">Add an iLO device to rack inventory before editing device-scoped setup or RAID intent.</p>}
       <div className="provider-fact-grid">
         <ProviderFact label="Host" value={presenceLabel(config.host_configured)} />
         <ProviderFact label="Username" value={presenceLabel(config.username_configured)} />

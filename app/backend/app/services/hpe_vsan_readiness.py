@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.providers.ilo_redfish import IloRedfishConfig
 from app.schemas import HpeVsanReadinessRead
 from app.services.hpe_raid import get_hpe_storage_discovery
 
@@ -13,8 +14,14 @@ MODE_MEANINGS = {
 }
 
 
-def get_hpe_vsan_readiness() -> HpeVsanReadinessRead:
-    discovery = get_hpe_storage_discovery()
+def get_hpe_vsan_readiness(
+    config: IloRedfishConfig | None = None,
+) -> HpeVsanReadinessRead:
+    discovery = (
+        get_hpe_storage_discovery(config=config)
+        if config is not None
+        else get_hpe_storage_discovery()
+    )
     if not discovery.storage_inventory_available or not discovery.physical_drives:
         return HpeVsanReadinessRead(
             provider_id=discovery.provider_id,

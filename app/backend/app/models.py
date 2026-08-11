@@ -151,6 +151,11 @@ class VMDeploymentRequest(Base):
 class IloSetupIntent(Base):
     __tablename__ = "ilo_setup_intents"
 
+    device_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("device_inventory.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
     provider_id: Mapped[str] = mapped_column(String(80), primary_key=True)
     intent_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -186,9 +191,31 @@ class DeviceInventoryState(Base):
     seeded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class IloDeviceCredential(Base):
+    __tablename__ = "ilo_device_credentials"
+
+    device_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("device_inventory.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    credentials_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+    )
+
+
 class HpeRaidIntent(Base):
     __tablename__ = "hpe_raid_intents"
 
+    device_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("device_inventory.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
     provider_id: Mapped[str] = mapped_column(String(80), primary_key=True)
     intent_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

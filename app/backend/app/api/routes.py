@@ -180,7 +180,10 @@ from app.services.ilo_baseline import (
 )
 from app.services.ilo_access_settings import (
     IloAccessSettingsError,
+    IloDeviceNotFoundError,
+    ilo_config_for_device,
     read_ilo_access_settings,
+    resolve_ilo_device_id,
     update_ilo_access_settings,
 )
 from app.services.ilo_readiness import (
@@ -586,9 +589,9 @@ def read_workflow_stages() -> list[WorkflowStageRead]:
 
 
 @router.get("/lab-build/plan", response_model=LabBuildPlanRead)
-def read_lab_build_plan() -> LabBuildPlanRead:
+def read_lab_build_plan(session: Session = Depends(get_session)) -> LabBuildPlanRead:
     try:
-        return get_lab_build_plan()
+        return get_lab_build_plan(session=session)
     except LabBuildPlanError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -1154,9 +1157,23 @@ def cisco_console_prompt_readiness() -> ProviderProbeResultRead:
 
 
 @router.post("/providers/{provider_id}/probe", response_model=ProviderProbeResultRead)
-def probe_provider(provider_id: str) -> ProviderProbeResultRead:
+def probe_provider(
+    provider_id: str,
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> ProviderProbeResultRead:
     if provider_id == "ilo-redfish":
-        return _run_provider_probe(provider_id, IloRedfishAdapter().probe)
+        try:
+            resolved_id = resolve_ilo_device_id(session, device_id)
+            config = ilo_config_for_device(session, resolved_id)
+        except IloDeviceNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Device not found") from exc
+        except IloAccessSettingsError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return _run_provider_probe(
+            provider_id,
+            IloRedfishAdapter(config=config).probe,
+        )
     if provider_id == "cisco-console":
         return _legacy_cisco_console_scan_blocked()
     if provider_id == "cisco-ansible":
@@ -1192,32 +1209,76 @@ def _legacy_cisco_console_scan_blocked() -> ProviderProbeResultRead:
     "/providers/ilo-redfish/upgrade-readiness",
     response_model=IloUpgradeReadinessRead,
 )
-def read_ilo_upgrade_readiness() -> IloUpgradeReadinessRead:
-    return get_ilo_upgrade_readiness()
+def read_ilo_upgrade_readiness(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> IloUpgradeReadinessRead:
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_upgrade_readiness(
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
     "/providers/hpe-ilo/baseline-preview",
     response_model=IloBaselinePreviewRead,
 )
-def read_hpe_ilo_baseline_preview() -> IloBaselinePreviewRead:
-    return get_ilo_baseline_preview()
+def read_hpe_ilo_baseline_preview(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> IloBaselinePreviewRead:
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_baseline_preview(
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
     "/providers/hpe-ilo/readiness",
     response_model=IloBaselineReadinessRead,
 )
-def read_hpe_ilo_readiness() -> IloBaselineReadinessRead:
-    return get_ilo_baseline_readiness()
+def read_hpe_ilo_readiness(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> IloBaselineReadinessRead:
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_baseline_readiness(
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
     "/providers/ilo-redfish/readiness-summary",
     response_model=IloReadinessSummaryRead,
 )
-def read_ilo_readiness_summary() -> IloReadinessSummaryRead:
-    return get_ilo_readiness_summary()
+def read_ilo_readiness_summary(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> IloReadinessSummaryRead:
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_readiness_summary(
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -1233,9 +1294,20 @@ def read_ilo_destructive_rebuild_preview() -> IloDestructiveRebuildPreviewRead:
     response_model=IloSetupPlanPreviewRead,
 )
 def read_ilo_setup_plan_preview(
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> IloSetupPlanPreviewRead:
-    return get_ilo_setup_plan_preview(session)
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_setup_plan_preview(
+            session,
+            resolved_id,
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -1243,17 +1315,34 @@ def read_ilo_setup_plan_preview(
     response_model=IloSetupIntentRead,
 )
 def read_ilo_setup_intent(
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> IloSetupIntentRead:
-    return get_ilo_setup_intent(session)
+    try:
+        return get_ilo_setup_intent(session, resolve_ilo_device_id(session, device_id))
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
     "/providers/ilo-redfish/discovered-settings",
     response_model=IloDiscoveredSettingsRead,
 )
-def read_ilo_discovered_settings() -> IloDiscoveredSettingsRead:
-    return get_ilo_discovered_settings()
+def read_ilo_discovered_settings(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> IloDiscoveredSettingsRead:
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_discovered_settings(
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.put(
@@ -1262,9 +1351,19 @@ def read_ilo_discovered_settings() -> IloDiscoveredSettingsRead:
 )
 def update_ilo_setup_intent(
     payload: IloSetupIntentWrite,
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> IloSetupIntentRead:
-    return save_ilo_setup_intent(session, payload)
+    try:
+        return save_ilo_setup_intent(
+            session,
+            resolve_ilo_device_id(session, device_id),
+            payload,
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -1272,9 +1371,20 @@ def update_ilo_setup_intent(
     response_model=IloSetupCompareReportRead,
 )
 def read_ilo_setup_compare(
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> IloSetupCompareReportRead:
-    return get_ilo_setup_compare(session)
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_setup_compare(
+            session,
+            resolved_id,
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -1282,9 +1392,20 @@ def read_ilo_setup_compare(
     response_model=IloReportPreviewRead,
 )
 def read_ilo_report_preview(
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> IloReportPreviewRead:
-    return get_ilo_report_preview(session)
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_report_preview(
+            session,
+            resolved_id,
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -1312,17 +1433,35 @@ def apply_ilo_setup_route(
     "/providers/ilo-redfish/access-settings",
     response_model=IloAccessSettingsRead,
 )
-def read_ilo_access_settings_route() -> IloAccessSettingsRead:
-    return read_ilo_access_settings()
+def read_ilo_access_settings_route(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> IloAccessSettingsRead:
+    try:
+        return read_ilo_access_settings(session, resolve_ilo_device_id(session, device_id))
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.put(
     "/providers/ilo-redfish/access-settings",
     response_model=IloAccessSettingsRead,
 )
-def update_ilo_access_settings_route(payload: IloAccessSettingsWrite) -> IloAccessSettingsRead:
+def update_ilo_access_settings_route(
+    payload: IloAccessSettingsWrite,
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> IloAccessSettingsRead:
     try:
-        return update_ilo_access_settings(payload.model_dump(exclude_unset=True))
+        return update_ilo_access_settings(
+            session,
+            resolve_ilo_device_id(session, device_id),
+            payload.model_dump(exclude_unset=True),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
     except IloAccessSettingsError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -1331,16 +1470,38 @@ def update_ilo_access_settings_route(payload: IloAccessSettingsWrite) -> IloAcce
     "/providers/ilo-redfish/hpe-storage-discovery",
     response_model=HpeStorageDiscoveryRead,
 )
-def read_hpe_storage_discovery() -> HpeStorageDiscoveryRead:
-    return get_hpe_storage_discovery()
+def read_hpe_storage_discovery(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> HpeStorageDiscoveryRead:
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_hpe_storage_discovery(
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
     "/providers/ilo-redfish/vsan-readiness",
     response_model=HpeVsanReadinessRead,
 )
-def read_hpe_vsan_readiness() -> HpeVsanReadinessRead:
-    return get_hpe_vsan_readiness()
+def read_hpe_vsan_readiness(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> HpeVsanReadinessRead:
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_hpe_vsan_readiness(
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -1348,9 +1509,15 @@ def read_hpe_vsan_readiness() -> HpeVsanReadinessRead:
     response_model=HpeRaidIntentRead,
 )
 def read_hpe_raid_intent(
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> HpeRaidIntentRead:
-    return get_hpe_raid_intent(session)
+    try:
+        return get_hpe_raid_intent(session, resolve_ilo_device_id(session, device_id))
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.put(
@@ -1359,9 +1526,19 @@ def read_hpe_raid_intent(
 )
 def update_hpe_raid_intent(
     payload: HpeRaidIntentWrite,
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> HpeRaidIntentRead:
-    return save_hpe_raid_intent(session, payload)
+    try:
+        return save_hpe_raid_intent(
+            session,
+            resolve_ilo_device_id(session, device_id),
+            payload,
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -1369,9 +1546,20 @@ def update_hpe_raid_intent(
     response_model=HpeRaidPlanPreviewRead,
 )
 def read_hpe_raid_plan_preview(
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> HpeRaidPlanPreviewRead:
-    return get_hpe_raid_plan_preview(session)
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_hpe_raid_plan_preview(
+            session,
+            resolved_id,
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(

@@ -13,9 +13,13 @@ from typing import Any, Callable, Iterator, Literal
 
 from sqlalchemy.orm import Session
 
+from app.core.database import SessionLocal
 from app.providers.redaction import redact_sensitive
 from app.services.control_actions import REPO_ROOT
-from app.services.ilo_access_settings import IloAccessSettingsError, read_ilo_access_settings
+from app.services.ilo_access_settings import (
+    IloAccessSettingsError,
+    read_unique_ilo_access_settings,
+)
 from app.services.json_file_store import read_json_object, write_json_object, write_text_value
 from app.services.lab_profiles import (
     active_lab_profile_context,
@@ -133,6 +137,7 @@ ActionRunner = Callable[[str, Session | None, dict[str, Any] | None], dict[str, 
 
 def get_lab_build_plan(
     *,
+    session: Session | None = None,
     context: dict[str, Any] | None = None,
     definitions: tuple[BuildStepDefinition, ...] | None = None,
 ) -> dict[str, Any]:
@@ -147,7 +152,7 @@ def get_lab_build_plan(
     profile = _active_profile(resolved_context)
     blockers = _plan_blockers(profile, ordered)
     if using_default_definitions:
-        blockers.extend(_build_start_evidence_blockers(resolved_context))
+        blockers.extend(_build_start_evidence_blockers(resolved_context, session=session))
     return {
         "kit_id": str(profile.get("id") or "runtime-profile"),
         "kit_name": str(profile.get("name") or "Current lab"),
@@ -177,7 +182,11 @@ def start_lab_build(
     action_runner: ActionRunner = run_workflow_action,
 ) -> dict[str, Any]:
     resolved_context = context or active_lab_profile_context()
-    plan = get_lab_build_plan(context=resolved_context, definitions=definitions)
+    plan = get_lab_build_plan(
+        session=session,
+        context=resolved_context,
+        definitions=definitions,
+    )
     if plan["blockers"]:
         raise LabBuildPlanError(plan["blockers"][0])
 
@@ -871,7 +880,11 @@ def _plan_blockers(profile: dict[str, Any], definitions: list[BuildStepDefinitio
     return blockers
 
 
-def _build_start_evidence_blockers(context: dict[str, Any]) -> list[str]:
+def _build_start_evidence_blockers(
+    context: dict[str, Any],
+    *,
+    session: Session | None = None,
+) -> list[str]:
     profile = _active_profile(context)
     profile_id = str(profile.get("id") or "runtime-profile")
     profile_fingerprint = lab_profile_context_fingerprint(context)
@@ -896,7 +909,11 @@ def _build_start_evidence_blockers(context: dict[str, Any]) -> list[str]:
         evidence_times[requirement.action_id] = checked_at
 
     try:
-        ilo_access = read_ilo_access_settings()
+        if session is not None:
+            ilo_access = read_unique_ilo_access_settings(session)
+        else:
+            with SessionLocal() as fallback_session:
+                ilo_access = read_unique_ilo_access_settings(fallback_session)
     except IloAccessSettingsError:
         ilo_access = {}
     ilo_checked_at = _parse_datetime(ilo_access.get("last_probe_time"))

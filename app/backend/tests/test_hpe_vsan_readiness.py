@@ -1,3 +1,4 @@
+from app.providers.ilo_redfish import IloRedfishConfig
 from app.schemas import HpeStorageDiscoveryRead
 from app.services import hpe_raid, hpe_vsan_readiness
 
@@ -89,3 +90,35 @@ def test_vsan_readiness_no_inventory_requests_discovery_first(monkeypatch) -> No
     assert result.storage_inventory_available is False
     assert result.drives == []
     assert result.next_safe_action == "Run iLO Inventory Read first."
+
+
+def test_vsan_readiness_threads_selected_device_config(monkeypatch) -> None:
+    empty = HpeStorageDiscoveryRead(
+        provider_id="ilo-redfish",
+        source="cached iLO Redfish probe",
+        next_safe_action="Run discovery.",
+    )
+    config = IloRedfishConfig(
+        host="192.0.2.71",
+        username="Mock-Administrator",
+        password="mock-password",
+        verify_tls=False,
+        timeout_seconds=1,
+        host_source="device_credentials",
+    )
+    received: list[IloRedfishConfig] = []
+
+    def fake_discovery(*, config):  # noqa: ANN001
+        received.append(config)
+        return empty
+
+    monkeypatch.setattr(
+        hpe_vsan_readiness,
+        "get_hpe_storage_discovery",
+        fake_discovery,
+    )
+
+    result = hpe_vsan_readiness.get_hpe_vsan_readiness(config=config)
+
+    assert result.storage_inventory_available is False
+    assert received == [config]

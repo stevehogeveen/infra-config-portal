@@ -7,8 +7,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.providers.base import ProviderStatus
-from app.models import IloSetupIntent
-from app.providers.probe_cache import clear_probe_results, record_probe_result
+from app.models import DeviceInventory, IloSetupIntent
+from app.providers.ilo_redfish import ilo_target_fingerprint
+from app.providers.probe_cache import (
+    clear_probe_results,
+    record_probe_result as _record_probe_result,
+)
 from app.schemas import (
     IloUpgradeReadinessRead,
     UpgradeCandidateRead,
@@ -18,6 +22,15 @@ from app.schemas import (
 )
 from app.services import ilo_readiness
 from app.services.upgrade_decision import decide_upgrade
+
+
+def record_probe_result(provider_id: str, payload: dict[str, Any]) -> None:
+    if provider_id == "ilo-redfish":
+        payload = {
+            "target_fingerprint": ilo_target_fingerprint("192.168.1.201"),
+            **payload,
+        }
+    _record_probe_result(provider_id, payload)
 
 
 def _subject(
@@ -1669,8 +1682,16 @@ def test_ilo_report_preview_redacts_secret_like_persisted_values(
     client: TestClient,
     db_session,
 ) -> None:
+    device = DeviceInventory(
+        device_type="ilo",
+        display_name="Mock report iLO",
+        host="192.0.2.55",
+    )
+    db_session.add(device)
+    db_session.flush()
     db_session.add(
         IloSetupIntent(
+            device_id=device.id,
             provider_id="ilo-redfish",
             intent_json={
                 "network": {"management_ip": "secret=do-not-print"},
@@ -1688,7 +1709,10 @@ def test_ilo_report_preview_redacts_secret_like_persisted_values(
     )
     db_session.commit()
 
-    response = client.get("/api/v1/providers/ilo-redfish/report-preview")
+    response = client.get(
+        "/api/v1/providers/ilo-redfish/report-preview",
+        params={"device_id": device.id},
+    )
 
     assert response.status_code == 200
     encoded = response.text.lower()

@@ -14,3 +14,7 @@ ilorest_logs/
 app/backend/ilorest_logs/
 app/.codex-run-logs/
 /tmp/
+
+# Local dev server logs (start-app.cmd / manual uvicorn+vite runs)
+app/backend/backend-*.log
+app/frontend/frontend-*.log

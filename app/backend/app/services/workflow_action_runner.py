@@ -5,7 +5,7 @@ import os
 import signal
 import subprocess
 import uuid
-from dataclasses import asdict, is_dataclass, replace
+from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime
 from pathlib import PureWindowsPath
 from typing import Any
@@ -44,6 +44,11 @@ from app.services.cisco_setup_readiness import get_cisco_setup_readiness
 from app.services.cisco_current_intent import get_cisco_current_intent_diff
 from app.services.cisco_console_identity import list_cisco_console_identity_candidates
 from app.services.ilo_readiness import get_ilo_setup_plan_preview
+from app.services.ilo_access_settings import (
+    ilo_config_for_device,
+    ilo_config_for_target,
+    resolve_ilo_device_id,
+)
 from app.services.json_file_store import write_json_object, write_text_value
 from app.services.list_utils import unique_preserving_order, unique_strings
 from app.services.media_inventory import get_media_inventory
@@ -352,24 +357,43 @@ def _api_action_payload(
     if action_id in {"cisco.firmware-inventory", "ilo.firmware-inventory"}:
         return get_firmware_inventory(refresh_live=False)
     if action_id == "ilo.reachability":
-        payload = IloRedfishAdapter(config=_ilo_config_for_payload(payload)).probe()
+        payload = IloRedfishAdapter(config=_ilo_config_for_payload(payload, session)).probe()
         return _write_ilo_reachability_artifacts(payload)
     if action_id == "ilo.auth":
-        return get_ilo_baseline_readiness()
+        return get_ilo_baseline_readiness(
+            config=_ilo_config_for_payload(payload, session),
+        )
     if action_id == "ilo.inventory":
-        return get_ilo_baseline_preview()
+        return get_ilo_baseline_preview(
+            config=_ilo_config_for_payload(payload, session),
+        )
     if action_id == "ilo.baseline-preview":
-        return get_ilo_baseline_preview()
+        return get_ilo_baseline_preview(
+            config=_ilo_config_for_payload(payload, session),
+        )
     if action_id == "ilo.setup-plan-preview":
-        return get_ilo_setup_plan_preview(session)
+        config = _ilo_config_for_payload(payload, session)
+        return get_ilo_setup_plan_preview(
+            session,
+            resolve_ilo_device_id(session, _string_or_none(payload.get("device_id"))),
+            config=config,
+        )
     if action_id == "raid.discovery":
         return _write_hpe_raid_discovery_artifact(
-            _ilo_config_for_payload(payload, require_explicit_target=True)
+            _ilo_config_for_payload(payload, session, require_explicit_target=True)
         )
     if action_id == "raid.plan":
         if session is None:
             raise WorkflowActionRunNotFoundError("RAID plan preview requires a database session.")
-        return _write_hpe_raid_plan_artifact(session)
+        device_id = resolve_ilo_device_id(
+            session,
+            _string_or_none(payload.get("device_id")),
+        )
+        return _write_hpe_raid_plan_artifact(
+            session,
+            device_id,
+            ilo_config_for_device(session, device_id),
+        )
     if action_id == "raid.pending-check":
         if session is None:
             raise WorkflowActionRunNotFoundError("RAID pending check requires a database session.")
@@ -585,27 +609,27 @@ def _write_ilo_reachability_artifacts(payload: dict[str, Any]) -> dict[str, Any]
 
 def _ilo_config_for_payload(
     payload: dict[str, Any],
+    session: Session | None,
     *,
     require_explicit_target: bool = False,
 ) -> IloRedfishConfig:
-    config = IloRedfishConfig.from_settings()
     requested_host = _string_or_none(payload.get("ilo_host"))
+    device_id = _string_or_none(payload.get("device_id"))
+    if session is None:
+        raise WorkflowActionRunNotFoundError(
+            "Exact-target iLO reads require a database session for device credentials."
+        )
     if not requested_host:
         if require_explicit_target:
             raise ValueError(
                 "An explicit current-access ilo_host IP is required for exact-target iLO reads."
             )
-        return config
-
-    # An operator-entered first-contact target must be exact-target-only. Falling
-    # back to a saved profile could return a successful probe for a different
-    # iLO and incorrectly mark the requested address as reachable.
-    return replace(
-        config,
-        host=requested_host,
-        host_source="operator_first_contact",
-        fallback_hosts=(),
-        fallback_host_sources=(),
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return ilo_config_for_device(session, resolved_id)
+    return ilo_config_for_target(
+        session,
+        requested_host,
+        device_id=device_id,
     )
 
 
@@ -638,10 +662,22 @@ def _write_hpe_raid_discovery_artifact(
     return sanitized
 
 
-def _write_hpe_raid_plan_artifact(session: Session) -> dict[str, Any]:
-    IloRedfishAdapter().probe()
-    preview = get_hpe_raid_plan_preview(session)
-    apply_plan = build_hpe_raid_apply_plan(session)
+def _write_hpe_raid_plan_artifact(
+    session: Session,
+    device_id: str,
+    config: IloRedfishConfig,
+) -> dict[str, Any]:
+    IloRedfishAdapter(config=config).probe()
+    preview = get_hpe_raid_plan_preview(
+        session,
+        device_id,
+        config=config,
+    )
+    apply_plan = build_hpe_raid_apply_plan(
+        session,
+        device_id,
+        config=config,
+    )
     payload = {
         "checked_at": _now(),
         "provider_id": "ilo-redfish",

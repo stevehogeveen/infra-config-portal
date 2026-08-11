@@ -10,7 +10,6 @@ export function DeviceInventoryForm({
   onSaved,
   submitLabel,
   iloOnboarding = false,
-  initialIloAccessHost,
   defaultDeviceType,
   initialIloUsername,
   iloCredentialsConfigured = false
@@ -21,7 +20,6 @@ export function DeviceInventoryForm({
   onSaved?: (device: DeviceInventoryItem) => void;
   submitLabel?: string;
   iloOnboarding?: boolean;
-  initialIloAccessHost?: string | null;
   defaultDeviceType?: string;
   initialIloUsername?: string | null;
   iloCredentialsConfigured?: boolean;
@@ -40,12 +38,7 @@ export function DeviceInventoryForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const isIloFirstContact = iloOnboarding && form.device_type.trim().toLowerCase() === "ilo";
-  const isActiveIloTarget = Boolean(
-    device?.device_type === "ilo" &&
-    device.host?.trim().toLowerCase() &&
-    device.host.trim().toLowerCase() === initialIloAccessHost?.trim().toLowerCase()
-  );
-  const canReuseIloCredentials = isActiveIloTarget && iloCredentialsConfigured;
+  const canReuseIloCredentials = Boolean(device?.id && iloCredentialsConfigured);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -78,7 +71,7 @@ export function DeviceInventoryForm({
         : await api.createDevice(payload);
       setCreatedDevice(saved);
       if (isIloFirstContact) {
-        await api.saveIloAccessSettings({
+        await api.saveIloAccessSettings(saved.id, {
           host: firstContactHost,
           username: iloUsername.trim() || null,
           password: iloPassword.trim() || null,

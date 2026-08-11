@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.models import DeviceInventory, IloDeviceCredential
 from app.providers.base import ProviderAction, ProviderStatus
 from app.services.lab_profiles import create_lab_profile
 from app.services import (
@@ -25,6 +26,29 @@ from app.services import (
     workflow_registry,
 )
 from app.services.workflow_action_runner import run_workflow_action
+
+
+def _save_ilo_device_credentials(session: Session, host: str) -> str:
+    device = DeviceInventory(
+        device_type="ilo",
+        display_name=f"Mock iLO {host}",
+        host=host,
+    )
+    session.add(device)
+    session.flush()
+    session.add(
+        IloDeviceCredential(
+            device_id=device.id,
+            credentials_json={
+                "host": host,
+                "username": "Mock-Administrator",
+                "password": "mock-password",
+                "verify_tls": False,
+            },
+        )
+    )
+    session.commit()
+    return device.id
 
 
 def test_read_only_action_can_run_and_save_trace(
@@ -175,7 +199,11 @@ def test_api_action_trace_preserves_underlying_readiness_status(monkeypatch) -> 
     assert result["evidence_checked_at"] == "2026-07-23T12:00:00+00:00"
 
 
-def test_ilo_reachability_action_writes_live_artifacts(monkeypatch, tmp_path: Path) -> None:
+def test_ilo_reachability_action_writes_live_artifacts(
+    monkeypatch,
+    tmp_path: Path,
+    db_session: Session,
+) -> None:
     monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
     monkeypatch.setattr(workflow_action_runner, "CODEX_RUN_DIR", tmp_path)
     monkeypatch.setattr(workflow_action_runner, "ILO_REACHABILITY_REPORT", tmp_path / "ilo-real-run-report.md")
@@ -202,14 +230,19 @@ def test_ilo_reachability_action_writes_live_artifacts(monkeypatch, tmp_path: Pa
             }
 
     monkeypatch.setattr(workflow_action_runner, "IloRedfishAdapter", FakeIloRedfishAdapter)
+    device_id = _save_ilo_device_credentials(db_session, "10.10.8.110")
 
-    result = run_workflow_action("ilo.reachability", payload={"ilo_host": "10.10.8.110"})
+    result = run_workflow_action(
+        "ilo.reachability",
+        db_session,
+        payload={"device_id": device_id},
+    )
 
     assert result["status"] == "completed"
     assert result["evidence_status"] == "ok"
     assert result["evidence_checked_at"] == "2026-07-01T01:10:00+00:00"
     assert configs[-1].host == "10.10.8.110"
-    assert configs[-1].host_source == "operator_first_contact"
+    assert configs[-1].host_source == "device_credentials"
     assert configs[-1].fallback_hosts == ()
     assert configs[-1].fallback_host_sources == ()
     assert (tmp_path / "ilo-real-run-report.md").exists()
@@ -225,6 +258,7 @@ def test_ilo_reachability_action_writes_live_artifacts(monkeypatch, tmp_path: Pa
 
 def test_ilo_reachability_route_preserves_exact_first_contact_target(
     client: TestClient,
+    db_session: Session,
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -257,10 +291,11 @@ def test_ilo_reachability_route_preserves_exact_first_contact_target(
             }
 
     monkeypatch.setattr(workflow_action_runner, "IloRedfishAdapter", FakeIloRedfishAdapter)
+    device_id = _save_ilo_device_credentials(db_session, "10.10.8.110")
 
     response = client.post(
         "/api/v1/workflows/actions/ilo.reachability/run",
-        json={"ilo_host": "10.10.8.110"},
+        json={"device_id": device_id},
     )
 
     assert response.status_code == 200
@@ -269,9 +304,121 @@ def test_ilo_reachability_route_preserves_exact_first_contact_target(
     assert response.json()["evidence_checked_at"] == "2026-07-23T12:00:00+00:00"
     assert configs
     assert configs[-1].host == "10.10.8.110"
-    assert configs[-1].host_source == "operator_first_contact"
+    assert configs[-1].host_source == "device_credentials"
     assert configs[-1].fallback_hosts == ()
     assert configs[-1].fallback_host_sources == ()
+
+
+def test_ilo_auth_and_inventory_use_selected_device_credentials(
+    monkeypatch,
+    tmp_path: Path,
+    db_session: Session,
+) -> None:
+    monkeypatch.setattr(
+        workflow_action_run_store,
+        "WORKFLOW_ACTION_RUN_TRACE_DIR",
+        tmp_path,
+    )
+    device_a = _save_ilo_device_credentials(db_session, "192.0.2.41")
+    device_b = _save_ilo_device_credentials(db_session, "192.0.2.42")
+    readiness_hosts: list[str | None] = []
+    inventory_hosts: list[str | None] = []
+
+    def fake_readiness(*, config):  # noqa: ANN001
+        readiness_hosts.append(config.host)
+        return {"provider_id": "hpe-ilo", "blockers": [], "warnings": []}
+
+    def fake_preview(*, config):  # noqa: ANN001
+        inventory_hosts.append(config.host)
+        return {"provider_id": "hpe-ilo", "blockers": [], "warnings": []}
+
+    monkeypatch.setattr(
+        workflow_action_runner,
+        "get_ilo_baseline_readiness",
+        fake_readiness,
+    )
+    monkeypatch.setattr(
+        workflow_action_runner,
+        "get_ilo_baseline_preview",
+        fake_preview,
+    )
+
+    auth = run_workflow_action(
+        "ilo.auth",
+        db_session,
+        payload={"device_id": device_a},
+    )
+    inventory = run_workflow_action(
+        "ilo.inventory",
+        db_session,
+        payload={"device_id": device_b},
+    )
+
+    assert auth["status"] == "completed"
+    assert inventory["status"] == "completed"
+    assert readiness_hosts == ["192.0.2.41"]
+    assert inventory_hosts == ["192.0.2.42"]
+
+
+def test_raid_plan_uses_selected_device_intent_and_probe(
+    monkeypatch,
+    tmp_path: Path,
+    db_session: Session,
+) -> None:
+    monkeypatch.setattr(
+        workflow_action_run_store,
+        "WORKFLOW_ACTION_RUN_TRACE_DIR",
+        tmp_path,
+    )
+    monkeypatch.setattr(workflow_action_runner, "CODEX_RUN_DIR", tmp_path)
+    monkeypatch.setattr(
+        workflow_action_runner,
+        "HPE_RAID_PLAN_REPORT",
+        tmp_path / "hpe-raid-plan-report.md",
+    )
+    selected_device_id = _save_ilo_device_credentials(db_session, "192.0.2.61")
+    probed_hosts: list[str | None] = []
+    preview_calls: list[tuple[str, str | None]] = []
+    apply_plan_calls: list[tuple[str, str | None]] = []
+
+    class FakeIloRedfishAdapter:
+        def __init__(self, config=None) -> None:  # noqa: ANN001
+            self.config = config
+
+        def probe(self) -> dict[str, object]:
+            probed_hosts.append(self.config.host)
+            return {"provider_id": "ilo-redfish", "status": "ok"}
+
+    def fake_preview(session, device_id, config=None):  # noqa: ANN001
+        assert session is db_session
+        preview_calls.append((device_id, config.host))
+        return SimpleNamespace(
+            status="planned",
+            blockers=[],
+            warnings=[],
+            next_safe_action="Review the selected device RAID plan.",
+            model_dump=lambda: {"desired_intent": {"device_id": device_id}},
+        )
+
+    def fake_apply_plan(session, device_id=None, config=None):  # noqa: ANN001
+        assert session is db_session
+        apply_plan_calls.append((device_id, config.host))
+        return {"status": "blocked", "blockers": [], "warnings": []}
+
+    monkeypatch.setattr(workflow_action_runner, "IloRedfishAdapter", FakeIloRedfishAdapter)
+    monkeypatch.setattr(workflow_action_runner, "get_hpe_raid_plan_preview", fake_preview)
+    monkeypatch.setattr(workflow_action_runner, "build_hpe_raid_apply_plan", fake_apply_plan)
+
+    result = run_workflow_action(
+        "raid.plan",
+        db_session,
+        payload={"device_id": selected_device_id},
+    )
+
+    assert result["status"] == "completed"
+    assert probed_hosts == ["192.0.2.61"]
+    assert preview_calls == [(selected_device_id, "192.0.2.61")]
+    assert apply_plan_calls == [(selected_device_id, "192.0.2.61")]
 
 
 def test_raid_discovery_refuses_missing_exact_ilo_target_before_probe(
@@ -296,6 +443,7 @@ def test_raid_discovery_refuses_missing_exact_ilo_target_before_probe(
 def test_raid_discovery_uses_only_exact_first_contact_target(
     monkeypatch,
     tmp_path: Path,
+    db_session: Session,
 ) -> None:
     monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
     monkeypatch.setattr(workflow_action_runner, "CODEX_RUN_DIR", tmp_path)
@@ -356,16 +504,18 @@ def test_raid_discovery_uses_only_exact_first_contact_target(
         "get_hpe_storage_discovery",
         fake_storage_discovery,
     )
+    device_id = _save_ilo_device_credentials(db_session, "192.168.1.11")
 
     result = run_workflow_action(
         "raid.discovery",
-        payload={"ilo_host": "192.168.1.11"},
+        db_session,
+        payload={"device_id": device_id, "ilo_host": "192.168.1.11"},
     )
 
     assert result["status"] == "completed"
     assert configs
     assert configs[-1].host == "192.168.1.11"
-    assert configs[-1].host_source == "operator_first_contact"
+    assert configs[-1].host_source == "device_credentials"
     assert configs[-1].fallback_hosts == ()
     assert configs[-1].fallback_host_sources == ()
     assert discovery_inputs == [(exact_probe, "2026-07-23T15:00:00+00:00")]

@@ -313,65 +313,45 @@ async function expectResponsiveShell(page: Page, path: string, viewport: { width
   await page.goto(path);
   await expect(page.locator("main.content")).toBeVisible();
   const metrics = await page.evaluate(() => {
-    const header = document.querySelector("header[aria-label='Application header']");
-    const primaryNavigation = document.querySelector("nav[aria-label='Primary navigation']");
-    const navRect = primaryNavigation?.getBoundingClientRect();
+    const nav = document.querySelector("aside.rack-rail nav[aria-label='Lab Builder navigation']");
+    const navRect = nav?.getBoundingClientRect();
     return {
       bodyWidth: document.body.scrollWidth,
-      headerHeight: header?.getBoundingClientRect().height ?? 0,
       innerWidth: window.innerWidth,
-      navClientWidth: primaryNavigation?.clientWidth ?? 0,
       navLeft: navRect?.left ?? 0,
-      navLinkCount: primaryNavigation?.querySelectorAll("a").length ?? 0,
-      navOverflowX: primaryNavigation ? getComputedStyle(primaryNavigation).overflowX : "",
+      navLinkCount: nav?.querySelectorAll("a").length ?? 0,
       navRight: navRect?.right ?? 0,
-      navScrollWidth: primaryNavigation?.scrollWidth ?? 0,
-      viewportHeight: window.innerHeight,
       width: document.documentElement.scrollWidth
     };
   });
   expect(metrics.width, `${path} document overflow at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
   expect(metrics.bodyWidth, `${path} body overflow at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
-  expect(metrics.navLinkCount, `${path} keeps all primary destinations at ${viewport.width}px`).toBe(6);
-  expect(metrics.navLeft, `${path} primary nav starts inside the viewport at ${viewport.width}px`).toBeGreaterThanOrEqual(-1);
-  expect(metrics.navRight, `${path} primary nav ends inside the viewport at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
-  if (viewport.width >= 1280) {
-    expect(metrics.navScrollWidth, `${path} primary nav fits without desktop clipping`).toBeLessThanOrEqual(metrics.navClientWidth + 1);
-  }
-  if (viewport.width <= 390) {
-    expect(metrics.navOverflowX, `${path} contains mobile nav overflow`).toBe("auto");
-    expect(metrics.headerHeight, `${path} mobile header consumes too much vertical space`).toBeLessThanOrEqual(
-      Math.min(220, metrics.viewportHeight * 0.25)
-    );
-  }
+  expect(metrics.navLinkCount, `${path} keeps all primary destinations at ${viewport.width}px`).toBe(7);
+  expect(metrics.navLeft, `${path} rack rail nav starts inside the viewport at ${viewport.width}px`).toBeGreaterThanOrEqual(-1);
+  expect(metrics.navRight, `${path} rack rail nav ends inside the viewport at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
 }
 
 test("renders the map-first operator header and pages", async ({ page }) => {
   await page.goto("/overview");
 
-  await expect(page.locator("aside[aria-label='Lab Builder navigation']")).toHaveCount(0);
-  const header = page.locator("header[aria-label='Application header']");
-  await expect(header).toBeVisible();
-  await expect(header.getByRole("link", { name: "Lab Builder rack home" })).toHaveAttribute("href", "/simple");
-  await expect(header.getByRole("link", { name: "Lab Builder rack home" })).toContainText("Lab Builder");
-  await expect(header.getByRole("link", { name: "Lab Builder rack home" })).toContainText("Operator");
-  const primaryNavigation = header.getByRole("navigation", { name: "Primary navigation" });
-  await expect(primaryNavigation.locator("a")).toHaveText(["Rack", "Runbook", "Lab Defaults", "Firmware", "Run Center", "Reports"]);
-  await expect(primaryNavigation.getByRole("link", { name: "Rack" })).toHaveAttribute("href", "/simple");
-  await expect(primaryNavigation.getByRole("link", { name: "Lab Defaults" })).toHaveAttribute("href", "/setup/defaults");
-  await expect(primaryNavigation.getByRole("link", { name: "Firmware" })).toHaveAttribute("href", "/firmware-upgrades");
-  await expect(primaryNavigation.getByRole("link", { name: "Run Center" })).toHaveAttribute("href", "/run");
-  await expect(primaryNavigation.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/reports");
-  await expect(primaryNavigation).not.toContainText(/Compute|Storage|Virtualization|Cisco/);
+  await expect(page.locator("header[aria-label='Application header']")).toHaveCount(0);
+  const rail = page.locator("aside.rack-rail");
+  await expect(rail).toBeVisible();
+  const nav = rail.getByRole("navigation", { name: "Lab Builder navigation" });
+  await expect(nav.locator("a")).toHaveText(["Rack home", "Runbook", "Lab defaults", "Firmware", "Run Center", "Reports", "Create or change kit"]);
+  await expect(nav.getByRole("link", { name: "Rack home" })).toHaveAttribute("href", "/simple");
+  await expect(nav.getByRole("link", { name: "Lab defaults" })).toHaveAttribute("href", "/setup/defaults");
+  await expect(nav.getByRole("link", { name: "Firmware" })).toHaveAttribute("href", "/firmware-upgrades");
+  await expect(nav.getByRole("link", { name: "Run Center" })).toHaveAttribute("href", "/run-center");
+  await expect(nav.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/validation");
+  await expect(nav.getByRole("link", { name: "Create or change kit" })).toHaveAttribute("href", "/lab-profiles#new");
+  await expect(nav).not.toContainText(/Compute|Storage|Virtualization|Cisco/);
   await expect(page.getByRole("navigation", { name: "Quick navigation" })).toHaveCount(0);
-  const headerActions = header.locator(".shell-topbar-actions");
-  await expect(headerActions.getByRole("link", { name: "Create or change kit" })).toHaveAttribute("href", "/lab-profiles#new");
-  await expect(headerActions).toHaveText("Create or change kit");
-  await expect(header.getByLabel("Lab provider mode")).toHaveCount(0);
-  await expect(header.locator("#active-kit-picker")).toHaveCount(0);
-  await expect(header.getByRole("group", { name: "Display mode" })).toHaveCount(0);
-  await expect(headerActions).not.toContainText(/Test Mode|Local lab setup|New kit|Operator|Advanced/);
-  await expect(header).not.toContainText(/Windows|OVF|Global/);
+  await expect(rail.getByLabel("Lab provider mode")).toHaveCount(0);
+  await expect(rail.locator("#active-kit-picker")).toHaveCount(0);
+  await expect(rail.getByRole("group", { name: "Display mode" })).toHaveCount(0);
+  await expect(rail).not.toContainText(/Test Mode|Local lab setup|New kit|Operator|Advanced/);
+  await expect(rail).not.toContainText(/Windows|OVF|Global/);
 
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
   await page.goto("/lab-setup");
@@ -1125,7 +1105,7 @@ test("overview map ignores stale positive iLO validation when provider access is
 });
 
 test("overview map keeps iLO locked when proof is not bound to the current access target", async ({ page }) => {
-  await page.route("**/api/v1/providers/ilo-redfish/access-settings", (route) =>
+  await page.route("**/api/v1/providers/ilo-redfish/access-settings?*", (route) =>
     json(route, iloAccessSettings({
       host: "192.168.1.11",
       last_probe_target_matches_access_host: false,
@@ -1157,7 +1137,7 @@ test("overview map shows the proven current iLO address while keeping the planne
       : provider
   );
   await page.route("**/api/v1/providers/status", (route) => json(route, plannedMismatchProviders));
-  await page.route("**/api/v1/providers/ilo-redfish/access-settings", (route) =>
+  await page.route("**/api/v1/providers/ilo-redfish/access-settings?*", (route) =>
     json(route, iloAccessSettings({
       host: "192.168.1.11",
       last_probe_target_matches_access_host: true,
@@ -1178,7 +1158,7 @@ test("overview map shows the proven current iLO address while keeping the planne
 });
 
 test("editing the visible iLO target invalidates proof until that exact target is rechecked", async ({ page }) => {
-  await page.route("**/api/v1/providers/ilo-redfish/access-settings", (route) =>
+  await page.route("**/api/v1/providers/ilo-redfish/access-settings?*", (route) =>
     json(route, iloAccessSettings({
       host: "192.168.1.11",
       last_probe_status: "ok",
@@ -1215,7 +1195,7 @@ test("iLO access-settings failure falls back to the initial current address, nev
     (plan as Record<string, unknown>).ilo_initial = "192.168.1.11";
   }
   await page.route("**/api/v1/lab/profiles*", (route) => json(route, profiles));
-  await page.route("**/api/v1/providers/ilo-redfish/access-settings", (route) =>
+  await page.route("**/api/v1/providers/ilo-redfish/access-settings?*", (route) =>
     route.fulfill({
       body: JSON.stringify({ detail: "iLO access settings unavailable" }),
       contentType: "application/json",
@@ -1275,7 +1255,9 @@ test("overview iLO drawer puts first contact before planned config and runs the 
     actionIdFromRunPath(new URL(request.url()).pathname) === "ilo.reachability"
   );
   await firstContact.getByRole("button", { name: "Check this iLO IP" }).click();
-  const payload = (await accessSave).postDataJSON() as Record<string, unknown>;
+  const accessSaveRequest = await accessSave;
+  expect(new URL(accessSaveRequest.url()).searchParams.get("device_id")).toBe("f2c1a9d0-4b31-4a5e-9d10-000000000002");
+  const payload = accessSaveRequest.postDataJSON() as Record<string, unknown>;
   expect(payload).toMatchObject({
     host: "192.168.1.201",
     password: "secret",
@@ -1283,7 +1265,10 @@ test("overview iLO drawer puts first contact before planned config and runs the 
     verify_tls: false
   });
   const accessCheckPayload = (await accessCheck).postDataJSON() as Record<string, unknown>;
-  expect(accessCheckPayload).toMatchObject({ ilo_host: "192.168.1.201" });
+  expect(accessCheckPayload).toMatchObject({
+    device_id: "f2c1a9d0-4b31-4a5e-9d10-000000000002",
+    ilo_host: "192.168.1.201"
+  });
   await expect(firstContact).toContainText("iLO access check finished");
 });
 
@@ -1621,7 +1606,7 @@ test("overview flags saved subnet mismatch and keeps kit changes available", asy
   await expect(topology).toContainText("Active setup targets 192.168.1.0/24");
   await expect(topology).toContainText("10.10.8.99");
 
-  const editSubnet = page.locator("header[aria-label='Application header']").getByRole("link", { name: "Create or change kit" });
+  const editSubnet = page.locator("aside.rack-rail").getByRole("link", { name: "Create or change kit" });
   await expect(editSubnet).toHaveAttribute("href", "/lab-profiles#new");
   await editSubnet.click();
   await expect(page).toHaveURL(/\/lab-profiles#new$/);
@@ -1639,7 +1624,7 @@ test("overview routes kit changes to Saved Kits without running workflows", asyn
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await expect(topology.locator("section[aria-label='System setup picker']")).toHaveCount(0);
-  await page.locator("header[aria-label='Application header']").getByRole("link", { name: "Create or change kit" }).click();
+  await page.locator("aside.rack-rail").getByRole("link", { name: "Create or change kit" }).click();
   await expect(page).toHaveURL(/\/lab-profiles#new$/);
   await expect(page.getByRole("heading", { name: "Saved Kits", exact: true })).toBeVisible();
   expect(workflowRunAttempted).toBe(false);
@@ -1904,10 +1889,10 @@ test("single-server map removes vCenter and keeps direct ESXi setup separate fro
 test("top nav and map device drawers keep setup direct without dead settings drawers", async ({ page }) => {
   await page.goto("/overview");
 
-  const header = page.getByRole("banner", { name: "Application header" });
-  await expect(header.getByRole("navigation", { name: "Primary navigation" }).getByRole("link")).toHaveCount(6);
-  await expect(header.getByRole("link", { name: "Create or change kit" })).toHaveAttribute("href", "/lab-profiles#new");
-  await expect(header.getByRole("button", { name: "Settings" })).toHaveCount(0);
+  const rail = page.locator("aside.rack-rail");
+  await expect(rail.getByRole("navigation", { name: "Lab Builder navigation" }).getByRole("link")).toHaveCount(7);
+  await expect(rail.getByRole("link", { name: "Create or change kit" })).toHaveAttribute("href", "/lab-profiles#new");
+  await expect(rail.getByRole("button", { name: "Settings" })).toHaveCount(0);
   await expect(page.locator(".system-setup-picker, section.tab-settings-drawer")).toHaveCount(0);
 
   const topology = page.getByRole("region", { name: "Lab topology" });
@@ -1991,7 +1976,7 @@ test("overview local storage reads only from the current iLO access host", async
       discoveryReads += 1;
     }
   });
-  await page.route("**/api/v1/providers/ilo-redfish/access-settings", (route) =>
+  await page.route("**/api/v1/providers/ilo-redfish/access-settings?*", (route) =>
     json(route, iloAccessSettings({
       fallback_hosts: ["192.168.1.201"],
       host: "192.168.1.11",
@@ -2018,7 +2003,10 @@ test("overview local storage reads only from the current iLO access host", async
   await raidDrawer.getByRole("button", { name: "Read storage from iLO 192.168.1.11" }).click();
 
   const exactReadPayload = (await exactRead).postDataJSON() as Record<string, unknown>;
-  expect(exactReadPayload).toEqual({ ilo_host: "192.168.1.11" });
+  expect(exactReadPayload).toEqual({
+    device_id: "f2c1a9d0-4b31-4a5e-9d10-000000000002",
+    ilo_host: "192.168.1.11"
+  });
   const liveDriveGrid = raidDrawer.getByLabel("Selectable local RAID drive bays from iLO inventory");
   await expect(liveDriveGrid).toContainText("Bay 1");
   await expect(liveDriveGrid).toContainText("Live: ESXi OS · RAID1");
@@ -2039,7 +2027,7 @@ test("overview local storage stays locked when exact-target evidence is blocked"
       discoveryReads += 1;
     }
   });
-  await page.route("**/api/v1/providers/ilo-redfish/access-settings", (route) =>
+  await page.route("**/api/v1/providers/ilo-redfish/access-settings?*", (route) =>
     json(
       route,
       iloAccessSettings({
@@ -2051,7 +2039,7 @@ test("overview local storage stays locked when exact-target evidence is blocked"
       })
     )
   );
-  await page.route("**/api/v1/providers/ilo-redfish/hpe-storage-discovery", (route) =>
+  await page.route("**/api/v1/providers/ilo-redfish/hpe-storage-discovery?*", (route) =>
     json(
       route,
       failedExactRead
@@ -2510,7 +2498,7 @@ test("server blocker copy hides internal mode vocabulary", async ({ page }) => {
 });
 
 test("server RAID blocker copy stays out of default operator mode", async ({ page }) => {
-  await page.route("**/api/v1/providers/ilo-redfish/hpe-raid-plan-preview", (route) => json(route, {
+  await page.route("**/api/v1/providers/ilo-redfish/hpe-raid-plan-preview?*", (route) => json(route, {
     ...hpeRaidPlanPreview(),
     blockers: ["Saved intent requests destructive wipe/delete planning. Execution remains disabled."],
     message: "Saved intent requests destructive wipe/delete planning. Execution remains disabled.",
@@ -3611,13 +3599,12 @@ test("rack workspace and runbook are reachable from the nav and render", async (
     if (request.method() !== "GET") mutations.push(`${request.method()} ${new URL(request.url()).pathname}`);
   });
   await page.goto("/overview");
-  const nav = page.getByRole("banner", { name: "Application header" })
-    .getByRole("navigation", { name: "Primary navigation" });
+  const nav = page.locator("aside.rack-rail").getByRole("navigation", { name: "Lab Builder navigation" });
 
-  await nav.getByRole("link", { name: "Rack" }).click();
+  await nav.getByRole("link", { name: "Rack home" }).click();
   await expect(page.getByRole("heading", { name: "Rack elevation" })).toBeVisible();
   await expect(page.locator(".rack-light-svg")).toBeVisible();
-  await expect(page.getByRole("banner", { name: "Application header" })).toHaveCount(0);
+  await expect(page.locator("header[aria-label='Application header']")).toHaveCount(0);
   await expect(page.getByText("Green is shown only when a current provider check proves access.")).toBeVisible();
   await expect(page.locator(".rack-drive")).toHaveCount(8);
   await expect(page.locator(".rack-drive.is-free")).toHaveCount(6);
@@ -3627,7 +3614,7 @@ test("rack workspace and runbook are reachable from the nav and render", async (
   await expect(page.getByText("Remove from lab")).toHaveCount(0);
   expect(mutations).toEqual([]);
 
-  await page.getByRole("navigation", { name: "Rack workspace navigation" }).getByRole("link", { name: "Runbook" }).click();
+  await page.getByRole("navigation", { name: "Lab Builder navigation" }).getByRole("link", { name: "Runbook" }).click();
   await expect(page.getByRole("heading", { name: "Build the lab, in order" })).toBeVisible();
   await expect(page.locator(".simple-step")).toHaveCount(5);
 });
@@ -3740,12 +3727,13 @@ test("iLO save explains a backend disconnect instead of exposing an internal ser
 });
 
 test("rack iLO onboarding saves the DHCP target and credentials without probing it", async ({ page }) => {
-  const writes: Array<{ method: string; path: string; payload: Record<string, unknown> }> = [];
+  const writes: Array<{ deviceId: string | null; method: string; path: string; payload: Record<string, unknown> }> = [];
   const hardwareChecks: string[] = [];
   page.on("request", (request) => {
-    const path = new URL(request.url()).pathname;
+    const url = new URL(request.url());
+    const path = url.pathname;
     if (request.method() !== "GET" && (path === "/api/v1/device-inventory" || path === "/api/v1/providers/ilo-redfish/access-settings")) {
-      writes.push({ method: request.method(), path, payload: request.postDataJSON() as Record<string, unknown> });
+      writes.push({ deviceId: url.searchParams.get("device_id"), method: request.method(), path, payload: request.postDataJSON() as Record<string, unknown> });
     }
     if (request.method() !== "GET" && (path.includes("workflow") || path.includes("probe") || path.includes("inventory-read"))) {
       hardwareChecks.push(`${request.method()} ${path}`);
@@ -3781,12 +3769,72 @@ test("rack iLO onboarding saves the DHCP target and credentials without probing 
     payload: { device_type: "ilo", display_name: "HPE iLO 2", dhcp_enabled: true, host: "192.168.1.211" }
   });
   expect(writes[1]).toMatchObject({
+    deviceId: "custom-5",
     method: "PUT",
     path: "/api/v1/providers/ilo-redfish/access-settings",
     payload: { host: "192.168.1.211", username: "Administrator", verify_tls: false }
   });
   expect(writes[1].payload.password).toBeTruthy();
   expect(hardwareChecks).toEqual([]);
+});
+
+test("rack keeps two iLO device access settings isolated after reload", async ({ page }) => {
+  const accessWriteDeviceIds: Array<string | null> = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (request.method() === "PUT" && url.pathname === "/api/v1/providers/ilo-redfish/access-settings") {
+      accessWriteDeviceIds.push(url.searchParams.get("device_id"));
+    }
+  });
+
+  async function addAndConfigureIlo(
+    name: string,
+    onboardingHost: string,
+    onboardingUsername: string,
+    savedHost: string,
+    savedUsername: string
+  ) {
+    await page.getByRole("button", { name: "Add equipment" }).click();
+    await page.getByLabel("Device name").fill(name);
+    await page.getByLabel("Current iLO DHCP address").fill(onboardingHost);
+    await page.getByLabel("iLO username or UID").fill(onboardingUsername);
+    await page.getByLabel("iLO password").fill(`mock-${name}-onboarding-password`);
+    await page.getByRole("button", { name: "Save iLO and continue" }).click();
+
+    const inspector = page.locator(".rack-inspector");
+    await expect(inspector.getByRole("heading", { name })).toBeVisible();
+    await inspector.getByRole("button", { name: "Configure iLO beside rack" }).click();
+    const configurator = page.getByLabel("Configure HPE iLO beside rack");
+    await configurator.getByLabel("iLO host or initial IP").fill(savedHost);
+    await configurator.getByLabel("iLO username / UID").fill(savedUsername);
+    await configurator.getByLabel("iLO password").fill(`mock-${name}-saved-password`);
+    await configurator.getByRole("button", { name: "Save iLO access" }).click();
+    await expect(configurator).toContainText("iLO access saved locally");
+    await configurator.getByRole("button", { name: "Back to device" }).click();
+  }
+
+  await page.goto("/simple");
+  await addAndConfigureIlo("Server A iLO", "192.168.1.211", "onboard-a", "192.168.1.221", "operator-a");
+  await addAndConfigureIlo("Server B iLO", "192.168.1.212", "onboard-b", "192.168.1.222", "operator-b");
+
+  expect(accessWriteDeviceIds).toEqual(["custom-5", "custom-5", "custom-6", "custom-6"]);
+
+  await page.reload();
+  const inspector = page.locator(".rack-inspector");
+  await page.locator(".rack-unit[aria-label='Open Server A iLO']").click();
+  await expect(inspector).toContainText("192.168.1.221");
+  await inspector.getByRole("button", { name: "Configure iLO beside rack" }).click();
+  let configurator = page.getByLabel("Configure HPE iLO beside rack");
+  await expect(configurator.getByLabel("iLO host or initial IP")).toHaveValue("192.168.1.221");
+  await expect(configurator.getByLabel("iLO username / UID")).toHaveValue("operator-a");
+  await configurator.getByRole("button", { name: "Back to device" }).click();
+
+  await page.locator(".rack-unit[aria-label='Open Server B iLO']").click();
+  await expect(inspector).toContainText("192.168.1.222");
+  await inspector.getByRole("button", { name: "Configure iLO beside rack" }).click();
+  configurator = page.getByLabel("Configure HPE iLO beside rack");
+  await expect(configurator.getByLabel("iLO host or initial IP")).toHaveValue("192.168.1.222");
+  await expect(configurator.getByLabel("iLO username / UID")).toHaveValue("operator-b");
 });
 
 test("rack home adds and edits equipment before opening rack-side configuration", async ({ page }) => {
@@ -3833,12 +3881,15 @@ test("rack home adds and edits equipment before opening rack-side configuration"
 });
 
 async function installApiMocks(page: Page) {
+  const seededIloDeviceId = "f2c1a9d0-4b31-4a5e-9d10-000000000002";
   let firmwareFileSelections = firmwareFileSelectionState({});
   let labSafety = labSafetySettings();
   let activeProfiles = activeLabProfilesFixture();
   let savedProfile: Record<string, unknown> | null = null;
   let labBuildRun: Record<string, unknown> | null = null;
-  let activeIloAccess = iloAccessSettings();
+  const iloAccessByDeviceId = new Map<string, Record<string, unknown>>([
+    [seededIloDeviceId, iloAccessSettings({ device_id: seededIloDeviceId })]
+  ]);
   // Ids mimic real database UUIDs on purpose: link resolution must work by
   // device type, never by magic id values the backend does not produce.
   // Lazily initialized per scenario: single-server labs have no NetApp in
@@ -3848,7 +3899,7 @@ async function installApiMocks(page: Page) {
     if (deviceInventory === null) {
       deviceInventory = [
         inventoryDevice("f2c1a9d0-4b31-4a5e-9d10-000000000001", "cisco_switch", "Cisco Switch", "192.168.1.204"),
-        inventoryDevice("f2c1a9d0-4b31-4a5e-9d10-000000000002", "ilo", "HPE iLO", "192.168.1.201"),
+        inventoryDevice(seededIloDeviceId, "ilo", "HPE iLO", "192.168.1.201"),
         inventoryDevice("f2c1a9d0-4b31-4a5e-9d10-000000000003", "esxi_host", "ESXi Host", "192.168.1.203"),
         ...(labProfileScenario === "single"
           ? []
@@ -4042,26 +4093,59 @@ async function installApiMocks(page: Page) {
       return json(route, ciscoCurrentIntentDiff());
     }
     if (url.pathname === "/api/v1/providers/ilo-redfish/hpe-raid-plan-preview") {
+      if (!url.searchParams.get("device_id")) {
+        return route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: "device_id is required" }) });
+      }
       return json(route, hpeRaidPlanPreview());
     }
     if (url.pathname === "/api/v1/providers/ilo-redfish/hpe-storage-discovery") {
+      if (!url.searchParams.get("device_id")) {
+        return route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: "device_id is required" }) });
+      }
       return json(route, hpeStorageDiscovery());
     }
     if (url.pathname === "/api/v1/providers/ilo-redfish/vsan-readiness") {
+      if (!url.searchParams.get("device_id")) {
+        return route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: "device_id is required" }) });
+      }
       return json(route, hpeVsanReadiness());
     }
     if (url.pathname === "/api/v1/providers/ilo-redfish/access-settings") {
+      const deviceId = url.searchParams.get("device_id") || "";
+      if (!deviceId) {
+        return route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: "device_id is required" }) });
+      }
+      const currentAccess = iloAccessByDeviceId.get(deviceId) ?? iloAccessSettings({
+        device_id: deviceId,
+        fallback_hosts: [],
+        host: null,
+        host_source: "device_credentials",
+        last_probe_message: "This iLO device has not been checked yet.",
+        last_probe_freshness: "not_checked",
+        last_probe_is_current: false,
+        last_probe_status: "not_checked",
+        last_probe_target_fingerprint_present: false,
+        last_probe_target_matches_access_host: false,
+        last_probe_target_matches_configured_candidates: false,
+        last_probe_target_source: null,
+        last_probe_time: null,
+        password_configured: false,
+        username: null,
+        username_configured: false
+      });
       if (request.method() === "PUT") {
         const payload = request.postDataJSON() as { host?: string; username?: string | null; password?: string | null; verify_tls?: boolean };
-        const nextHost = payload.host || activeIloAccess.host;
-        const targetChanged = nextHost.trim().toLowerCase() !== activeIloAccess.host.trim().toLowerCase();
-        activeIloAccess = iloAccessSettings({
-          ...activeIloAccess,
+        const currentHost = String(currentAccess.host || "");
+        const nextHost = payload.host || currentHost;
+        const targetChanged = nextHost.trim().toLowerCase() !== currentHost.trim().toLowerCase();
+        const nextAccess = iloAccessSettings({
+          ...currentAccess,
+          device_id: deviceId,
           host: nextHost,
-          password_configured: Boolean(payload.password || (!targetChanged && activeIloAccess.password_configured)),
-          username: payload.username || (!targetChanged ? activeIloAccess.username : null),
-          username_configured: Boolean(payload.username || (!targetChanged && activeIloAccess.username_configured)),
-          verify_tls: payload.verify_tls ?? activeIloAccess.verify_tls,
+          password_configured: Boolean(payload.password || (!targetChanged && currentAccess.password_configured)),
+          username: payload.username || (!targetChanged ? currentAccess.username : null),
+          username_configured: Boolean(payload.username || (!targetChanged && currentAccess.username_configured)),
+          verify_tls: payload.verify_tls ?? currentAccess.verify_tls,
           ...(targetChanged ? {
             last_probe_message: "This iLO address has not been checked yet.",
             last_probe_freshness: "not_checked",
@@ -4073,9 +4157,15 @@ async function installApiMocks(page: Page) {
             last_probe_time: null
           } : {})
         });
-        return json(route, activeIloAccess);
+        iloAccessByDeviceId.set(deviceId, nextAccess);
+        const devices = seededDeviceInventory();
+        const deviceIndex = devices.findIndex((device) => device.id === deviceId);
+        if (deviceIndex >= 0) {
+          devices[deviceIndex] = { ...devices[deviceIndex], host: nextHost, updated_at: checkedAt };
+        }
+        return json(route, nextAccess);
       }
-      return json(route, activeIloAccess);
+      return json(route, currentAccess);
     }
     if (url.pathname === "/api/v1/providers/ilo-redfish/hpe-raid-pending") {
       return json(route, hpeRaidPending());
@@ -5733,6 +5823,7 @@ function labCredentials() {
 
 function iloSetupIntentFixture(overrides: Record<string, unknown> = {}) {
   return {
+    device_id: "f2c1a9d0-4b31-4a5e-9d10-000000000002",
     provider_id: "ilo-redfish",
     apply_enabled: false,
     created_at: null,
@@ -5808,10 +5899,10 @@ function iloDiscoveredSettingsFixture(overrides: Record<string, unknown> = {}) {
 }
 
 test("iLO settings prefill from device values when nothing is saved yet", async ({ page }) => {
-  await page.route("**/api/v1/providers/ilo-redfish/setup-intent", (route) =>
+  await page.route("**/api/v1/providers/ilo-redfish/setup-intent?*", (route) =>
     json(route, iloSetupIntentFixture())
   );
-  await page.route("**/api/v1/providers/ilo-redfish/discovered-settings", (route) =>
+  await page.route("**/api/v1/providers/ilo-redfish/discovered-settings?*", (route) =>
     json(route, iloDiscoveredSettingsFixture())
   );
 
@@ -5831,7 +5922,7 @@ test("iLO settings prefill from device values when nothing is saved yet", async 
 });
 
 test("saved iLO settings win over discovered device values", async ({ page }) => {
-  await page.route("**/api/v1/providers/ilo-redfish/setup-intent", (route) =>
+  await page.route("**/api/v1/providers/ilo-redfish/setup-intent?*", (route) =>
     json(route, iloSetupIntentFixture({
       created_at: checkedAt,
       updated_at: checkedAt,
@@ -5845,7 +5936,7 @@ test("saved iLO settings win over discovered device values", async ({ page }) =>
       }
     }))
   );
-  await page.route("**/api/v1/providers/ilo-redfish/discovered-settings", (route) =>
+  await page.route("**/api/v1/providers/ilo-redfish/discovered-settings?*", (route) =>
     json(route, iloDiscoveredSettingsFixture())
   );
 
@@ -5870,7 +5961,7 @@ test("saved iLO settings win over discovered device values", async ({ page }) =>
 
 test("editing a prefilled iLO setting saves the operator's value through the unchanged intent path", async ({ page }) => {
   let savedIntentBody: Record<string, unknown> | null = null;
-  await page.route("**/api/v1/providers/ilo-redfish/setup-intent", (route) => {
+  await page.route("**/api/v1/providers/ilo-redfish/setup-intent?*", (route) => {
     if (route.request().method() === "PUT") {
       savedIntentBody = route.request().postDataJSON() as Record<string, unknown>;
       return json(route, iloSetupIntentFixture({
@@ -5881,7 +5972,7 @@ test("editing a prefilled iLO setting saves the operator's value through the unc
     }
     return json(route, iloSetupIntentFixture());
   });
-  await page.route("**/api/v1/providers/ilo-redfish/discovered-settings", (route) =>
+  await page.route("**/api/v1/providers/ilo-redfish/discovered-settings?*", (route) =>
     json(route, iloDiscoveredSettingsFixture())
   );
 
@@ -5928,7 +6019,7 @@ test("clicking a device before the inventory loads still opens its drawer and su
 
 test("iLO DHCP mode shows discovered addresses and saves no static address intent", async ({ page }) => {
   let savedIntentBody: Record<string, unknown> | null = null;
-  await page.route("**/api/v1/providers/ilo-redfish/setup-intent", (route) => {
+  await page.route("**/api/v1/providers/ilo-redfish/setup-intent?*", (route) => {
     if (route.request().method() === "PUT") {
       savedIntentBody = route.request().postDataJSON() as Record<string, unknown>;
       return json(route, iloSetupIntentFixture({
@@ -5939,7 +6030,7 @@ test("iLO DHCP mode shows discovered addresses and saves no static address inten
     }
     return json(route, iloSetupIntentFixture());
   });
-  await page.route("**/api/v1/providers/ilo-redfish/discovered-settings", (route) =>
+  await page.route("**/api/v1/providers/ilo-redfish/discovered-settings?*", (route) =>
     json(route, iloDiscoveredSettingsFixture())
   );
 
@@ -6037,7 +6128,7 @@ test("local RAID draft refuses the live seed when volume members cannot be paire
       }
     })
   );
-  await page.route("**/api/v1/providers/ilo-redfish/hpe-storage-discovery", (route) =>
+  await page.route("**/api/v1/providers/ilo-redfish/hpe-storage-discovery?*", (route) =>
     json(route, mismatched)
   );
 
@@ -6076,7 +6167,7 @@ test("local RAID live seed pairs DL380 cross-view members through hardware finge
       })
     }
   }));
-  await page.route("**/api/v1/providers/ilo-redfish/hpe-storage-discovery", (route) => json(route, crossView));
+  await page.route("**/api/v1/providers/ilo-redfish/hpe-storage-discovery?*", (route) => json(route, crossView));
   await page.goto("/overview");
   await page.getByRole("region", { name: "Lab topology" })
     .getByRole("button", { name: "Local storage offshoot from HPE iLO" }).click();
@@ -6089,7 +6180,7 @@ test("local RAID live seed pairs DL380 cross-view members through hardware finge
 
 function iloAccessSettings(overrides: Record<string, unknown> = {}) {
   return {
-    env_path: ".env.local.real-lab",
+    device_id: "f2c1a9d0-4b31-4a5e-9d10-000000000002",
     fallback_hosts: ["192.168.1.201"],
     host: "192.168.1.201",
     host_source: "active_lab_profile",

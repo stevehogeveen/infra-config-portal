@@ -23,17 +23,17 @@ def test_update_survives_blank_or_bom_lines_in_existing_file(_isolated_env_file:
     # line. Regression for a crash: _write_env_file assumed every existing
     # value was a string and blew up on `None.replace(...)`.
     _isolated_env_file.write_bytes(
-        b"\xef\xbb\xbfLAB_ENVIRONMENT=isolated-real-lab\nILO_TEST_HOST=10.10.8.110\n"
+        b"\xef\xbb\xbfLAB_ENVIRONMENT=isolated-real-lab\nESXI_TEST_HOST=192.0.2.10\n"
     )
 
-    result = lab_credentials.update_lab_credentials({"ilo_host": "192.168.1.201"})
+    result = lab_credentials.update_lab_credentials({"esxi_host": "192.0.2.20"})
 
-    ilo_group = next(g for g in result["groups"] if g["id"] == "ilo")
-    host_field = next(f for f in ilo_group["fields"] if f["field"] == "ilo_host")
-    assert host_field["value"] == "192.168.1.201"
+    esxi_group = next(g for g in result["groups"] if g["id"] == "esxi")
+    host_field = next(f for f in esxi_group["fields"] if f["field"] == "esxi_host")
+    assert host_field["value"] == "192.0.2.20"
 
     on_disk = _isolated_env_file.read_text(encoding="utf-8")
-    assert 'ILO_TEST_HOST="192.168.1.201"' in on_disk
+    assert 'ESXI_TEST_HOST="192.0.2.20"' in on_disk
     # The bogus BOM "key" must not be written back.
     assert "﻿" not in on_disk
 
@@ -48,11 +48,11 @@ def test_update_preserves_unrelated_existing_keys(_isolated_env_file: Path) -> N
         encoding="utf-8",
     )
 
-    lab_credentials.update_lab_credentials({"ilo_host": "192.168.1.201"})
+    lab_credentials.update_lab_credentials({"esxi_host": "192.0.2.20"})
 
     on_disk = _isolated_env_file.read_text(encoding="utf-8")
     assert 'CISCO_TARGET_IP="192.168.1.204"' in on_disk
-    assert 'ILO_TEST_HOST="192.168.1.201"' in on_disk
+    assert 'ESXI_TEST_HOST="192.0.2.20"' in on_disk
 
 
 def test_status_reflects_a_save_immediately_in_the_same_process(_isolated_env_file: Path) -> None:
@@ -60,12 +60,18 @@ def test_status_reflects_a_save_immediately_in_the_same_process(_isolated_env_fi
     # fields with a settings attribute mapping, so a save's own response
     # kept showing the pre-save value until the process actually restarted.
     _isolated_env_file.write_text(
-        'LAB_ENVIRONMENT=isolated-real-lab\nILO_TEST_HOST="10.10.8.110"\n',
+        'LAB_ENVIRONMENT=isolated-real-lab\nESXI_TEST_HOST="192.0.2.10"\n',
         encoding="utf-8",
     )
 
-    result = lab_credentials.update_lab_credentials({"ilo_host": "192.168.1.201"})
+    result = lab_credentials.update_lab_credentials({"esxi_host": "192.0.2.20"})
 
-    ilo_group = next(g for g in result["groups"] if g["id"] == "ilo")
-    host_field = next(f for f in ilo_group["fields"] if f["field"] == "ilo_host")
-    assert host_field["value"] == "192.168.1.201"
+    esxi_group = next(g for g in result["groups"] if g["id"] == "esxi")
+    host_field = next(f for f in esxi_group["fields"] if f["field"] == "esxi_host")
+    assert host_field["value"] == "192.0.2.20"
+
+
+def test_ilo_fields_are_no_longer_global_lab_credentials() -> None:
+    assert "ilo" not in {group["id"] for group in lab_credentials.CREDENTIAL_GROUPS}
+    with pytest.raises(lab_credentials.LabCredentialsError, match="No credential values"):
+        lab_credentials.update_lab_credentials({"ilo_host": "192.0.2.30"})

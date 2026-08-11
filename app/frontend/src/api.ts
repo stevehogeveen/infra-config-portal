@@ -278,43 +278,43 @@ export const api = {
     apiRequest<ArtifactRecord[]>(`/api/v1/workflow-runs/${id}/artifacts`),
   auditEvents: (timeoutMs?: number) => apiRequest<AuditEvent[]>("/api/v1/audit-events", { timeoutMs }),
   mediaInventory: () => apiRequest<MediaInventory>("/api/v1/media-inventory"),
-  iloUpgradeReadiness: () =>
-    apiRequest<IloUpgradeReadiness>("/api/v1/providers/ilo-redfish/upgrade-readiness"),
-  iloBaselinePreview: () =>
-    apiRequest<IloBaselinePreview>("/api/v1/providers/hpe-ilo/baseline-preview"),
-  iloBaselineReadiness: () =>
-    apiRequest<IloBaselineReadiness>("/api/v1/providers/hpe-ilo/readiness"),
-  iloSetupIntent: () =>
-    apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent"),
-  iloDiscoveredSettings: () =>
-    apiRequest<IloDiscoveredSettings>("/api/v1/providers/ilo-redfish/discovered-settings"),
-  saveIloSetupIntent: (payload: IloSetupIntentWrite) =>
-    apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent", {
+  iloUpgradeReadiness: (deviceId: string) =>
+    apiRequest<IloUpgradeReadiness>(`/api/v1/providers/ilo-redfish/upgrade-readiness?device_id=${encodeURIComponent(deviceId)}`),
+  iloBaselinePreview: (deviceId: string) =>
+    apiRequest<IloBaselinePreview>(`/api/v1/providers/hpe-ilo/baseline-preview?device_id=${encodeURIComponent(deviceId)}`),
+  iloBaselineReadiness: (deviceId: string) =>
+    apiRequest<IloBaselineReadiness>(`/api/v1/providers/hpe-ilo/readiness?device_id=${encodeURIComponent(deviceId)}`),
+  iloSetupIntent: (deviceId: string) =>
+    apiRequest<IloSetupIntent>(`/api/v1/providers/ilo-redfish/setup-intent?device_id=${encodeURIComponent(deviceId)}`),
+  iloDiscoveredSettings: (deviceId: string) =>
+    apiRequest<IloDiscoveredSettings>(`/api/v1/providers/ilo-redfish/discovered-settings?device_id=${encodeURIComponent(deviceId)}`),
+  saveIloSetupIntent: (deviceId: string, payload: IloSetupIntentWrite) =>
+    apiRequest<IloSetupIntent>(`/api/v1/providers/ilo-redfish/setup-intent?device_id=${encodeURIComponent(deviceId)}`, {
       method: "PUT",
       body: payload
     }),
-  iloAccessSettings: () =>
-    apiRequest<IloAccessSettings>("/api/v1/providers/ilo-redfish/access-settings"),
-  saveIloAccessSettings: (payload: IloAccessSettingsWrite) =>
-    apiRequest<IloAccessSettings>("/api/v1/providers/ilo-redfish/access-settings", {
+  iloAccessSettings: (deviceId: string) =>
+    apiRequest<IloAccessSettings>(`/api/v1/providers/ilo-redfish/access-settings?device_id=${encodeURIComponent(deviceId)}`),
+  saveIloAccessSettings: (deviceId: string, payload: IloAccessSettingsWrite) =>
+    apiRequest<IloAccessSettings>(`/api/v1/providers/ilo-redfish/access-settings?device_id=${encodeURIComponent(deviceId)}`, {
       method: "PUT",
       body: payload
     }),
-  iloSetupPlanPreview: () =>
-    apiRequest<IloSetupPlanPreview>("/api/v1/providers/ilo-redfish/setup-plan-preview"),
-  hpeStorageDiscovery: () =>
-    apiRequest<HpeStorageDiscovery>("/api/v1/providers/ilo-redfish/hpe-storage-discovery"),
-  hpeVsanReadiness: () =>
-    apiRequest<HpeVsanReadiness>("/api/v1/providers/ilo-redfish/vsan-readiness"),
-  hpeRaidIntent: () =>
-    apiRequest<HpeRaidIntent>("/api/v1/providers/ilo-redfish/hpe-raid-intent"),
-  saveHpeRaidIntent: (payload: HpeRaidIntentWrite) =>
-    apiRequest<HpeRaidIntent>("/api/v1/providers/ilo-redfish/hpe-raid-intent", {
+  iloSetupPlanPreview: (deviceId: string) =>
+    apiRequest<IloSetupPlanPreview>(`/api/v1/providers/ilo-redfish/setup-plan-preview?device_id=${encodeURIComponent(deviceId)}`),
+  hpeStorageDiscovery: (deviceId: string) =>
+    apiRequest<HpeStorageDiscovery>(`/api/v1/providers/ilo-redfish/hpe-storage-discovery?device_id=${encodeURIComponent(deviceId)}`),
+  hpeVsanReadiness: (deviceId: string) =>
+    apiRequest<HpeVsanReadiness>(`/api/v1/providers/ilo-redfish/vsan-readiness?device_id=${encodeURIComponent(deviceId)}`),
+  hpeRaidIntent: (deviceId: string) =>
+    apiRequest<HpeRaidIntent>(`/api/v1/providers/ilo-redfish/hpe-raid-intent?device_id=${encodeURIComponent(deviceId)}`),
+  saveHpeRaidIntent: (deviceId: string, payload: HpeRaidIntentWrite) =>
+    apiRequest<HpeRaidIntent>(`/api/v1/providers/ilo-redfish/hpe-raid-intent?device_id=${encodeURIComponent(deviceId)}`, {
       method: "PUT",
       body: payload
     }),
-  hpeRaidPlanPreview: () =>
-    apiRequest<HpeRaidPlanPreview>("/api/v1/providers/ilo-redfish/hpe-raid-plan-preview"),
+  hpeRaidPlanPreview: (deviceId: string) =>
+    apiRequest<HpeRaidPlanPreview>(`/api/v1/providers/ilo-redfish/hpe-raid-plan-preview?device_id=${encodeURIComponent(deviceId)}`),
   hpeRaidApplyPlan: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-apply-plan"),
   applyHpeRaidPlan: (confirmation_phrase: string, ilo_host: string) =>
@@ -613,6 +613,8 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/providers/cisco-console/prompt-readiness", {
       method: "POST"
     }),
-  probeProvider: (id: string) =>
-    apiRequest<ProviderProbeResult>(`/api/v1/providers/${id}/probe`, { method: "POST" })
+  probeProvider: (id: string, deviceId?: string | null) => {
+    const params = id === "ilo-redfish" && deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : "";
+    return apiRequest<ProviderProbeResult>(`/api/v1/providers/${id}/probe${params}`, { method: "POST" });
+  }
 };

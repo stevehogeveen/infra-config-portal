@@ -14675,3 +14675,35 @@ for Cisco/NetApp/vCenter/ESXi while we keep simplifying the individual device co
 next refinement is not another page; it is to split ESXi from the server/local-storage content more
 cleanly inside this rack-side panel, then give local storage the graphical RAID editor as its own
 iLO/server offshoot beside the rack.
+
+## 2026-08-11T12:42:29-04:00 - CODEX (052 per-device iLO credentials continued)
+
+Continued the in-progress 052 implementation without committing. The old iLO model was a singleton:
+access settings came from one `.env.local.real-lab` key set, and iLO setup/RAID intent rows were keyed
+only by provider. This slice keeps the existing JSON-blob intent style but scopes credentials, setup
+intent, and RAID intent by `device_id`.
+
+Current shape:
+- New local `ilo_device_credentials` table is keyed by `device_id`; passwords stay in local DB JSON
+  with the same local-only care level as the previous ignored env file, and API reads return only
+  configured/redacted state.
+- `ilo_setup_intents` and `hpe_raid_intents` now include `device_id` in the key. Backend iLO access,
+  setup, RAID intent/preview, readiness, storage discovery, vSAN readiness, provider probe, workflow
+  action runner, and lab-build readiness paths resolve a selected iLO device before reading hardware
+  evidence or cached proof.
+- Migration/startup compatibility imports legacy env credentials once, only into the existing iLO
+  inventory row whose host matches `ILO_TEST_HOST`. A no-match is recorded so stale env values cannot
+  be revived later by adding a matching device.
+- Frontend calls now thread the selected rack iLO device id through access settings, setup intent,
+  storage discovery, vSAN readiness, RAID intent/preview, and the remaining provider probe path.
+  The rack-side two-iLO Playwright case saves different values, reloads, and confirms isolation.
+- Route-mock audit: production frontend source has no bare calls to the scoped iLO setup/access/storage
+  endpoints. The central Playwright mock returns 422 if `device_id` is missing, and the specific
+  `?*` overrides now match query-string calls rather than hiding missing-device requests.
+
+Verification: backend ruff passed. 052 core + lab-build backend tests passed 42/42; workflow-action
+iLO/RAID/cache/trace subset passed 21/21 selected; hpe-vSAN/lab-credentials follow-up passed 11/11.
+Frontend production build passed, and focused Playwright for two-iLO isolation, iLO setup threading,
+and local RAID discovery passed 9/9. Full `test_workflow_action_runner.py` still exceeds the Windows
+tool timeout as a whole file, but the task-touched workflow/cache subset is green with a short
+basetemp. No hardware workflow was run; all Codex-run tests used `PROVIDER_MODE=mock`.

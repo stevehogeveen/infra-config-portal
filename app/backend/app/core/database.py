@@ -50,9 +50,14 @@ def get_session() -> Generator[Session, None, None]:
 
 def init_database() -> None:
     from app import models  # noqa: F401
+    from app.services.device_inventory import seed_legacy_devices
+    from app.services.ilo_device_storage import ensure_per_device_ilo_storage
 
     Base.metadata.create_all(bind=engine)
     ensure_device_inventory_dhcp_column(engine)
+    with SessionLocal() as session:
+        seed_legacy_devices(session)
+    ensure_per_device_ilo_storage(engine)
 
 
 def ensure_device_inventory_dhcp_column(target_engine: Engine) -> None:

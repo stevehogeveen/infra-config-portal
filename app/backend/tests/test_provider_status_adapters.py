@@ -12,6 +12,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from app.models import DeviceInventory
 from app.providers import cisco_console as cisco_console_module
 from app.providers import cisco_ansible as cisco_ansible_module
 from app.providers import ilo_redfish as ilo_redfish_module
@@ -2541,6 +2542,38 @@ def test_ilo_health_uses_failed_cached_probe_status(monkeypatch) -> None:
     assert status.configuration["last_probe_target_matches_configured_candidates"] is True
 
 
+def test_ilo_health_does_not_apply_another_target_failure(monkeypatch) -> None:
+    clear_probe_results()
+    _allow_readonly_ilo_lab(monkeypatch)
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "failed",
+            "message": "Another iLO target is unreachable.",
+            "target_fingerprint": ilo_redfish_module.ilo_target_fingerprint(
+                "192.0.2.201"
+            ),
+            "blockers": ["Another target routing blocker."],
+        },
+    )
+    adapter = IloRedfishAdapter(
+        provider_mode="local-readonly",
+        config=IloRedfishConfig(
+            host="192.0.2.202",
+            username="local-admin",
+            password="mock-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    status = adapter.health()
+
+    assert status.status == "target_mismatch"
+    assert "Another target routing blocker." not in status.blockers
+
+
 def test_ilo_health_rejects_successful_probe_without_current_target_fingerprint(monkeypatch) -> None:
     clear_probe_results()
     _allow_readonly_ilo_lab(monkeypatch)
@@ -2697,6 +2730,18 @@ def test_ilo_redfish_member_paths_dedupe_trailing_slash_variants() -> None:
     ]
 
 
+def _save_test_ilo_setup_intent(db_session, payload) -> str:  # noqa: ANN001
+    device = DeviceInventory(
+        device_type="ilo",
+        display_name="Mock setup apply iLO",
+        host="192.168.1.11",
+    )
+    db_session.add(device)
+    db_session.flush()
+    save_ilo_setup_intent(db_session, device.id, payload)
+    return device.id
+
+
 def test_ilo_setup_apply_blocks_hostname_patch_in_local_readonly(
     db_session,
     monkeypatch,
@@ -2729,7 +2774,7 @@ def test_ilo_setup_apply_blocks_hostname_patch_in_local_readonly(
         after_hostname="lab-ilo-host",
         patch_bodies=patch_bodies,
     )
-    save_ilo_setup_intent(
+    _save_test_ilo_setup_intent(
         db_session,
         IloSetupIntentWrite(network=IloNetworkIntent(hostname="lab-ilo-host")),
     )
@@ -2782,7 +2827,7 @@ def test_ilo_setup_apply_blocks_ip_changes_and_does_not_patch(
         after_hostname="lab-ilo-host",
         patch_bodies=patch_bodies,
     )
-    save_ilo_setup_intent(
+    _save_test_ilo_setup_intent(
         db_session,
         IloSetupIntentWrite(
             network=IloNetworkIntent(
@@ -3268,7 +3313,7 @@ def test_ilo_setup_apply_allows_hostname_patch_in_local_lab_readwrite(
         after_hostname="lab-ilo-host",
         patch_bodies=patch_bodies,
     )
-    save_ilo_setup_intent(
+    _save_test_ilo_setup_intent(
         db_session,
         IloSetupIntentWrite(network=IloNetworkIntent(hostname="lab-ilo-host")),
     )

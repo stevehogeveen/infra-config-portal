@@ -5,6 +5,7 @@ import os
 from sqlalchemy import create_engine, text
 
 from app.core.database import ensure_device_inventory_dhcp_column
+from app.models import HpeRaidIntent, IloDeviceCredential, IloSetupIntent
 
 
 def test_device_inventory_seeds_existing_four_devices(client) -> None:
@@ -185,6 +186,43 @@ def test_custom_dhcp_device_keeps_last_known_host_without_a_source(client) -> No
 def test_device_inventory_missing_device_is_404(client) -> None:
     assert client.patch("/api/v1/device-inventory/missing", json={"display_name": "Nope"}).status_code == 404
     assert client.delete("/api/v1/device-inventory/missing").status_code == 404
+
+
+def test_deleting_ilo_device_removes_credentials_and_intents(client, db_session) -> None:
+    created = client.post(
+        "/api/v1/device-inventory",
+        json={
+            "device_type": "ilo",
+            "display_name": "Disposable mock iLO",
+            "host": "192.0.2.93",
+            "dhcp_enabled": False,
+        },
+    )
+    assert created.status_code == 201
+    device_id = created.json()["id"]
+    query = {"device_id": device_id}
+    assert client.put(
+        "/api/v1/providers/ilo-redfish/access-settings",
+        params=query,
+        json={"username": "Mock-Admin", "password": "mock-password"},
+    ).status_code == 200
+    assert client.put(
+        "/api/v1/providers/ilo-redfish/setup-intent",
+        params=query,
+        json={"notes": "Remove with the device"},
+    ).status_code == 200
+    assert client.put(
+        "/api/v1/providers/ilo-redfish/hpe-raid-intent",
+        params=query,
+        json={"notes": "Remove with the device"},
+    ).status_code == 200
+
+    assert client.delete(f"/api/v1/device-inventory/{device_id}").status_code == 200
+
+    db_session.expire_all()
+    assert db_session.get(IloDeviceCredential, device_id) is None
+    assert db_session.get(IloSetupIntent, (device_id, "ilo-redfish")) is None
+    assert db_session.get(HpeRaidIntent, (device_id, "ilo-redfish")) is None
 
 
 def test_deleting_every_seeded_device_does_not_reseed(client) -> None:

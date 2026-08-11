@@ -1141,6 +1141,7 @@ class IloSetupIntentWrite(BaseModel):
 
 
 class IloSetupIntentRead(IloSetupIntentWrite):
+    device_id: str
     provider_id: str
     apply_enabled: bool = False
     created_at: datetime | None = None
@@ -1155,6 +1156,7 @@ class IloAccessSettingsWrite(BaseModel):
 
 
 class IloAccessSettingsRead(BaseModel):
+    device_id: str
     provider_id: str
     host: str | None = None
     host_source: str
@@ -1163,7 +1165,6 @@ class IloAccessSettingsRead(BaseModel):
     username_configured: bool = False
     password_configured: bool = False
     verify_tls: bool = True
-    env_path: str
     updated_at: str | None = None
     last_probe_status: str = "not_checked"
     last_probe_time: str | None = None
@@ -1202,6 +1203,7 @@ class HpeRaidIntentWrite(BaseModel):
 
 
 class HpeRaidIntentRead(HpeRaidIntentWrite):
+    device_id: str
     provider_id: str
     apply_enabled: bool = False
     created_at: datetime | None = None
@@ -1605,9 +1607,6 @@ class LabCredentialsRead(BaseModel):
 class LabCredentialsWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    ilo_host: str | None = None
-    ilo_username: str | None = None
-    ilo_password: str | None = None
     esxi_host: str | None = None
     esxi_username: str | None = None
     esxi_password: str | None = None
@@ -2505,7 +2504,16 @@ class WorkflowActionRunCreate(BaseModel):
     confirmation_phrase: str | None = None
     confirmed_gates: list[str] = Field(default_factory=list)
     cisco_commands: list[str] = Field(default_factory=list, max_length=4)
+    device_id: str | None = Field(default=None, max_length=36)
     ilo_host: str | None = Field(default=None, max_length=80)
+
+    @field_validator("device_id", mode="before")
+    @classmethod
+    def strip_device_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
     @field_validator("ilo_host", mode="before")
     @classmethod

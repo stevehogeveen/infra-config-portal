@@ -4,7 +4,12 @@ from datetime import UTC, datetime, timedelta
 from ipaddress import IPv4Address, IPv4Network, ip_address, ip_network
 from typing import Any
 
-from app.providers.ilo_redfish import IloRedfishAdapter, PROVIDER_ID as ILO_REDFISH_PROVIDER_ID
+from app.providers.ilo_redfish import (
+    IloRedfishAdapter,
+    IloRedfishConfig,
+    PROVIDER_ID as ILO_REDFISH_PROVIDER_ID,
+    ilo_target_fingerprint,
+)
 from app.providers.probe_cache import get_probe_result
 from app.schemas import (
     IloBaselineBlockerRead,
@@ -31,12 +36,21 @@ DEFAULT_TIMEZONE = "Eastern"
 STALE_AFTER = timedelta(hours=24)
 
 
-def get_ilo_baseline_preview() -> IloBaselinePreviewRead:
+def get_ilo_baseline_preview(
+    config: IloRedfishConfig | None = None,
+) -> IloBaselinePreviewRead:
     generated_at = datetime.now(UTC)
     profile_context = active_lab_profile_context()
     profile = profile_context["active_profile"]
     probe_result, probe_checked_at = get_probe_result(ILO_REDFISH_PROVIDER_ID)
-    provider_status = IloRedfishAdapter().health()
+    if config is not None and not _probe_matches_config(probe_result, config):
+        probe_result = None
+        probe_checked_at = None
+    provider_status = (
+        IloRedfishAdapter(config=config).health()
+        if config is not None
+        else IloRedfishAdapter().health()
+    )
     metadata = _source_metadata(probe_result, probe_checked_at, generated_at)
     kit_profile = _kit_profile(profile, generated_at)
     discovery_range = _discovery_range(kit_profile, generated_at)
@@ -95,8 +109,10 @@ def get_ilo_baseline_preview() -> IloBaselinePreviewRead:
     )
 
 
-def get_ilo_baseline_readiness() -> IloBaselineReadinessRead:
-    preview = get_ilo_baseline_preview()
+def get_ilo_baseline_readiness(
+    config: IloRedfishConfig | None = None,
+) -> IloBaselineReadinessRead:
+    preview = get_ilo_baseline_preview(config=config)
     return IloBaselineReadinessRead(
         provider_id=preview.provider_id,
         source_provider_id=preview.source_provider_id,
@@ -232,7 +248,7 @@ def _connection_readiness(
             None,
             "live",
             "iLO target is represented only as a configured/missing flag.",
-            "Set ILO_TEST_HOST locally, then rerun readiness.",
+            "Save the selected iLO device host, then rerun readiness.",
         ),
         _readiness_check(
             "Credential references",
@@ -249,7 +265,7 @@ def _connection_readiness(
             None,
             "live",
             "Login/configuration state is redacted; no username or password is returned.",
-            "Set local iLO credential references, then rerun readiness.",
+            "Save credentials for the selected iLO device, then rerun readiness.",
         ),
         _readiness_check(
             "Ping reachability",
@@ -574,8 +590,8 @@ def _blockers(provider_status: Any) -> list[IloBaselineBlockerRead]:
                 source=ILO_REDFISH_PROVIDER_ID,
                 current_value=provider_status.status,
                 expected_value="configured local iLO target and credential references",
-                where_to_fix=".env.local.real-lab",
-                recommended_action="Configure missing local iLO settings, then rerun readiness.",
+                where_to_fix="selected iLO device access settings",
+                recommended_action="Configure the selected iLO device, then rerun readiness.",
                 copyable_command=RECHECK_COMMAND,
                 recheck_command=RECHECK_COMMAND,
                 evidence_links=[],
@@ -614,6 +630,21 @@ def _source_metadata(
     if checked is not None and now - checked <= STALE_AFTER:
         freshness = "live"
     return {"source_type": "live_cached", "checked_at": probe_checked_at, "freshness": freshness}
+
+
+def _probe_matches_config(
+    probe_result: dict[str, Any] | None,
+    config: IloRedfishConfig,
+) -> bool:
+    if not isinstance(probe_result, dict):
+        return False
+    target_fingerprint = str(probe_result.get("target_fingerprint") or "")
+    configured_fingerprints = {
+        fingerprint
+        for candidate in config.target_candidates
+        if (fingerprint := ilo_target_fingerprint(candidate.get("host")))
+    }
+    return bool(target_fingerprint and target_fingerprint in configured_fingerprints)
 
 
 def _section(

@@ -92,7 +92,15 @@ def _run_plan(*, default_esxi_intent: bool) -> int:
             intent = get_hpe_raid_intent(session)
             discovery = get_hpe_storage_discovery()
             if not intent.volumes:
-                save_hpe_raid_intent(session, _default_esxi_intent(discovery.model_dump()))
+                if not intent.device_id:
+                    raise RuntimeError(
+                        "Select exactly one inventory iLO before saving the default RAID intent."
+                    )
+                save_hpe_raid_intent(
+                    session,
+                    intent.device_id,
+                    _default_esxi_intent(discovery.model_dump()),
+                )
         preview = get_hpe_raid_plan_preview(session)
         apply_plan = build_hpe_raid_apply_plan(session)
     report = _sanitize(

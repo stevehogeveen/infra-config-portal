@@ -3,12 +3,17 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import DeviceInventory, DeviceInventoryState
-from app.services.ilo_access_settings import read_ilo_access_settings
+from app.models import (
+    DeviceInventory,
+    DeviceInventoryState,
+    HpeRaidIntent,
+    IloDeviceCredential,
+    IloSetupIntent,
+)
 
 
 class DeviceInventoryNotFoundError(LookupError):
@@ -39,8 +44,7 @@ def _seed_devices() -> tuple[tuple[str, str, str, str], ...]:
 
 
 def list_devices(session: Session) -> list[DeviceInventory]:
-    _seed_legacy_devices(session)
-    _sync_primary_ilo_host(session)
+    seed_legacy_devices(session)
     _sync_dhcp_observed_hosts(session)
     return list(session.scalars(select(DeviceInventory).order_by(DeviceInventory.created_at, DeviceInventory.id)))
 
@@ -73,11 +77,16 @@ def delete_device(session: Session, device_id: str) -> None:
     device = session.get(DeviceInventory, device_id)
     if device is None:
         raise DeviceInventoryNotFoundError(device_id)
+    # SQLite does not enforce ON DELETE CASCADE unless a connection-level
+    # pragma is enabled. Delete sensitive/device-scoped rows explicitly so
+    # the normal local runtime cannot leave credentials or intents orphaned.
+    for model in (IloDeviceCredential, IloSetupIntent, HpeRaidIntent):
+        session.execute(delete(model).where(model.device_id == device_id))
     session.delete(device)
     session.commit()
 
 
-def _seed_legacy_devices(session: Session) -> None:
+def seed_legacy_devices(session: Session) -> None:
     if session.get(DeviceInventoryState, "legacy-seed-v1") is not None:
         return
     # The marker is not the only source of truth: a crashed or concurrent
@@ -108,16 +117,6 @@ def _seed_legacy_devices(session: Session) -> None:
         session.rollback()
 
 
-def _sync_primary_ilo_host(session: Session) -> None:
-    device = session.scalar(select(DeviceInventory).where(DeviceInventory.seed_key == "ilo-primary"))
-    if device is None:
-        return
-    canonical_host = read_ilo_access_settings().get("host")
-    if device.host != canonical_host:
-        device.host = canonical_host
-        session.commit()
-
-
 # Where a DHCP device's observed address comes from, per seeded device. These
 # are the same provider-config sources the seed used: the address the app is
 # actually using to reach the device right now.
@@ -134,9 +133,8 @@ def _sync_dhcp_observed_hosts(session: Session) -> None:
 
     Only DHCP devices are touched: their host is observed evidence, owned by
     the app. A static device's host belongs to the operator and is never
-    overwritten here. (The iLO is the exception — its host is always synced
-    from access settings by _sync_primary_ilo_host, in either mode, because
-    access settings ARE the operator's edit surface for it.)
+    overwritten here. iLO access updates synchronize only their selected
+    inventory row in ilo_access_settings.
 
     Custom (non-seeded) DHCP devices have no observation source yet, so their
     last-known host is left as-is.

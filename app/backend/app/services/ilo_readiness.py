@@ -40,6 +40,7 @@ from app.schemas import (
     IloSetupPlanSectionRead,
 )
 from app.services.list_utils import unique_preserving_order, unique_strings
+from app.services.ilo_access_settings import ilo_device_ids, require_ilo_device
 from app.services.media_inventory import get_media_inventory
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
 
@@ -70,16 +71,23 @@ DESTRUCTIVE_SAFE_NEXT_ACTION = (
 )
 
 
-def get_ilo_setup_intent(session: Session) -> IloSetupIntentRead:
-    record = session.get(IloSetupIntent, PROVIDER_ID)
+def get_ilo_setup_intent(
+    session: Session,
+    device_id: str | None = None,
+) -> IloSetupIntentRead:
+    resolved_device_id = _resolve_ilo_device_id(session, device_id)
+    if resolved_device_id is None:
+        return _intent_read(IloSetupIntentWrite(), device_id="")
+    record = session.get(IloSetupIntent, (resolved_device_id, PROVIDER_ID))
     if record is None:
-        return _intent_read(IloSetupIntentWrite())
+        return _intent_read(IloSetupIntentWrite(), device_id=resolved_device_id)
     try:
         payload = IloSetupIntentWrite.model_validate(record.intent_json)
     except ValueError:
-        return _intent_read(IloSetupIntentWrite())
+        return _intent_read(IloSetupIntentWrite(), device_id=resolved_device_id)
     return _intent_read(
         payload,
+        device_id=resolved_device_id,
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
@@ -87,11 +95,17 @@ def get_ilo_setup_intent(session: Session) -> IloSetupIntentRead:
 
 def save_ilo_setup_intent(
     session: Session,
+    device_id: str,
     payload: IloSetupIntentWrite,
 ) -> IloSetupIntentRead:
-    record = session.get(IloSetupIntent, PROVIDER_ID)
+    require_ilo_device(session, device_id)
+    record = session.get(IloSetupIntent, (device_id, PROVIDER_ID))
     if record is None:
-        record = IloSetupIntent(provider_id=PROVIDER_ID, intent_json=payload.model_dump())
+        record = IloSetupIntent(
+            device_id=device_id,
+            provider_id=PROVIDER_ID,
+            intent_json=payload.model_dump(),
+        )
         session.add(record)
     else:
         record.intent_json = payload.model_dump()
@@ -100,17 +114,31 @@ def save_ilo_setup_intent(
     session.refresh(record)
     return _intent_read(
         IloSetupIntentWrite.model_validate(record.intent_json),
+        device_id=device_id,
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
 
 
-def get_ilo_readiness_summary() -> IloReadinessSummaryRead:
-    status = IloRedfishAdapter().health()
-    probe_result, probe_time = get_probe_result(PROVIDER_ID)
+def get_ilo_readiness_summary(
+    config: IloRedfishConfig | None = None,
+) -> IloReadinessSummaryRead:
+    status = (
+        IloRedfishAdapter(config=config).health()
+        if config is not None
+        else IloRedfishAdapter().health()
+    )
+    probe_result, probe_time = _cached_probe_for_config(config)
     media_inventory = get_media_inventory()
-    firmware_readiness = get_ilo_upgrade_readiness()
-    config = status.configuration
+    firmware_readiness = (
+        get_ilo_upgrade_readiness(
+            probe_result,
+            use_cached_probe=False,
+        )
+        if config is not None
+        else get_ilo_upgrade_readiness()
+    )
+    configuration = status.configuration
     endpoint_detection = _endpoint_detection(probe_result)
     endpoint_classification = str(endpoint_detection.get("classification") or "not_checked")
 
@@ -119,19 +147,19 @@ def get_ilo_readiness_summary() -> IloReadinessSummaryRead:
         connection=IloConnectionReadinessRead(
             provider_mode=status.mode,
             provider_status=status.status,
-            host_configured=bool(config.get("host_configured")),
-            username_configured=bool(config.get("username_configured")),
-            password_configured=bool(config.get("password_configured")),
-            tls_verify=bool(config.get("tls_verify")),
-            timeout_seconds=float(config.get("timeout_seconds") or 0),
-            missing_fields=_string_list(config.get("missing_fields")),
+            host_configured=bool(configuration.get("host_configured")),
+            username_configured=bool(configuration.get("username_configured")),
+            password_configured=bool(configuration.get("password_configured")),
+            tls_verify=bool(configuration.get("tls_verify")),
+            timeout_seconds=float(configuration.get("timeout_seconds") or 0),
+            missing_fields=_string_list(configuration.get("missing_fields")),
             redfish_probe_available=any(
                 action.id == "probe-ilo-redfish" and action.enabled
                 for action in status.safe_actions
             ),
             safety_flags={
                 key: value
-                for key, value in config.items()
+                for key, value in configuration.items()
                 if key.startswith("lab_") or key.endswith("_ack") or key == "readonly_allowed"
             },
         ),
@@ -179,7 +207,7 @@ def get_ilo_readiness_summary() -> IloReadinessSummaryRead:
             IloReportArtifactPlaceholderRead(
                 kind="readiness-report",
                 title="iLO Readiness Report",
-                status="current" if status.last_probe_time else "unavailable",
+                status="current" if probe_time else "unavailable",
                 note=(
                     "Current when cached GET-only discovery exists; otherwise shows connection flags, "
                     "blockers, warnings, and plan-only decisions without live evidence."
@@ -208,10 +236,18 @@ def get_ilo_readiness_summary() -> IloReadinessSummaryRead:
     )
 
 
-def get_ilo_setup_plan_preview(session: Session | None = None) -> IloSetupPlanPreviewRead:
-    summary = get_ilo_readiness_summary()
+def get_ilo_setup_plan_preview(
+    session: Session | None = None,
+    device_id: str | None = None,
+    config: IloRedfishConfig | None = None,
+) -> IloSetupPlanPreviewRead:
+    summary = get_ilo_readiness_summary(config=config)
     decision = summary.firmware_readiness.decision
-    intent = get_ilo_setup_intent(session) if session is not None else _intent_read(IloSetupIntentWrite())
+    intent = (
+        get_ilo_setup_intent(session, device_id)
+        if session is not None
+        else _intent_read(IloSetupIntentWrite(), device_id="")
+    )
 
     return IloSetupPlanPreviewRead(
         provider_id=PROVIDER_ID,
@@ -355,8 +391,10 @@ def get_ilo_setup_plan_preview(session: Session | None = None) -> IloSetupPlanPr
     )
 
 
-def get_ilo_destructive_rebuild_preview() -> IloDestructiveRebuildPreviewRead:
-    summary = get_ilo_readiness_summary()
+def get_ilo_destructive_rebuild_preview(
+    config: IloRedfishConfig | None = None,
+) -> IloDestructiveRebuildPreviewRead:
+    summary = get_ilo_readiness_summary(config=config)
     identity = _destructive_target_identity(summary)
     requirements = _destructive_rebuild_requirements(summary, identity)
     real_change_lanes = _real_change_lanes(identity)
@@ -537,13 +575,18 @@ def _real_change_lane(
     )
 
 
-def get_ilo_setup_compare(session: Session) -> IloSetupCompareReportRead:
-    summary = get_ilo_readiness_summary()
-    intent = get_ilo_setup_intent(session)
-    network_identity = _discovered_network_identity()
-    discovered_license_status = _discovered_license_status()
-    time_and_dns = _discovered_time_and_dns()
-    discovered_usernames = _discovered_local_usernames()
+def get_ilo_setup_compare(
+    session: Session,
+    device_id: str | None = None,
+    config: IloRedfishConfig | None = None,
+) -> IloSetupCompareReportRead:
+    summary = get_ilo_readiness_summary(config=config)
+    intent = get_ilo_setup_intent(session, device_id)
+    probe_result, _ = _cached_probe_for_config(config)
+    network_identity = _discovered_network_identity(probe_result)
+    discovered_license_status = _discovered_license_status(probe_result)
+    time_and_dns = _discovered_time_and_dns(probe_result)
+    discovered_usernames = _discovered_local_usernames(probe_result)
     sections = [
         _compare_section(
             "network",
@@ -861,12 +904,16 @@ def get_ilo_setup_compare(session: Session) -> IloSetupCompareReportRead:
     )
 
 
-def get_ilo_report_preview(session: Session) -> IloReportPreviewRead:
-    summary = get_ilo_readiness_summary()
-    intent = get_ilo_setup_intent(session)
-    compare = get_ilo_setup_compare(session)
-    plan = get_ilo_setup_plan_preview(session)
-    destructive_preview = get_ilo_destructive_rebuild_preview()
+def get_ilo_report_preview(
+    session: Session,
+    device_id: str | None = None,
+    config: IloRedfishConfig | None = None,
+) -> IloReportPreviewRead:
+    summary = get_ilo_readiness_summary(config=config)
+    intent = get_ilo_setup_intent(session, device_id)
+    compare = get_ilo_setup_compare(session, device_id, config=config)
+    plan = get_ilo_setup_plan_preview(session, device_id, config=config)
+    destructive_preview = get_ilo_destructive_rebuild_preview(config=config)
     media_inventory = get_media_inventory()
 
     return IloReportPreviewRead(
@@ -1510,7 +1557,9 @@ def _unredact(value: Any, replacement: str | None = None) -> str | None:
     return value
 
 
-def get_ilo_discovered_settings() -> IloDiscoveredSettingsRead:
+def get_ilo_discovered_settings(
+    config: IloRedfishConfig | None = None,
+) -> IloDiscoveredSettingsRead:
     """Raw current values from the cached read-only probe, for operator prefill.
 
     Unlike setup-compare (a shareable report, which redacts real values behind
@@ -1525,15 +1574,13 @@ def get_ilo_discovered_settings() -> IloDiscoveredSettingsRead:
     the probe, the whole payload stays empty rather than attributing one
     device's config to another's address.
     """
+    device_scoped = config is not None
+    config = config or IloRedfishConfig.from_settings()
     probe_result, probe_time = get_probe_result(PROVIDER_ID)
     result = IloDiscoveredSettingsRead(provider_id=PROVIDER_ID, probe_time=probe_time)
-    if not isinstance(probe_result, dict) or probe_result.get("status") != "ok":
+    if not isinstance(probe_result, dict):
         return result
 
-    config = IloRedfishConfig.from_settings()
-    result.freshness = (
-        str(probe_result["freshness"]) if probe_result.get("freshness") else None
-    )
     cached_fingerprint = probe_result.get("target_fingerprint")
     current_fingerprint = ilo_target_fingerprint(config.host)
     if cached_fingerprint and current_fingerprint:
@@ -1541,8 +1588,15 @@ def get_ilo_discovered_settings() -> IloDiscoveredSettingsRead:
     # The cached probe belongs to a different target than the operator's
     # current access host — presenting its values as "this device's current
     # settings" would attribute device A's config to device B. Stay empty.
+    if device_scoped and result.target_matches_current_access is not True:
+        return result
     if result.target_matches_current_access is False:
         return result
+    if probe_result.get("status") != "ok":
+        return result
+    result.freshness = (
+        str(probe_result["freshness"]) if probe_result.get("freshness") else None
+    )
     # Substituting REDACTED cache values from the operator's own saved access
     # settings is only honest when the cache provably came from that target.
     substitution_allowed = result.target_matches_current_access is True
@@ -1633,8 +1687,28 @@ def get_ilo_discovered_settings() -> IloDiscoveredSettingsRead:
     return result
 
 
-def _discovered_network_identity() -> dict[str, Any] | None:
-    probe_result, _ = get_probe_result(PROVIDER_ID)
+def _cached_probe_for_config(
+    config: IloRedfishConfig | None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    probe_result, probe_time = get_probe_result(PROVIDER_ID)
+    if config is None:
+        return probe_result, probe_time
+    if not isinstance(probe_result, dict):
+        return None, None
+    target_fingerprint = str(probe_result.get("target_fingerprint") or "")
+    configured_fingerprints = {
+        fingerprint
+        for candidate in config.target_candidates
+        if (fingerprint := ilo_target_fingerprint(candidate.get("host")))
+    }
+    if not target_fingerprint or target_fingerprint not in configured_fingerprints:
+        return None, None
+    return probe_result, probe_time
+
+
+def _discovered_network_identity(
+    probe_result: dict[str, Any] | None,
+) -> dict[str, Any] | None:
     if not isinstance(probe_result, dict):
         return None
     network_identity = probe_result.get("network_identity")
@@ -1652,8 +1726,9 @@ def _discovered_vlan_label(network_identity: dict[str, Any] | None) -> str | Non
     return str(vlan_id) if vlan_id is not None else "enabled"
 
 
-def _discovered_time_and_dns() -> dict[str, Any] | None:
-    probe_result, _ = get_probe_result(PROVIDER_ID)
+def _discovered_time_and_dns(
+    probe_result: dict[str, Any] | None,
+) -> dict[str, Any] | None:
     if not isinstance(probe_result, dict):
         return None
     time_and_dns = probe_result.get("time_and_dns")
@@ -1662,8 +1737,9 @@ def _discovered_time_and_dns() -> dict[str, Any] | None:
     return time_and_dns
 
 
-def _discovered_local_usernames() -> list[str] | None:
-    probe_result, _ = get_probe_result(PROVIDER_ID)
+def _discovered_local_usernames(
+    probe_result: dict[str, Any] | None,
+) -> list[str] | None:
     if not isinstance(probe_result, dict) or probe_result.get("status") != "ok":
         return None
     local_users = probe_result.get("local_users")
@@ -1677,8 +1753,9 @@ def _discovered_local_usernames() -> list[str] | None:
     return usernames
 
 
-def _discovered_license_status() -> str | None:
-    probe_result, _ = get_probe_result(PROVIDER_ID)
+def _discovered_license_status(
+    probe_result: dict[str, Any] | None,
+) -> str | None:
     if not isinstance(probe_result, dict):
         return None
     licenses = probe_result.get("licenses")
@@ -1885,16 +1962,25 @@ def _optional_bool_label(value: bool | None) -> str | None:
 def _intent_read(
     payload: IloSetupIntentWrite,
     *,
+    device_id: str,
     created_at: Any = None,
     updated_at: Any = None,
 ) -> IloSetupIntentRead:
     return IloSetupIntentRead(
+        device_id=device_id,
         provider_id=PROVIDER_ID,
         apply_enabled=False,
         created_at=created_at,
         updated_at=updated_at,
         **payload.model_dump(),
     )
+
+
+def _resolve_ilo_device_id(session: Session, device_id: str | None) -> str | None:
+    if device_id:
+        return require_ilo_device(session, device_id).id
+    device_ids = ilo_device_ids(session)
+    return device_ids[0] if len(device_ids) == 1 else None
 
 
 def _network_status(intent: IloSetupIntentRead, summary: IloReadinessSummaryRead) -> str:

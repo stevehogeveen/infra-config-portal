@@ -23,9 +23,6 @@ RELOAD_TRIGGER_FILE = BACKEND_ROOT / "app" / "main.py"
 
 # Each entry: (field name accepted from the API) -> (env var name, is_secret, "configured" check)
 CREDENTIAL_FIELDS: dict[str, str] = {
-    "ilo_host": "ILO_TEST_HOST",
-    "ilo_username": "ILO_TEST_USERNAME",
-    "ilo_password": "ILO_TEST_PASSWORD",
     "esxi_host": "ESXI_TEST_HOST",
     "esxi_username": "ESXI_TEST_USERNAME",
     "esxi_password": "ESXI_TEST_PASSWORD",
@@ -45,7 +42,6 @@ CREDENTIAL_FIELDS: dict[str, str] = {
 }
 
 SECRET_FIELDS = {
-    "ilo_password",
     "esxi_password",
     "cisco_password",
     "cisco_enable_password",
@@ -58,12 +54,6 @@ SECRET_FIELDS = {
 
 # Groups shown together in the UI, in device order.
 CREDENTIAL_GROUPS: list[dict[str, Any]] = [
-    {
-        "id": "ilo",
-        "label": "HPE iLO",
-        "hint": "iLO 5 / iLO 6 out-of-band management sign-in. Host overrides the address used for real probes if it differs from the saved lab profile.",
-        "fields": ["ilo_host", "ilo_username", "ilo_password"],
-    },
     {
         "id": "esxi",
         "label": "ESXi",
@@ -104,9 +94,6 @@ CREDENTIAL_GROUPS: list[dict[str, Any]] = [
 ]
 
 _SETTINGS_ATTR_BY_FIELD: dict[str, str] = {
-    "ilo_host": "ilo_test_host",
-    "ilo_username": "ilo_test_username",
-    "ilo_password": "ilo_test_password",
     "esxi_host": "esxi_test_host",
     "esxi_username": "esxi_test_username",
     "esxi_password": "esxi_test_password",

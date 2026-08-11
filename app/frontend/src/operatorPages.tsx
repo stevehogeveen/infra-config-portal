@@ -655,6 +655,7 @@ export function OperatorOverviewPage({
   const [vcenterNetapp, setVcenterNetapp] = useState<ProviderProbeResult | null>(null);
   const [buildVerification, setBuildVerification] = useState<ProviderProbeResult | null>(null);
   const [iloAccessSettings, setIloAccessSettings] = useState<IloAccessSettings | null>(null);
+  const [iloAccessByDeviceId, setIloAccessByDeviceId] = useState<Record<string, IloAccessSettings | null>>({});
   const [hpeStorageDiscovery, setHpeStorageDiscovery] = useState<HpeStorageDiscovery | null>(null);
   const [deviceInventory, setDeviceInventory] = useState<DeviceInventoryItem[]>([]);
   const [error, setError] = useState("");
@@ -662,31 +663,39 @@ export function OperatorOverviewPage({
   async function load() {
     setError("");
     try {
+      const nextDeviceInventory = await safeApi(api.deviceInventory, [] as DeviceInventoryItem[]);
+      const primaryIloDevice = primaryIloInventoryDevice(nextDeviceInventory);
+      const iloDevices = nextDeviceInventory.filter((device) => rackInlineDeviceKind(device) === "ilo");
       const [
         nextProviders,
         nextValidation,
         nextFirmware,
         nextVcenterNetapp,
         nextBuildVerification,
-        nextIloAccessSettings,
-        nextHpeStorageDiscovery,
-        nextDeviceInventory
+        nextIloAccessEntries,
+        nextHpeStorageDiscovery
       ] = await Promise.all([
         safeApi(api.providers, [] as ProviderStatus[]),
         safeApi(api.labValidation, null),
         safeApi(api.firmwareSummary, [] as FirmwareSummary[]),
         safeApi(api.vcenterNetappReadiness, null),
         safeApi(api.buildVerification, null),
-        safeApi(api.iloAccessSettings, null),
-        safeApi(api.hpeStorageDiscovery, null),
-        safeApi(api.deviceInventory, [] as DeviceInventoryItem[])
+        Promise.all(iloDevices.map(async (device) => (
+          [device.id, await safeApi(() => api.iloAccessSettings(device.id), null)] as const
+        ))),
+        primaryIloDevice
+          ? safeApi(() => api.hpeStorageDiscovery(primaryIloDevice.id), null)
+          : Promise.resolve(null)
       ]);
+      const nextIloAccessByDeviceId = Object.fromEntries(nextIloAccessEntries);
+      const nextIloAccessSettings = primaryIloDevice ? nextIloAccessByDeviceId[primaryIloDevice.id] ?? null : null;
       setProviders(Array.isArray(nextProviders) ? nextProviders : []);
       setValidation(nextValidation);
       setFirmwareSummaries(Array.isArray(nextFirmware) ? nextFirmware : []);
       setVcenterNetapp(nextVcenterNetapp);
       setBuildVerification(nextBuildVerification);
       setIloAccessSettings(nextIloAccessSettings);
+      setIloAccessByDeviceId(nextIloAccessByDeviceId);
       setHpeStorageDiscovery(nextHpeStorageDiscovery);
       setDeviceInventory(Array.isArray(nextDeviceInventory) ? nextDeviceInventory : []);
       if (onReloadLabProfile) {
@@ -730,6 +739,7 @@ export function OperatorOverviewPage({
             health={health}
             hpeStorageDiscovery={hpeStorageDiscovery}
             inventory={deviceInventory}
+            iloAccessByDeviceId={iloAccessByDeviceId}
             iloAccessSettings={iloAccessSettings}
             labProfileState={labProfileState}
             onReload={async () => {
@@ -1266,6 +1276,7 @@ function networkSwitchAccessLabel(ciscoReadiness: ProviderProbeResult | null, co
 }
 
 export function OperatorServerPage({ health, labProfileState, onReloadLabProfile }: OperatorPageProps) {
+  const primaryIloDevice = usePrimaryIloInventoryDevice();
   const activeProfile = activeLabProfile(labProfileState);
   const address = activeAddressPlan(activeProfile);
   const global = activeProfile?.global_settings ?? null;
@@ -1287,7 +1298,7 @@ export function OperatorServerPage({ health, labProfileState, onReloadLabProfile
         safeApi(api.workflowActions, [] as WorkflowAction[]),
         safeApi(api.providers, [] as ProviderStatus[]),
         safeApi(api.firmwareSummary, [] as FirmwareSummary[]),
-        safeApi(api.hpeRaidPlanPreview, null),
+        primaryIloDevice ? safeApi(() => api.hpeRaidPlanPreview(primaryIloDevice.id), null) : Promise.resolve(null),
         safeApi(api.esxiInstallReadiness, null)
       ]);
       setWorkflowActions(Array.isArray(nextActions) ? nextActions : []);
@@ -1311,7 +1322,7 @@ export function OperatorServerPage({ health, labProfileState, onReloadLabProfile
 
   useEffect(() => {
     void loadWorkspaceData();
-  }, []);
+  }, [primaryIloDevice?.id]);
 
   const serverModel = asString(activeProfile?.devices?.server_model).toLowerCase();
   const serverPart: DesignPartId = serverModel === "gen10plus" || serverModel === "gen10+" ? "server-gen10plus" : "server-gen10";
@@ -1466,9 +1477,11 @@ export function OperatorServerPage({ health, labProfileState, onReloadLabProfile
           )}
           {activeDetailSection === "ilo" && (
             <div className="rack-server-panel-stack">
-              <IloAccessSettingsPanel initialHost={address.ilo_initial || ""} onReload={reloadWorkspace} plannedHost={address.ilo || ""} />
-              <IloSetupIntentWorkspacePanel />
-              <ServerWorkspaceControls activeProfile={activeProfile} address={address} firmwareSummaries={firmwareSummaries} localStorageMode={localStorageMode} onReload={reloadWorkspace} scope="ilo" workflowActions={workflowActions} />
+              {primaryIloDevice ? <>
+                <IloAccessSettingsPanel deviceId={primaryIloDevice.id} initialHost={primaryIloDevice.host || address.ilo_initial || ""} onReload={reloadWorkspace} plannedHost={address.ilo || ""} />
+                <IloSetupIntentWorkspacePanel deviceId={primaryIloDevice.id} />
+              </> : <p className="operator-action-message">Add an iLO device to rack inventory before editing device-scoped access or setup intent.</p>}
+              <ServerWorkspaceControls activeProfile={activeProfile} address={address} firmwareSummaries={firmwareSummaries} iloDeviceId={primaryIloDevice?.id} localStorageMode={localStorageMode} onReload={reloadWorkspace} scope="ilo" workflowActions={workflowActions} />
             </div>
           )}
           {activeDetailSection === "checks" && (
@@ -1494,6 +1507,16 @@ export function OperatorServerPage({ health, labProfileState, onReloadLabProfile
 type ServerDetailSectionId = "setup" | "ilo" | "checks" | "hardware";
 
 type RackIloTab = "access" | "settings" | "checks";
+
+function RackInlineSafetyRail({ deviceLabel }: { deviceLabel: string }) {
+  return (
+    <div className="rack-inline-safety" aria-label={`Safety guardrails for ${deviceLabel}`}>
+      <span>Safety rail</span>
+      <strong>Local edits first. Live checks only when you press them.</strong>
+      <small>Any write or apply action still stays behind the existing guarded workflow and confirmation checks.</small>
+    </div>
+  );
+}
 
 export function RackDeviceConfigurator({
   activeProfile,
@@ -1552,6 +1575,7 @@ export function RackDeviceConfigurator({
         </div>
         <button onClick={onClose} type="button">Back to device</button>
       </div>
+      <RackInlineSafetyRail deviceLabel={device.display_name} />
       <Feedback loading={loading} error={error} />
       <div className="rack-inline-config-body">
         {partId ? (
@@ -1570,13 +1594,12 @@ export function RackDeviceConfigurator({
           />
         ) : (
           <p className="operator-action-message">
-            This custom device has rack inventory only for now. Use Detailed setup for the older generic editor.
+            This custom device has rack inventory only for now. Use Open detailed workspace for the older generic editor.
           </p>
         )}
       </div>
       <div className="rack-inline-config-links">
         <Link to={devicePageForRackInline(device)}>Open detailed workspace</Link>
-        <Link to="/overview">Detailed setup</Link>
       </div>
     </aside>
   );
@@ -1584,10 +1607,12 @@ export function RackDeviceConfigurator({
 
 export function RackIloConfigurator({
   activeProfile,
+  device,
   onClose,
   onReload
 }: {
   activeProfile: LabProfile | null;
+  device: DeviceInventoryItem;
   onClose: () => void;
   onReload: () => Promise<void> | void;
 }) {
@@ -1634,17 +1659,18 @@ export function RackIloConfigurator({
   return (
     <aside className="rack-inline-config" aria-label="Configure HPE iLO beside rack">
       <div className="rack-inline-config-head">
-        <div><p className="operator-kicker">Configure beside rack</p><h2>HPE iLO</h2><span>{displayAddress(address.ilo_initial || address.ilo)}</span></div>
+        <div><p className="operator-kicker">Configure beside rack</p><h2>{device.display_name}</h2><span>{displayAddress(device.host || address.ilo_initial || address.ilo)}</span></div>
         <button onClick={onClose} type="button">Back to device</button>
       </div>
+      <RackInlineSafetyRail deviceLabel={device.display_name} />
       <div className="rack-inline-config-tabs" role="tablist" aria-label="iLO configuration sections">
         {tabs.map((item) => <button aria-selected={tab === item.id} className={tab === item.id ? "is-active" : ""} key={item.id} onClick={() => setTab(item.id)} role="tab" type="button">{item.label}</button>)}
       </div>
       <Feedback loading={loading} error={error} />
       <div className="rack-inline-config-body">
-        {tab === "access" && <IloAccessSettingsPanel initialHost={address.ilo_initial || ""} onReload={reloadInlineData} plannedHost={address.ilo || ""} />}
-        {tab === "settings" && <IloSetupIntentWorkspacePanel />}
-        {tab === "checks" && <ServerWorkspaceControls activeProfile={activeProfile} address={address} firmwareSummaries={firmwareSummaries} localStorageMode={localStorageMode} onReload={reloadInlineData} scope="ilo" workflowActions={workflowActions} />}
+        {tab === "access" && <IloAccessSettingsPanel deviceId={device.id} initialHost={device.host || address.ilo_initial || ""} onReload={reloadInlineData} plannedHost={address.ilo || ""} />}
+        {tab === "settings" && <IloSetupIntentWorkspacePanel deviceId={device.id} />}
+        {tab === "checks" && <ServerWorkspaceControls activeProfile={activeProfile} address={address} firmwareSummaries={firmwareSummaries} iloDeviceId={device.id} localStorageMode={localStorageMode} onReload={reloadInlineData} scope="ilo" workflowActions={workflowActions} />}
       </div>
       <div className="rack-inline-config-links"><Link to="/storage">Local storage &amp; RAID</Link><Link to="/server">Detailed server workspace</Link></div>
     </aside>
@@ -1652,30 +1678,44 @@ export function RackIloConfigurator({
 }
 
 function rackInlineDesignPart(device: DeviceInventoryItem, activeProfile: LabProfile | null): DesignPartId | null {
-  if (device.device_type === "cisco_switch") return "switch";
-  if (device.device_type === "netapp") return "netapp";
-  if (device.device_type === "vcenter") return "vcenter";
-  if (device.device_type === "esxi_host" || device.device_type === "server") {
+  const kind = rackInlineDeviceKind(device);
+  if (kind === "cisco_switch") return "switch";
+  if (kind === "netapp") return "netapp";
+  if (kind === "vcenter") return "vcenter";
+  if (kind === "esxi_host" || kind === "server") {
     const model = asString(activeProfile?.devices?.server_model).toLowerCase();
     return model === "gen10plus" || model === "gen10+" ? "server-gen10plus" : "server-gen10";
   }
   return null;
 }
 
+function rackInlineDeviceKind(device: DeviceInventoryItem): string {
+  const normalized = device.device_type.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  if (normalized.includes("ilo") || normalized.includes("bmc")) return "ilo";
+  if (normalized.includes("cisco") || normalized.includes("switch")) return "cisco_switch";
+  if (normalized.includes("esxi") || normalized.includes("hypervisor")) return "esxi_host";
+  if (normalized.includes("netapp") || normalized.includes("ontap")) return "netapp";
+  if (normalized.includes("vcenter") || normalized.includes("vcsa")) return "vcenter";
+  if (normalized.includes("server")) return "server";
+  return normalized;
+}
+
 function rackInlineDeviceSubtitle(device: DeviceInventoryItem, address: LabAddressPlan): string {
-  if (device.device_type === "cisco_switch") return `Cisco switch / ${displayAddress(device.host || address.cisco_management)}`;
-  if (device.device_type === "esxi_host") return `ESXi host / ${displayAddress(device.host || address.esxi_management)}`;
-  if (device.device_type === "netapp") return `NetApp ONTAP / ${displayAddress(device.host || address.netapp_cluster_mgmt)}`;
-  if (device.device_type === "vcenter") return `vCenter / ${displayAddress(device.host)}`;
-  if (device.device_type === "server") return `Server / ${displayAddress(device.host || address.ilo || address.esxi_management)}`;
+  const kind = rackInlineDeviceKind(device);
+  if (kind === "cisco_switch") return `Cisco switch / ${displayAddress(device.host || address.cisco_management)}`;
+  if (kind === "esxi_host") return `ESXi host / ${displayAddress(device.host || address.esxi_management)}`;
+  if (kind === "netapp") return `NetApp ONTAP / ${displayAddress(device.host || address.netapp_cluster_mgmt)}`;
+  if (kind === "vcenter") return `vCenter / ${displayAddress(device.host)}`;
+  if (kind === "server") return `Server / ${displayAddress(device.host || address.ilo || address.esxi_management)}`;
   return `${device.device_type.replace(/_/g, " ")} / ${displayAddress(device.host)}`;
 }
 
 function devicePageForRackInline(device: DeviceInventoryItem): string {
-  if (device.device_type === "cisco_switch") return "/network";
-  if (device.device_type === "netapp") return "/storage";
-  if (device.device_type === "vcenter" || device.device_type === "esxi_host") return "/virtualization";
-  if (device.device_type === "server" || device.device_type === "ilo") return "/server";
+  const kind = rackInlineDeviceKind(device);
+  if (kind === "cisco_switch") return "/network";
+  if (kind === "netapp") return "/storage";
+  if (kind === "vcenter" || kind === "esxi_host") return "/virtualization";
+  if (kind === "server" || kind === "ilo") return "/server";
   return "/overview";
 }
 
@@ -2128,6 +2168,7 @@ function LocalStorageRaidPlanner({
   discoveryError = "",
   discoveryLoading = false,
   hideHead = false,
+  iloDeviceId = "",
   initialDraft,
   inventoryRunLabel = "Run iLO Inventory Read",
   netappInScope,
@@ -2142,6 +2183,7 @@ function LocalStorageRaidPlanner({
   discoveryError?: string;
   discoveryLoading?: boolean;
   hideHead?: boolean;
+  iloDeviceId?: string;
   initialDraft?: LocalRaidDraft;
   inventoryRunLabel?: string;
   netappInScope: boolean;
@@ -2180,15 +2222,15 @@ function LocalStorageRaidPlanner({
 
   useEffect(() => {
     let ignore = false;
-    if (!discovery?.storage_inventory_available) {
+    if (!iloDeviceId || !discovery?.storage_inventory_available) {
       setVsanReadiness(null);
       return () => { ignore = true; };
     }
-    api.hpeVsanReadiness()
+    api.hpeVsanReadiness(iloDeviceId)
       .then((value) => { if (!ignore) setVsanReadiness(value); })
       .catch(() => { if (!ignore) setVsanReadiness(null); });
     return () => { ignore = true; };
-  }, [discovery]);
+  }, [discovery, iloDeviceId]);
 
   useEffect(() => {
     if (!requiresInventory || !inventoryBays.length) return;
@@ -2481,6 +2523,7 @@ function LocalRaidPlannerDrawer({
   address,
   features,
   iloAccessHost,
+  iloDeviceId,
   netappInScope,
   onClose,
   onReload
@@ -2489,6 +2532,7 @@ function LocalRaidPlannerDrawer({
   address: LabAddressPlan;
   features: LabProfileFeatures | null;
   iloAccessHost: string | null;
+  iloDeviceId: string | null;
   netappInScope: boolean;
   onClose: () => void;
   onReload: () => Promise<void> | void;
@@ -2515,7 +2559,8 @@ function LocalRaidPlannerDrawer({
     setDiscoveryLoading(true);
     setDiscoveryError("");
     try {
-      setDiscovery(await api.hpeStorageDiscovery());
+      if (!iloDeviceId) throw new Error("Select an iLO inventory device before reading local storage.");
+      setDiscovery(await api.hpeStorageDiscovery(iloDeviceId));
     } catch (err) {
       setDiscovery(null);
       setDiscoveryError(errorMessage(err));
@@ -2528,14 +2573,14 @@ function LocalRaidPlannerDrawer({
     setDiscovery(null);
     setDiscoveryLoading(false);
     setDiscoveryError("");
-  }, [draftKey, iloAccessHost]);
+  }, [draftKey, iloAccessHost, iloDeviceId]);
 
   async function runStorageInventoryRead() {
     const targetHost = asString(iloAccessHost);
-    if (!targetHost) {
+    if (!iloDeviceId || !targetHost) {
       throw new Error("Save the current iLO first-contact IP before reading local storage.");
     }
-    const run = await api.runWorkflowAction("raid.discovery", { ilo_host: targetHost });
+    const run = await api.runWorkflowAction("raid.discovery", { device_id: iloDeviceId, ilo_host: targetHost });
     await Promise.all([loadDiscovery(), Promise.resolve(onReload())]);
     if (
       run.status !== "completed" ||
@@ -2573,6 +2618,7 @@ function LocalRaidPlannerDrawer({
           discoveryError={discoveryError}
           discoveryLoading={discoveryLoading}
           hideHead
+          iloDeviceId={iloDeviceId ?? ""}
           initialDraft={initialDraft}
           netappInScope={netappInScope}
           onCommit={commitLocalPlan}
@@ -4208,6 +4254,7 @@ function ServerWorkspaceControls({
   activeProfile,
   address,
   firmwareSummaries,
+  iloDeviceId,
   localStorageMode,
   onReload,
   scope,
@@ -4216,11 +4263,14 @@ function ServerWorkspaceControls({
   activeProfile: LabProfile | null;
   address: LabAddressPlan;
   firmwareSummaries: FirmwareSummary[];
+  iloDeviceId?: string;
   localStorageMode: boolean;
   onReload: () => Promise<void> | void;
   scope: ServerWorkspaceControlScope;
   workflowActions: WorkflowAction[];
 }) {
+  const primaryIloDevice = usePrimaryIloInventoryDevice();
+  const resolvedIloDeviceId = iloDeviceId || primaryIloDevice?.id || "";
   const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
   const [workflowRunsById, setWorkflowRunsById] = useState<Record<string, WorkflowActionRun[]>>({});
   const [esxiReadiness, setEsxiReadiness] = useState<ProviderProbeResult | null>(null);
@@ -4251,7 +4301,7 @@ function ServerWorkspaceControls({
     let ignore = false;
     Promise.all([
       safeApi(api.esxiInstallReadiness, null),
-      safeApi(api.hpeRaidPlanPreview, null),
+      resolvedIloDeviceId ? safeApi(() => api.hpeRaidPlanPreview(resolvedIloDeviceId), null) : Promise.resolve(null),
       safeApi(api.hpeRaidPending, null)
     ]).then(([nextEsxi, nextRaidPlan, nextRaidPending]) => {
       if (ignore) return;
@@ -4262,10 +4312,17 @@ function ServerWorkspaceControls({
     return () => {
       ignore = true;
     };
-  }, [activeProfile?.id, scope]);
+  }, [activeProfile?.id, resolvedIloDeviceId, scope]);
 
   async function runWorkflowCheck(actionId: string): Promise<WorkflowActionRun> {
-    const result = await api.runWorkflowAction(actionId);
+    const isDeviceScopedIloRead = ["ilo.reachability", "ilo.auth", "ilo.inventory"].includes(actionId);
+    if (isDeviceScopedIloRead && !resolvedIloDeviceId) {
+      throw new Error("Add an iLO device to rack inventory before running this check.");
+    }
+    const result = await api.runWorkflowAction(
+      actionId,
+      isDeviceScopedIloRead ? { device_id: resolvedIloDeviceId } : undefined
+    );
     setWorkflowRunsById((current) => ({
       ...current,
       [actionId]: [result, ...(current[actionId] ?? [])].slice(0, 5)
@@ -4274,7 +4331,10 @@ function ServerWorkspaceControls({
   }
 
   async function runRaidPlan(): Promise<HpeRaidPlanPreview> {
-    const result = await api.hpeRaidPlanPreview();
+    if (!resolvedIloDeviceId) {
+      throw new Error("Add an iLO device to rack inventory before previewing its RAID plan.");
+    }
+    const result = await api.hpeRaidPlanPreview(resolvedIloDeviceId);
     setRaidPlan(result);
     return result;
   }
@@ -7355,15 +7415,19 @@ function MapDeviceEditor({
         {node.kind !== "ilo" && (
           <DeviceCredentialsPanel groupId={CREDENTIAL_GROUP_BY_DEVICE_KIND[node.kind]} />
         )}
-        {node.kind === "ilo" && (
+        {node.kind === "ilo" && node.inventory && (
           <>
             <IloAccessSettingsPanel
+              deviceId={node.inventory.id}
               initialHost={edit.iloInitial}
               plannedHost={edit.ilo}
               onReload={onReload}
             />
-            <IloSetupIntentWorkspacePanel />
+            <IloSetupIntentWorkspacePanel deviceId={node.inventory.id} />
           </>
+        )}
+        {node.kind === "ilo" && !node.inventory && (
+          <p className="operator-action-message">Waiting for this iLO inventory record before loading device-scoped access and setup intent.</p>
         )}
         {config.groups.map((group) => (
           <div className="map-field-group" key={group.title}>
@@ -7401,18 +7465,14 @@ function MapDeviceEditor({
   );
 }
 
-const CREDENTIAL_GROUP_BY_DEVICE_KIND: Record<MapDeviceKind, string> = {
+const CREDENTIAL_GROUP_BY_DEVICE_KIND: Partial<Record<MapDeviceKind, string>> = {
   network: "cisco",
-  ilo: "ilo",
   esxi: "esxi",
   storage: "netapp",
   virtualization: "vcenter"
 };
 
 const CREDENTIAL_FIELD_LABELS: Record<string, string> = {
-  ilo_host: "Host (overrides saved IP if different)",
-  ilo_username: "Username",
-  ilo_password: "Password",
   esxi_host: "Host (overrides saved IP if different)",
   esxi_username: "Username",
   esxi_password: "Password",
@@ -7517,10 +7577,12 @@ function DeviceCredentialsPanel({ groupId }: { groupId?: string }) {
 }
 
 function IloAccessSettingsPanel({
+  deviceId,
   initialHost,
   onReload,
   plannedHost
 }: {
+  deviceId: string;
   initialHost: string;
   onReload?: () => Promise<void> | void;
   plannedHost: string;
@@ -7541,7 +7603,7 @@ function IloAccessSettingsPanel({
     setLoading(true);
     setError("");
     try {
-      const next = await api.iloAccessSettings();
+      const next = await api.iloAccessSettings(deviceId);
       setSettingsState(next);
       setHost(next.host || fallbackHost);
       setUsername(next.username || "");
@@ -7556,7 +7618,7 @@ function IloAccessSettingsPanel({
 
   useEffect(() => {
     void loadAccessSettings();
-  }, [fallbackHost]);
+  }, [deviceId, fallbackHost]);
 
   function accessPayload(): { host: string; password: string | null; username: string | null; verify_tls: boolean } | null {
     const targetHost = host.trim() || fallbackHost;
@@ -7583,7 +7645,7 @@ function IloAccessSettingsPanel({
   async function persistAccessSettings() {
     const payload = accessPayload();
     if (!payload) return null;
-    const next = await api.saveIloAccessSettings(payload);
+    const next = await api.saveIloAccessSettings(deviceId, payload);
     setSettingsState(next);
     setHost(next.host || payload.host);
     setUsername(next.username || username);
@@ -7600,7 +7662,7 @@ function IloAccessSettingsPanel({
     setError("");
     setMessage("");
     try {
-      const next = await api.saveIloAccessSettings(payload);
+      const next = await api.saveIloAccessSettings(deviceId, payload);
       setSettingsState(next);
       setHost(next.host || payload.host);
       setUsername(next.username || username);
@@ -7622,7 +7684,7 @@ function IloAccessSettingsPanel({
       if (!saved) return;
       const targetHost = saved.host || host.trim() || fallbackHost;
       setMessage("Running read-only iLO access check...");
-      const run = await api.runWorkflowAction("ilo.reachability", { ilo_host: targetHost });
+      const run = await api.runWorkflowAction("ilo.reachability", { device_id: deviceId, ilo_host: targetHost });
       await loadAccessSettings();
       await onReload?.();
       setMessage(`${displayStatus(asString(run.status) || "completed")}: iLO access check finished. Map refreshed from live evidence.`);
@@ -7752,7 +7814,7 @@ function IloAccessSettingsPanel({
   );
 }
 
-function IloSetupIntentWorkspacePanel() {
+function IloSetupIntentWorkspacePanel({ deviceId }: { deviceId: string }) {
   const [intent, setIntent] = useState<IloSetupIntent | null>(null);
   const [plan, setPlan] = useState<IloSetupPlanPreview | null>(null);
   const [discovered, setDiscovered] = useState<IloDiscoveredSettings | null>(null);
@@ -7767,9 +7829,9 @@ function IloSetupIntentWorkspacePanel() {
     setError("");
     try {
       const [nextIntent, nextPlan, nextDiscovered] = await Promise.all([
-        api.iloSetupIntent(),
-        api.iloSetupPlanPreview(),
-        api.iloDiscoveredSettings().catch(() => null)
+        api.iloSetupIntent(deviceId),
+        api.iloSetupPlanPreview(deviceId),
+        api.iloDiscoveredSettings(deviceId).catch(() => null)
       ]);
       setIntent(nextIntent);
       setPlan(nextPlan);
@@ -7792,7 +7854,7 @@ function IloSetupIntentWorkspacePanel() {
 
   useEffect(() => {
     void loadIntent();
-  }, []);
+  }, [deviceId]);
 
   function updateNetwork<K extends keyof IloSetupIntentWrite["network"]>(
     field: K,
@@ -7874,8 +7936,8 @@ function IloSetupIntentWorkspacePanel() {
     setError("");
     setMessage("");
     try {
-      const saved = await api.saveIloSetupIntent(cleanIloWorkspaceIntent(form));
-      const nextPlan = await api.iloSetupPlanPreview();
+      const saved = await api.saveIloSetupIntent(deviceId, cleanIloWorkspaceIntent(form));
+      const nextPlan = await api.iloSetupPlanPreview(deviceId);
       setIntent(saved);
       setPlan(nextPlan);
       // Keep hidden static drafts in local form state while DHCP is selected.
@@ -8431,6 +8493,7 @@ function OverviewLabMap({
   health,
   hpeStorageDiscovery,
   inventory,
+  iloAccessByDeviceId,
   iloAccessSettings,
   labProfileState,
   onReload,
@@ -8443,6 +8506,7 @@ function OverviewLabMap({
   health?: HealthLike;
   hpeStorageDiscovery: HpeStorageDiscovery | null;
   inventory: DeviceInventoryItem[];
+  iloAccessByDeviceId: Record<string, IloAccessSettings | null>;
   iloAccessSettings: IloAccessSettings | null;
   labProfileState: LabProfileList | null;
   onReload: () => Promise<void> | void;
@@ -8458,6 +8522,8 @@ function OverviewLabMap({
   const subnetState = topologySubnetState(address.subnet, health);
   const storageProtocol = asString(features?.storage_protocol) || (netappInScope ? "nfs" : "local");
   const serverModelLabel = topologyServerModelLabel(activeProfile?.devices?.server_model);
+  const primaryIloDevice = primaryIloInventoryDevice(inventory);
+  const primaryIloDeviceId = primaryIloDevice?.id ?? "";
 
   const ciscoStatus = topologyStatusFromAccess(accessRows, "Cisco");
   const iloStatus = topologyStatusFromAccess(accessRows, "iLO");
@@ -8505,12 +8571,10 @@ function OverviewLabMap({
   // blank the map; the profile-derived nodes above stay as the fallback.
   if (inventory.length > 0) {
     nodes.splice(0, nodes.length, ...inventory.map((device, index) => {
-      const status = inventoryDeviceStatus(device.device_type, { ciscoStatus, esxiStatus, iloStatus, netappStatus, vmStatus });
-      // The iLO's address has one canonical source of truth: the saved access
-      // settings (the backend syncs the seeded inventory row to it too).
-      const host = device.device_type === "ilo"
-        ? iloAccessSettings?.host || device.host
-        : device.host;
+      const deviceAccess = iloAccessByDeviceId[device.id] ?? null;
+      const deviceIloStatus = rackInlineDeviceKind(device) === "ilo" ? scopedIloAccessStatus(deviceAccess) : iloStatus;
+      const status = inventoryDeviceStatus(device.device_type, { ciscoStatus, esxiStatus, iloStatus: deviceIloStatus, netappStatus, vmStatus });
+      const host = rackInlineDeviceKind(device) === "ilo" ? deviceAccess?.host || device.host : device.host;
       return {
         id: device.id,
         inventory: device,
@@ -8707,6 +8771,7 @@ function OverviewLabMap({
             address={address}
             features={features}
             iloAccessHost={iloAccessSettings?.host ?? null}
+            iloDeviceId={primaryIloDeviceId || null}
             netappInScope={netappInScope}
             onClose={() => setSelectedId(null)}
             onReload={onReload}
@@ -8804,6 +8869,8 @@ function LabTopologyMap({
     : "Checking status";
   const runtimeClass = runtimeReady ? (realRuntime ? "topology-pill-live" : "topology-pill-test") : "topology-pill-runtime-unknown";
   const subnetState = topologySubnetState(address.subnet, health);
+  const primaryIloDevice = usePrimaryIloInventoryDevice();
+  const primaryIloDeviceId = primaryIloDevice?.id ?? "";
   const [workspaceTarget, setWorkspaceTarget] = useState<DesignPartId>("switch");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
@@ -8952,7 +9019,8 @@ function LabTopologyMap({
     setLocalRaidDiscoveryLoading(true);
     setLocalRaidDiscoveryError("");
     try {
-      setLocalRaidDiscovery(await api.hpeStorageDiscovery());
+      if (!primaryIloDeviceId) throw new Error("Select an iLO inventory device before reading local storage.");
+      setLocalRaidDiscovery(await api.hpeStorageDiscovery(primaryIloDeviceId));
     } catch (err) {
       setLocalRaidDiscovery(null);
       setLocalRaidDiscoveryError(errorMessage(err));
@@ -8962,7 +9030,15 @@ function LabTopologyMap({
   }
 
   async function runLocalRaidInventoryRead() {
-    await api.runWorkflowAction("raid.discovery");
+    if (!primaryIloDeviceId) {
+      throw new Error("Select an iLO inventory device before reading local storage.");
+    }
+    const access = await api.iloAccessSettings(primaryIloDeviceId);
+    const targetHost = asString(access.host || primaryIloDevice?.host);
+    if (!targetHost) {
+      throw new Error("Save the selected iLO first-contact IP before reading local storage.");
+    }
+    await api.runWorkflowAction("raid.discovery", { device_id: primaryIloDeviceId, ilo_host: targetHost });
     await loadLocalRaidDiscovery();
     await onReload();
   }
@@ -9109,6 +9185,7 @@ function LabTopologyMap({
               discoveryError={localRaidDiscoveryError}
               discoveryLoading={localRaidDiscoveryLoading}
               hideHead
+              iloDeviceId={primaryIloDeviceId}
               initialDraft={localRaidInitialDraft}
               inventoryRunLabel="Read storage from iLO"
               netappInScope={netappInScope}
@@ -10762,6 +10839,7 @@ function LabDesignComposer({
   workspaceOnly?: boolean;
   workflowActions: WorkflowAction[];
 }) {
+  const primaryIloDevice = usePrimaryIloInventoryDevice();
   const committedScenario = topologyScenarioFromProfile(activeProfile, features);
   const [draftScenario, setDraftScenario] = useState<TopologyDesignScenario>(committedScenario);
   const netappInScope = draftScenario !== "single_server_local_storage";
@@ -11075,7 +11153,7 @@ function LabDesignComposer({
   useEffect(() => {
     if (!selectedPartIsServer) return;
     void loadWorkspaceStorageDiscovery();
-  }, [selectedPartIsServer, draftKey]);
+  }, [selectedPartIsServer, draftKey, primaryIloDevice?.id]);
 
   useEffect(() => {
     if (blueprintLinks.some((link) => link.id === selectedConnection)) return;
@@ -11167,7 +11245,29 @@ function LabDesignComposer({
     setActionRunStatus({ error: "", message: "", runningActionId: action.action_id });
     setDiagnosis(null);
     try {
-      const result = await api.runWorkflowAction(action.action_id, request);
+      const deviceScopedIloReads = [
+        "ilo.reachability",
+        "ilo.auth",
+        "ilo.inventory",
+        "ilo.baseline-preview",
+        "ilo.setup-plan-preview",
+        "raid.discovery",
+        "raid.plan"
+      ];
+      let scopedRequest = request;
+      if (deviceScopedIloReads.includes(action.action_id)) {
+        if (!primaryIloDevice?.id) {
+          throw new Error("Select an iLO inventory device before running this read-only action.");
+        }
+        scopedRequest = { ...request, device_id: primaryIloDevice.id };
+        if (action.action_id === "raid.discovery") {
+          const access = await api.iloAccessSettings(primaryIloDevice.id);
+          const targetHost = asString(access.host || primaryIloDevice.host);
+          if (!targetHost) throw new Error("Save the selected iLO first-contact IP before reading local storage.");
+          scopedRequest.ilo_host = targetHost;
+        }
+      }
+      const result = await api.runWorkflowAction(action.action_id, scopedRequest);
       setActionRunsById((current) => ({
         ...current,
         [action.action_id]: [result, ...(current[action.action_id] ?? [])].slice(0, 5)
@@ -11213,7 +11313,8 @@ function LabDesignComposer({
     setWorkspaceStorageDiscoveryLoading(true);
     setWorkspaceStorageDiscoveryError("");
     try {
-      setWorkspaceStorageDiscovery(await api.hpeStorageDiscovery());
+      if (!primaryIloDevice?.id) throw new Error("Select an iLO inventory device before reading local storage.");
+      setWorkspaceStorageDiscovery(await api.hpeStorageDiscovery(primaryIloDevice.id));
     } catch (err) {
       setWorkspaceStorageDiscovery(null);
       setWorkspaceStorageDiscoveryError(errorMessage(err));
@@ -11223,7 +11324,11 @@ function LabDesignComposer({
   }
 
   async function runWorkspaceStorageInventoryRead() {
-    await api.runWorkflowAction("raid.discovery");
+    if (!primaryIloDevice?.id) throw new Error("Select an iLO inventory device before reading local storage.");
+    const access = await api.iloAccessSettings(primaryIloDevice.id);
+    const targetHost = asString(access.host || primaryIloDevice.host);
+    if (!targetHost) throw new Error("Save the selected iLO first-contact IP before reading local storage.");
+    await api.runWorkflowAction("raid.discovery", { device_id: primaryIloDevice.id, ilo_host: targetHost });
     await loadWorkspaceStorageDiscovery();
     await onReload();
   }
@@ -11641,15 +11746,19 @@ function LabDesignComposer({
               />
             )}
 
-            {selectedPart.id === "ilo" && (
+            {selectedPart.id === "ilo" && primaryIloDevice && (
               <>
                 <IloAccessSettingsPanel
+                  deviceId={primaryIloDevice.id}
                   initialHost={asString(designAddress.ilo_initial)}
                   plannedHost={asString(selectedSettings.management_ip) || asString(designAddress.ilo)}
                   onReload={onReload}
                 />
-                <IloSetupIntentWorkspacePanel />
+                <IloSetupIntentWorkspacePanel deviceId={primaryIloDevice.id} />
               </>
+            )}
+            {selectedPart.id === "ilo" && !primaryIloDevice && (
+              <p className="operator-action-message">Add an iLO device to rack inventory before editing device-scoped access or setup intent.</p>
             )}
 
             {!workspaceOnly && selectedPart.id === "switch" && (
@@ -11668,6 +11777,7 @@ function LabDesignComposer({
                 activeProfile={activeProfile}
                 address={designAddress}
                 firmwareSummaries={firmwareSummaries}
+                iloDeviceId={primaryIloDevice?.id}
                 localStorageMode={draftScenario === "single_server_local_storage"}
                 onReload={onReload}
                 scope={selectedPart.id === "ilo" ? "ilo" : "server"}
@@ -11857,6 +11967,7 @@ function LabDesignComposer({
                     discovery={workspaceStorageDiscovery}
                     discoveryError={workspaceStorageDiscoveryError}
                     discoveryLoading={workspaceStorageDiscoveryLoading}
+                    iloDeviceId={primaryIloDevice?.id ?? ""}
                     inventoryRunLabel="Read storage from iLO"
                     netappInScope={netappInScope}
                     onCommit={updateSelectedServerRaidPlan}
@@ -12028,6 +12139,7 @@ function LabDesignComposer({
                         activeProfile={activeProfile}
                         address={designAddress}
                         firmwareSummaries={firmwareSummaries}
+                        iloDeviceId={primaryIloDevice?.id}
                         localStorageMode={draftScenario === "single_server_local_storage"}
                         onReload={onReload}
                         scope={selectedPart.id === "ilo" ? "ilo" : "server"}
@@ -19065,6 +19177,24 @@ async function safeApi<T>(loader: () => Promise<T>, fallback: T): Promise<T> {
   }
 }
 
+function primaryIloInventoryDevice(devices: DeviceInventoryItem[]): DeviceInventoryItem | null {
+  return devices.find((device) => rackInlineDeviceKind(device) === "ilo") ?? null;
+}
+
+function usePrimaryIloInventoryDevice(): DeviceInventoryItem | null {
+  const [device, setDevice] = useState<DeviceInventoryItem | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void safeApi(api.deviceInventory, [] as DeviceInventoryItem[]).then((devices) => {
+      if (!cancelled) setDevice(primaryIloInventoryDevice(devices));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return device;
+}
+
 function activeLabProfile(state: LabProfileList | null): LabProfile | null {
   return state?.active_profile ?? state?.runtime_profile ?? null;
 }
@@ -19301,6 +19431,17 @@ function liveIloAccessStatus(
     return "target_mismatch";
   }
   return asString(settings.last_probe_status) || provider.status || "not_checked";
+}
+
+function scopedIloAccessStatus(settings: IloAccessSettings | null): string {
+  if (!settings?.host || settings.last_probe_is_current !== true) return "not_checked";
+  if (
+    settings.last_probe_target_matches_access_host !== true ||
+    settings.last_probe_target_fingerprint_present !== true
+  ) {
+    return "target_mismatch";
+  }
+  return asString(settings.last_probe_status) || "not_checked";
 }
 
 function accessRow({

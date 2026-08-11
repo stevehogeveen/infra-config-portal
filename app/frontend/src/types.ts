@@ -250,6 +250,7 @@ export type ProviderModeSettingsWrite = {
 };
 
 export type IloAccessSettings = {
+  device_id: string;
   provider_id: string;
   host: string | null;
   host_source: string;
@@ -258,7 +259,6 @@ export type IloAccessSettings = {
   username_configured: boolean;
   password_configured: boolean;
   verify_tls: boolean;
-  env_path: string;
   updated_at: string | null;
   last_probe_status: string;
   last_probe_time: string | null;
@@ -323,9 +323,6 @@ export type LabCredentials = {
 };
 
 export type LabCredentialsWrite = Partial<{
-  ilo_host: string;
-  ilo_username: string;
-  ilo_password: string;
   esxi_host: string;
   esxi_username: string;
   esxi_password: string;
@@ -1230,6 +1227,7 @@ export type WorkflowActionRunRequest = {
   cisco_commands?: string[];
   confirmation_phrase?: string;
   confirmed_gates?: string[];
+  device_id?: string;
   ilo_host?: string;
 };
 
@@ -1700,6 +1698,7 @@ export type IloUpgradeReadiness = {
 };
 
 export type IloSetupIntent = {
+  device_id: string;
   provider_id?: string;
   apply_enabled?: boolean;
   created_at?: string | null;
@@ -1758,7 +1757,7 @@ export type IloSetupIntent = {
 
 export type IloSetupIntentWrite = Omit<
   IloSetupIntent,
-  "provider_id" | "apply_enabled" | "created_at" | "updated_at"
+  "device_id" | "provider_id" | "apply_enabled" | "created_at" | "updated_at"
 >;
 
 export type IloDiscoveredSettings = {
@@ -1934,6 +1933,7 @@ export type HpeRaidVolumeIntent = {
 };
 
 export type HpeRaidIntent = {
+  device_id: string;
   provider_id?: string;
   apply_enabled?: boolean;
   created_at?: string | null;
@@ -1946,7 +1946,7 @@ export type HpeRaidIntent = {
 
 export type HpeRaidIntentWrite = Omit<
   HpeRaidIntent,
-  "provider_id" | "apply_enabled" | "created_at" | "updated_at"
+  "device_id" | "provider_id" | "apply_enabled" | "created_at" | "updated_at"
 >;
 
 export type HpeStorageDiscovery = {

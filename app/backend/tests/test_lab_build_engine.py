@@ -142,7 +142,11 @@ def _allow_default_build_start(
         "latest_workflow_action_run_trace",
         lambda action_id: traces.get(action_id),
     )
-    monkeypatch.setattr(lab_build_engine, "read_ilo_access_settings", lambda: access)
+    monkeypatch.setattr(
+        lab_build_engine,
+        "read_unique_ilo_access_settings",
+        lambda _session: access,
+    )
     return traces, access
 
 

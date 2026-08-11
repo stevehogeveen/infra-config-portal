@@ -35,6 +35,7 @@ from app.services.ilo_write_target import (
     requested_ilo_write_host,
     resolve_ilo_write_target_context,
 )
+from app.services.ilo_access_settings import ilo_device_ids, require_ilo_device
 from app.services.list_utils import unique_preserving_order, unique_strings
 from app.services.path_utils import path_exists, repo_relative_path
 from app.schemas import (
@@ -84,9 +85,13 @@ def get_hpe_storage_discovery(
     *,
     probe: dict[str, Any] | None = None,
     probe_time: str | None = None,
+    config: IloRedfishConfig | None = None,
 ) -> HpeStorageDiscoveryRead:
     if probe is None:
         probe, probe_time = get_probe_result(PROVIDER_ID)
+        if config is not None and not _probe_matches_config(probe, config):
+            probe = None
+            probe_time = None
     if not isinstance(probe, dict):
         return HpeStorageDiscoveryRead(
             provider_id=PROVIDER_ID,
@@ -150,24 +155,41 @@ def get_hpe_storage_discovery(
             )
         ),
     )
-def get_hpe_raid_intent(session: Session) -> HpeRaidIntentRead:
-    record = session.get(HpeRaidIntent, PROVIDER_ID)
+def get_hpe_raid_intent(
+    session: Session,
+    device_id: str | None = None,
+) -> HpeRaidIntentRead:
+    resolved_device_id = _resolve_ilo_device_id(session, device_id)
+    if resolved_device_id is None:
+        return _intent_read(HpeRaidIntentWrite(), device_id="")
+    record = session.get(HpeRaidIntent, (resolved_device_id, PROVIDER_ID))
     if record is None:
-        return _intent_read(HpeRaidIntentWrite())
+        return _intent_read(HpeRaidIntentWrite(), device_id=resolved_device_id)
     try:
         payload = HpeRaidIntentWrite.model_validate(record.intent_json)
     except ValueError:
-        return _intent_read(HpeRaidIntentWrite())
-    return _intent_read(payload, created_at=record.created_at, updated_at=record.updated_at)
+        return _intent_read(HpeRaidIntentWrite(), device_id=resolved_device_id)
+    return _intent_read(
+        payload,
+        device_id=resolved_device_id,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
 
 
 def save_hpe_raid_intent(
     session: Session,
+    device_id: str,
     payload: HpeRaidIntentWrite,
 ) -> HpeRaidIntentRead:
-    record = session.get(HpeRaidIntent, PROVIDER_ID)
+    require_ilo_device(session, device_id)
+    record = session.get(HpeRaidIntent, (device_id, PROVIDER_ID))
     if record is None:
-        record = HpeRaidIntent(provider_id=PROVIDER_ID, intent_json=payload.model_dump())
+        record = HpeRaidIntent(
+            device_id=device_id,
+            provider_id=PROVIDER_ID,
+            intent_json=payload.model_dump(),
+        )
         session.add(record)
     else:
         record.intent_json = payload.model_dump()
@@ -176,14 +198,19 @@ def save_hpe_raid_intent(
     session.refresh(record)
     return _intent_read(
         HpeRaidIntentWrite.model_validate(record.intent_json),
+        device_id=device_id,
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
 
 
-def get_hpe_raid_plan_preview(session: Session) -> HpeRaidPlanPreviewRead:
-    discovery = get_hpe_storage_discovery()
-    intent = get_hpe_raid_intent(session)
+def get_hpe_raid_plan_preview(
+    session: Session,
+    device_id: str | None = None,
+    config: IloRedfishConfig | None = None,
+) -> HpeRaidPlanPreviewRead:
+    discovery = get_hpe_storage_discovery(config=config)
+    intent = get_hpe_raid_intent(session, device_id)
     validation = _validate_intent(intent, discovery)
     destructive_requested = bool(intent.wipe_existing_logical_drives or intent.volumes)
     current_logical_count = len(discovery.logical_drives)
@@ -237,8 +264,16 @@ def get_hpe_raid_plan_preview(session: Session) -> HpeRaidPlanPreviewRead:
     )
 
 
-def build_hpe_raid_apply_plan(session: Session) -> dict[str, Any]:
-    preview = get_hpe_raid_plan_preview(session)
+def build_hpe_raid_apply_plan(
+    session: Session,
+    device_id: str | None = None,
+    config: IloRedfishConfig | None = None,
+) -> dict[str, Any]:
+    preview = get_hpe_raid_plan_preview(
+        session,
+        device_id,
+        config=config,
+    )
     payload = _redfish_settings_payload(preview.desired_intent)
     blockers = _apply_blockers(preview, confirmation_phrase=CONFIRMATION_PHRASE)
     last_apply = _last_apply_state()
@@ -1797,16 +1832,40 @@ def _layout_lines(layout: Any) -> list[str]:
 def _intent_read(
     payload: HpeRaidIntentWrite,
     *,
+    device_id: str,
     created_at: Any = None,
     updated_at: Any = None,
 ) -> HpeRaidIntentRead:
     return HpeRaidIntentRead(
+        device_id=device_id,
         provider_id=PROVIDER_ID,
         apply_enabled=False,
         created_at=created_at,
         updated_at=updated_at,
         **payload.model_dump(),
     )
+
+
+def _resolve_ilo_device_id(session: Session, device_id: str | None) -> str | None:
+    if device_id:
+        return require_ilo_device(session, device_id).id
+    device_ids = ilo_device_ids(session)
+    return device_ids[0] if len(device_ids) == 1 else None
+
+
+def _probe_matches_config(
+    probe: dict[str, Any] | None,
+    config: IloRedfishConfig,
+) -> bool:
+    if not isinstance(probe, dict):
+        return False
+    target_fingerprint = str(probe.get("target_fingerprint") or "")
+    configured_fingerprints = {
+        fingerprint
+        for candidate in config.target_candidates
+        if (fingerprint := ilo_target_fingerprint(candidate.get("host")))
+    }
+    return bool(target_fingerprint and target_fingerprint in configured_fingerprints)
 
 
 def _validate_intent(
