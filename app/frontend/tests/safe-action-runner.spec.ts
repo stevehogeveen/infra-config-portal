@@ -3880,6 +3880,53 @@ test("rack home adds and edits equipment before opening rack-side configuration"
   ]);
 });
 
+test("rack drills from a machine into its named datastores without leaving the page", async ({ page }) => {
+  const mutations: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "GET") mutations.push(`${request.method()} ${new URL(request.url()).pathname}`);
+  });
+
+  await page.goto("/simple");
+  await page.locator(".rack-unit[aria-label='Open HPE iLO']").click();
+
+  // Level 2: what is inside the selected machine, with each local volume
+  // named exactly as the controller reports it.
+  const inside = page.getByLabel("Inside HPE iLO");
+  await expect(inside).toBeVisible();
+  await expect(inside.getByRole("button", { name: /ESXi host/ })).toBeVisible();
+  const datastore = inside.getByRole("button", { name: /VM datastore/ });
+  await expect(datastore).toBeVisible();
+  await expect(datastore).toContainText("RAID5");
+  await expect(inside.getByRole("button", { name: /ESXi OS/ })).toContainText("RAID1");
+
+  // Shared storage stays a reference: it belongs to the NetApp, not this box.
+  await expect(page.getByLabel("Shared storage available to this machine")).toContainText("NetApp ONTAP");
+
+  // Level 3: configuring one datastore keeps the rack and the contents visible.
+  await datastore.click();
+  const config = page.getByLabel("Configure VM datastore");
+  await expect(config).toBeVisible();
+  await expect(config).toContainText("Rack");
+  await expect(config).toContainText("VM datastore");
+  await expect(page.locator(".rack-light-svg")).toBeVisible();
+  await expect(inside).toBeVisible();
+
+  // The chassis bay map shows every bay, marking which belong to this volume.
+  const bayMap = config.getByLabel("Drive bays in this chassis");
+  await expect(bayMap.locator(".machine-bay")).toHaveCount(8);
+  await expect(bayMap.locator(".machine-bay.is-owned")).toHaveCount(5);
+
+  // Destructive storage work stays behind the guarded workspace.
+  await expect(config.getByRole("link", { name: "Open local storage & RAID" })).toHaveAttribute("href", "/storage");
+  await expect(config.getByRole("button", { name: /Apply|Reset|Rebuild|Wipe|Delete/i })).toHaveCount(0);
+
+  await config.getByRole("button", { name: "Close" }).click();
+  await expect(config).toHaveCount(0);
+  await expect(inside).toBeVisible();
+
+  expect(mutations).toEqual([]);
+});
+
 async function installApiMocks(page: Page) {
   const seededIloDeviceId = "f2c1a9d0-4b31-4a5e-9d10-000000000002";
   let firmwareFileSelections = firmwareFileSelectionState({});

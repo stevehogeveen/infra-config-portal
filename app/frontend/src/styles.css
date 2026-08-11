@@ -22266,6 +22266,58 @@ button.design-ilo-port:hover {
 .rack-server-input-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .rack-server-network-defaults { margin-top: 2px; }.rack-server-save-row { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }.rack-server-safe-copy { color: #67818b; font-size: 10px; font-weight: 750; }
 
+/* Drill-down below the rack: what is inside a machine, then one item's setup. */
+.machine-inside, .machine-config { background: #fff; border: 1px solid var(--rack-line); border-radius: 14px; margin: 0 clamp(18px, 3vw, 38px) clamp(14px, 2vw, 20px); padding: 16px 20px 18px; }
+.machine-config { border-color: #0c8e91; }
+.machine-inside-head, .machine-config-head { align-items: flex-start; display: flex; gap: 14px; justify-content: space-between; }
+.machine-inside-head h2 { font-size: 15px; letter-spacing: -.01em; margin: 2px 0 0; }
+.machine-inside-head > span { color: #8aa4ad; flex: 0 0 auto; font-size: 10px; }
+.machine-inside-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); margin-top: 14px; }
+.machine-item { background: #f8fbfc; border: 1px solid #dfeaed; border-radius: 10px; cursor: pointer; display: grid; font-family: inherit; gap: 3px; padding: 11px 12px; text-align: left; }
+.machine-item:hover { border-color: #9fd4d3; }
+.machine-item.is-selected { background: #f2fbfb; border-color: #0c8e91; box-shadow: 0 0 0 1px #0c8e91 inset; }
+.machine-item.is-vsan { border-color: #c3bbf5; }
+.machine-item.is-vsan.is-selected { border-color: #7a6ff0; box-shadow: 0 0 0 1px #7a6ff0 inset; }
+.machine-item-badge { align-items: center; color: #6c8792; display: inline-flex; font-size: 9px; font-weight: 900; gap: 5px; letter-spacing: .08em; text-transform: uppercase; }
+.machine-item.is-vsan .machine-item-badge { color: #3c3489; }
+.machine-item strong { color: #173943; font-size: 12px; overflow-wrap: anywhere; }
+.machine-item small { color: #6c8792; font-size: 10px; line-height: 1.4; }
+.machine-inside-empty { background: #fff7e7; border: 1px solid #edd59d; border-radius: 9px; color: #6f5410; font-size: 11px; line-height: 1.5; margin: 12px 0 0; padding: 10px 12px; }
+.machine-inside-empty a { color: #0b666a; }
+.machine-inside-shared { align-items: center; border-top: 1px solid #e3ebee; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding-top: 12px; }
+.machine-shared-chip { align-items: center; background: #f4f8fb; border: 1px solid #cddce6; border-radius: 8px; color: #22506b; display: inline-flex; font-size: 11px; font-weight: 750; gap: 6px; padding: 6px 10px; }
+.machine-shared-chip small { color: #6f8ba0; font-weight: 400; }
+.machine-shared-note { color: #8aa4ad; font-size: 10px; }
+.machine-config-head > button { background: transparent; border: 1px solid #c4d4d9; border-radius: 8px; color: #23505d; cursor: pointer; font-size: 10px; font-weight: 800; padding: 7px 10px; }
+.machine-crumbs { color: #8aa4ad; font-size: 12px; margin-top: 3px; }
+.machine-crumbs strong { color: #142f39; font-weight: 500; }
+.machine-config-body { display: grid; gap: 14px; margin-top: 14px; }
+.machine-bay-grid { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.machine-bay { align-items: center; background: #eef2f4; border: 1px solid #dbe6ea; border-radius: 4px; color: #6c8792; display: inline-flex; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; justify-content: center; min-width: 30px; padding: 6px 4px; }
+.machine-bay.is-owned { background: #5cc8c6; border-color: #3aada9; color: #04342c; font-weight: 750; }
+.machine-bay.is-other { background: #ffe9a8; border-color: #e8cf85; color: #5a4508; }
+.machine-bay.is-free { background: #eef7f1; border-color: #cfe6d8; color: #4c6f5c; }
+.machine-bay-legend { align-items: center; color: #8aa4ad; display: flex; flex-wrap: wrap; font-size: 10px; gap: 6px; margin: 9px 0 0; }
+.machine-bay-legend span { border-radius: 3px; height: 9px; margin-left: 6px; width: 9px; }
+.machine-bay-legend span:first-child { margin-left: 0; }
+.machine-bay-legend .is-owned { background: #5cc8c6; }
+.machine-bay-legend .is-other { background: #ffe9a8; }
+.machine-bay-legend .is-free { background: #eef7f1; border: 1px solid #cfe6d8; }
+.machine-config-facts { border-top: 1px solid #e3ebee; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 0; padding-top: 12px; }
+.machine-config-facts div { display: grid; gap: 3px; min-width: 0; }
+.machine-config-facts dt { color: #78909a; font-size: 9px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.machine-config-facts dd { color: #173943; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0; overflow-wrap: anywhere; }
+.machine-config-note { color: #56717b; font-size: 11px; line-height: 1.55; margin: 0; }
+.machine-config-actions { align-items: center; border-top: 1px solid #e3ebee; display: flex; flex-wrap: wrap; gap: 10px; padding-top: 12px; }
+.machine-config-action { background: #fff; border: 1px solid #bfd0d7; border-radius: 8px; color: #15313b; font-size: 11px; font-weight: 750; padding: 9px 13px; text-decoration: none; }
+.machine-config-action:hover { border-color: #0a8f93; color: #0b666a; }
+.machine-config-guard { color: #8a6100; font-size: 10px; line-height: 1.45; }
+
+@media (max-width: 720px) {
+  .machine-inside, .machine-config { margin-left: 10px; margin-right: 10px; padding: 13px 14px; }
+  .machine-inside-grid { grid-template-columns: 1fr 1fr; }
+}
+
 @media (max-width: 1000px) {
   .rack-workspace-summary { grid-template-columns: 1fr; }
   .rack-summary-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }

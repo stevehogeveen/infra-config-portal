@@ -2058,7 +2058,7 @@ type LocalRaidDraft = {
   touched?: boolean;
 };
 
-type LocalRaidInventoryBay = {
+export type LocalRaidInventoryBay = {
   bay: string;
   currentLayout: string;
   label: string;
@@ -2820,7 +2820,7 @@ function localRaidDefaultDraftForBayIds(
   };
 }
 
-function localRaidInventoryBays(discovery: HpeStorageDiscovery | null | undefined): LocalRaidInventoryBay[] {
+export function localRaidInventoryBays(discovery: HpeStorageDiscovery | null | undefined): LocalRaidInventoryBay[] {
   const seen = new Set<string>();
   const liveLayoutByResource = new Map<string, string>();
   recordArray(discovery?.logical_drives).forEach((logicalDrive) => {

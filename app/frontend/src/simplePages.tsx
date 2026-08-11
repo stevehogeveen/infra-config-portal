@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
-import { Cpu, FileText, Layers3, ListChecks, PlayCircle, Pencil, Plus, Server, Settings2 } from "lucide-react";
+import { Cpu, Database, FileText, HardDrive, Layers3, ListChecks, PlayCircle, Pencil, Plus, Server, Settings2 } from "lucide-react";
 import { Link, NavLink } from "react-router-dom";
 import { api } from "./api";
 import { DeviceInventoryForm } from "./components/DeviceInventoryForm";
-import { RackDeviceConfigurator, RackIloConfigurator } from "./operatorPages";
+import { RackDeviceConfigurator, RackIloConfigurator, localRaidInventoryBays } from "./operatorPages";
+import type { LocalRaidInventoryBay } from "./operatorPages";
 import type {
   DeviceInventoryItem,
   HpeStorageDiscovery,
@@ -280,6 +281,109 @@ function RackWorkspaceSummary({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Machine contents: the software and storage that live inside one physical box.
+//
+// Everything here is derived from cached read-only evidence. Where the app has
+// not read something yet it says so; it never invents a datastore, a capacity,
+// or a VM that no probe has actually reported.
+// ---------------------------------------------------------------------------
+
+type InsideItemKind = "hypervisor" | "local" | "vsan" | "shared";
+
+type InsideItem = {
+  id: string;
+  kind: InsideItemKind;
+  name: string;
+  detail: string;
+  badge: string;
+  /** Volume label used to colour the chassis bay map in the configure level. */
+  volumeLabel?: string;
+};
+
+function asText(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number") return String(value);
+  return "";
+}
+
+function records(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object") : [];
+}
+
+/** Named local volumes exactly as the controller reports them. */
+function localDatastoreItems(storage: HpeStorageDiscovery | null): InsideItem[] {
+  return records(storage?.logical_drives).map((volume, index) => {
+    const name = asText(volume.display_label) || asText(volume.Name) || `Logical drive ${index + 1}`;
+    const raid = asText(volume.raid_level) || asText(volume.RAIDType);
+    const capacity = asText(volume.capacity_label) || asText(volume.CapacityGiB) || asText(volume.CapacityBytes);
+    return {
+      id: `local:${asText(volume.Id) || asText(volume.LogicalDriveNumber) || index}`,
+      kind: "local" as const,
+      name,
+      detail: [raid, capacity].filter(Boolean).join(" · ") || "Details not read",
+      badge: "Local",
+      volumeLabel: raid ? `${name} · ${raid}` : name
+    };
+  });
+}
+
+function vsanItem(vsan: HpeVsanReadiness | null): InsideItem | null {
+  if (!vsan?.storage_inventory_available) return null;
+  const summary = (vsan.summary ?? {}) as Record<string, unknown>;
+  const ready = asText(summary.passthrough_ready_count) || String(
+    records(vsan.drives).filter((drive) => asText(drive.vsan_status) === "passthrough_ready").length
+  );
+  const capacity = asText(summary.passthrough_ready_capacity_label);
+  return {
+    id: "vsan:cluster",
+    kind: "vsan",
+    // vSAN datastores are named at the cluster, which this app cannot read
+    // yet. Say that rather than inventing a name.
+    name: "vSAN datastore not created yet",
+    detail: [`${ready} drives ready to contribute`, capacity].filter(Boolean).join(" · "),
+    badge: "vSAN"
+  };
+}
+
+/** Shared storage belongs to another rack device, so it stays a reference. */
+function sharedStorageItems(devices: DeviceInventoryItem[]): InsideItem[] {
+  return devices
+    .filter((device) => rackDeviceKind(device) === "netapp")
+    .map((device) => ({
+      id: `shared:${device.id}`,
+      kind: "shared" as const,
+      name: device.display_name,
+      detail: device.host ? `Served from ${device.host}` : "Address not set",
+      badge: "Shared"
+    }));
+}
+
+function insideItems(
+  storage: HpeStorageDiscovery | null,
+  vsan: HpeVsanReadiness | null,
+  devices: DeviceInventoryItem[],
+  providers: ProviderStatus[]
+): InsideItem[] {
+  const esxi = providers.find((provider) => provider.id === "esxi-readonly");
+  const hypervisor: InsideItem = {
+    id: "hypervisor:esxi",
+    kind: "hypervisor",
+    name: "ESXi host",
+    detail: esxi && esxi.is_current && esxi.status !== "not_checked"
+      ? `Reported ${esxi.status}`
+      : "No current check has proven this yet",
+    badge: "Hypervisor"
+  };
+  return [hypervisor, ...localDatastoreItems(storage), ...(vsanItem(vsan) ? [vsanItem(vsan) as InsideItem] : []), ...sharedStorageItems(devices)];
+}
+
+function insideItemIcon(kind: InsideItemKind) {
+  if (kind === "hypervisor") return <Server size={15} />;
+  if (kind === "shared") return <Database size={15} />;
+  return <HardDrive size={15} />;
+}
+
 function rackBays(vsan: HpeVsanReadiness | null): RackBay[] {
   if (!vsan?.storage_inventory_available) return [];
   return vsan.drives.slice(0, 16).map((drive, index) => {
@@ -451,6 +555,172 @@ function railModeLabel(mode: string): string {
   return "Live · read-only";
 }
 
+function MachineInsidePanel({
+  device,
+  items,
+  selectedItemId,
+  storageRead,
+  onSelectItem
+}: {
+  device: DeviceInventoryItem;
+  items: InsideItem[];
+  selectedItemId: string;
+  storageRead: boolean;
+  onSelectItem: (id: string) => void;
+}) {
+  const shared = items.filter((item) => item.kind === "shared");
+  const owned = items.filter((item) => item.kind !== "shared");
+
+  return (
+    <section className="machine-inside" aria-label={`Inside ${device.display_name}`}>
+      <header className="machine-inside-head">
+        <div>
+          <p className="operator-kicker">Inside {device.display_name}</p>
+          <h2>Software and storage on this machine</h2>
+        </div>
+        <span>Select an item to configure it</span>
+      </header>
+
+      <div className="machine-inside-grid">
+        {owned.map((item) => (
+          <button
+            aria-pressed={selectedItemId === item.id}
+            className={`machine-item is-${item.kind} ${selectedItemId === item.id ? "is-selected" : ""}`}
+            key={item.id}
+            onClick={() => onSelectItem(item.id)}
+            type="button"
+          >
+            <span className="machine-item-badge">{insideItemIcon(item.kind)} {item.badge}</span>
+            <strong>{item.name}</strong>
+            <small>{item.detail}</small>
+          </button>
+        ))}
+      </div>
+
+      {!storageRead && (
+        <p className="machine-inside-empty">
+          Local storage has not been read from this machine yet, so no datastores are listed.
+          Run the read-only iLO storage read from <Link to="/storage">Local storage &amp; RAID</Link> to populate them.
+        </p>
+      )}
+
+      {shared.length > 0 && (
+        <div className="machine-inside-shared" aria-label="Shared storage available to this machine">
+          {shared.map((item) => (
+            <span className="machine-shared-chip" key={item.id}>
+              <Database size={13} /> {item.name}
+              <small>{item.detail}</small>
+            </span>
+          ))}
+          <small className="machine-shared-note">
+            Shared storage belongs to its own rack device — configure it there.
+          </small>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MachineItemConfigPanel({
+  bays,
+  device,
+  item,
+  onClose
+}: {
+  bays: LocalRaidInventoryBay[];
+  device: DeviceInventoryItem;
+  item: InsideItem;
+  onClose: () => void;
+}) {
+  const ownedBays = item.volumeLabel
+    ? bays.filter((bay) => bay.currentLayout === item.volumeLabel)
+    : [];
+
+  return (
+    <section className="machine-config" aria-label={`Configure ${item.name}`}>
+      <header className="machine-config-head">
+        <div>
+          <p className="operator-kicker">Configure</p>
+          <nav className="machine-crumbs" aria-label="Breadcrumb">
+            <span>Rack</span> <span aria-hidden="true">›</span> <span>{device.display_name}</span> <span aria-hidden="true">›</span> <strong>{item.name}</strong>
+          </nav>
+        </div>
+        <button onClick={onClose} type="button">Close</button>
+      </header>
+
+      {item.kind === "local" && (
+        <div className="machine-config-body">
+          <div className="machine-bay-map" aria-label="Drive bays in this chassis">
+            <p className="operator-kicker">Drive bays in this chassis</p>
+            {bays.length === 0 ? (
+              <p className="machine-config-note">No drive inventory has been read from this machine yet.</p>
+            ) : (
+              <>
+                <div className="machine-bay-grid">
+                  {bays.map((bay) => (
+                    <span
+                      className={`machine-bay ${bay.currentLayout === item.volumeLabel ? "is-owned" : bay.currentLayout === "Unassigned" ? "is-free" : "is-other"}`}
+                      key={bay.bay}
+                      title={`${bay.label} · ${bay.currentLayout} · ${bay.detail}`}
+                    >
+                      {bay.bay}
+                    </span>
+                  ))}
+                </div>
+                <p className="machine-bay-legend">
+                  <span className="is-owned" /> this datastore
+                  <span className="is-other" /> other volumes
+                  <span className="is-free" /> unassigned
+                </p>
+              </>
+            )}
+          </div>
+
+          <dl className="machine-config-facts">
+            <div><dt>Name</dt><dd>{item.name}</dd></div>
+            <div><dt>Layout</dt><dd>{item.detail}</dd></div>
+            <div><dt>Bays used</dt><dd>{ownedBays.length ? `${ownedBays.length} of ${bays.length}` : "Not read"}</dd></div>
+          </dl>
+
+          <div className="machine-config-actions">
+            <Link className="machine-config-action" to="/storage">Open local storage &amp; RAID</Link>
+            <span className="machine-config-guard">
+              Changing RAID destroys data, so it stays behind the guarded workspace and its confirmations.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {item.kind === "vsan" && (
+        <div className="machine-config-body">
+          <p className="machine-config-note">
+            {item.detail}. vSAN pools drives across every host in a cluster, so it is configured for the
+            cluster rather than for this one machine.
+          </p>
+          <div className="machine-config-actions">
+            <Link className="machine-config-action" to="/storage">Review vSAN readiness</Link>
+            <span className="machine-config-guard">
+              Read-only. Creating a vSAN datastore needs the cluster built first.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {item.kind === "hypervisor" && (
+        <div className="machine-config-body">
+          <p className="machine-config-note">{item.detail}.</p>
+          <div className="machine-config-actions">
+            <Link className="machine-config-action" to="/virtualization">Open ESXi &amp; virtualization</Link>
+            <span className="machine-config-guard">
+              Installing or reconfiguring ESXi stays behind its guarded workflow.
+            </span>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function railLinkClass({ isActive }: { isActive: boolean }): string {
   return isActive ? "is-active" : "";
 }
@@ -523,6 +793,7 @@ export function SimpleLabPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<DeviceInventoryItem | null>(null);
   const [configuringId, setConfiguringId] = useState("");
+  const [selectedItemId, setSelectedItemId] = useState("");
   useEffect(() => {
     if (visibleIds.length && !visibleIds.includes(selectedId)) setSelectedId(visibleIds[0]);
     if (!visibleIds.length && selectedId) setSelectedId("");
@@ -550,6 +821,25 @@ export function SimpleLabPage() {
   const profile = profiles?.active_profile;
   const mode = health?.provider_mode ?? health?.operator_runtime_mode ?? "unknown";
 
+  // The inside/configure levels only describe machines that actually host
+  // software. A switch or a filer has no hypervisor or local datastores here.
+  const selectedKind = selected ? rackDeviceKind(selected) : "";
+  const insideAvailable = selectedKind === "ilo" || selectedKind === "server" || selectedKind === "esxi_host";
+  // Storage evidence is only this machine's when the cached probe targeted it.
+  const storageMatchesSelected = Boolean(selected && selected.id === storageDeviceId);
+  const machineStorage = storageMatchesSelected ? storage : null;
+  const machineVsan = storageMatchesSelected ? vsan : null;
+  const machineItems = insideAvailable
+    ? insideItems(machineStorage, machineVsan, devices, providers)
+    : [];
+  const selectedItem = machineItems.find((item) => item.id === selectedItemId) ?? null;
+  const chassisBays = localRaidInventoryBays(machineStorage);
+
+  // Selecting a different device invalidates the item drilled into below it.
+  useEffect(() => {
+    setSelectedItemId("");
+  }, [selectedId]);
+
   return (
     <main className="rack-light-page" aria-label="Rack elevation">
       <p className="rack-direction"><span /> Rack workspace · cached evidence only</p>
@@ -571,6 +861,23 @@ export function SimpleLabPage() {
           : loadError
             ? <div className="rack-disconnected" role="alert"><Server size={30} /><h2>Backend disconnected</h2><p>{loadError}</p><button onClick={() => void reload()} type="button">Reconnect</button><small>Adding or changing equipment is paused so a connection failure cannot look like an empty rack or a successful save.</small></div>
             : <div className={`rack-stage ${configuringId ? "is-configuring" : ""}`}><div className="rack-canvas"><RackElevationGraphic devices={devices} providers={providers} accessByDeviceId={accessByDeviceId} bays={bays} storageDeviceId={storageDeviceId} selectedId={selected?.id ?? ""} onSelect={(id) => { setSelectedId(id); setConfiguringId(""); }} /></div><div className="rack-detail">{configuringId && selected?.id === configuringId && rackDeviceKind(selected) === "ilo" ? <RackIloConfigurator activeProfile={profile ?? null} device={selected} onClose={() => setConfiguringId("")} onReload={reload} /> : configuringId && selected?.id === configuringId && rackConfigAvailable(selected) ? <RackDeviceConfigurator activeProfile={profile ?? null} device={selected} health={health} onClose={() => setConfiguringId("")} onReload={reload} /> : <><RackInspector selected={selected} word={selectedWord} bays={bays} access={selectedAccess} storage={storage} storageMatchesDevice={Boolean(selected && selected.id === storageDeviceId)} onEdit={() => selected && setEditingDevice(selected)} onAdd={() => setAddOpen(true)} onConfigure={() => selected && setConfiguringId(selected.id)} /><p className="rack-help">Select a device, then configure its essential settings beside the rack. Green is shown only when a current provider check proves access.</p></>}</div></div>}
+        {loaded && !loadError && selected && insideAvailable && (
+          <MachineInsidePanel
+            device={selected}
+            items={machineItems}
+            selectedItemId={selectedItemId}
+            storageRead={storageMatchesSelected && Boolean(storage?.storage_inventory_available)}
+            onSelectItem={(id) => setSelectedItemId((current) => (current === id ? "" : id))}
+          />
+        )}
+        {loaded && !loadError && selected && selectedItem && (
+          <MachineItemConfigPanel
+            bays={chassisBays}
+            device={selected}
+            item={selectedItem}
+            onClose={() => setSelectedItemId("")}
+          />
+        )}
       </section>
       {addOpen && <DeviceInventoryForm defaultDeviceType="ilo" iloOnboarding onClose={() => setAddOpen(false)} onReload={reload} onSaved={(device) => setSelectedId(device.id)} submitLabel="Add to rack" />}
       {editingDevice && <DeviceInventoryForm device={editingDevice} iloOnboarding initialIloUsername={editingIloAccess?.username} iloCredentialsConfigured={Boolean(editingIloAccess?.username_configured && editingIloAccess.password_configured)} onClose={() => setEditingDevice(null)} onReload={reload} onSaved={(device) => setSelectedId(device.id)} submitLabel="Save rack details" />}
