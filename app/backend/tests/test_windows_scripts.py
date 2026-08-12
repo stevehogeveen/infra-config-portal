@@ -102,7 +102,8 @@ def test_one_command_windows_launcher_is_owned_and_fail_closed() -> None:
 
     assert "Wait-HttpReady" in launcher
     assert "/health" in launcher
-    assert "/overview" in launcher
+    assert 'frontend_url = "http://$HostName`:$FrontendPort/simple"' in launcher
+    assert "Start-Process $state.frontend_url" in launcher
     assert "Start-Process" in launcher
     assert "-WindowStyle Hidden" in launcher
     assert "Stop-OwnedProcess -Process $frontendProcess" in launcher
