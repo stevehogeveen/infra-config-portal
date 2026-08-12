@@ -24,10 +24,12 @@ class DeviceInventoryAddressModeError(ValueError):
     pass
 
 
+# ESXi is deliberately absent: it is software installed on a server, not a
+# rack unit of its own. The rack shows it inside the machine that runs it,
+# so seeding a standalone "ESXi Host" put the same hypervisor in two places.
 SEED_DEVICES = (
     ("cisco-primary", "cisco_switch", "Cisco Switch", "CISCO_TARGET_IP"),
     ("ilo-primary", "ilo", "HPE iLO", "ILO_TEST_HOST"),
-    ("esxi-primary", "esxi_host", "ESXi Host", "ESXI_TEST_HOST"),
     ("netapp-primary", "netapp", "NetApp ONTAP", "NETAPP_CLUSTER_MGMT_IP"),
 )
 

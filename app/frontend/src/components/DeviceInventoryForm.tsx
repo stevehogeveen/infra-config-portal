@@ -109,10 +109,12 @@ export function DeviceInventoryForm({
             <span>Equipment type</span>
             <input aria-label="Device type" list="device-inventory-types" onChange={(event) => setForm({ ...form, device_type: event.target.value })} required value={form.device_type} />
           </label>
+          {/* No esxi_host suggestion: ESXi is software on a server, and the
+              rack already shows it inside the machine that runs it. The field
+              stays free text, so a lab that already has one can still edit it. */}
           <datalist id="device-inventory-types">
             <option value="ilo" />
             <option value="cisco_switch" />
-            <option value="esxi_host" />
             <option value="netapp" />
             <option value="vcenter" />
             <option value="server" />

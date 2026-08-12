@@ -8,12 +8,14 @@ from app.core.database import ensure_device_inventory_dhcp_column
 from app.models import HpeRaidIntent, IloDeviceCredential, IloSetupIntent
 
 
-def test_device_inventory_seeds_existing_four_devices(client) -> None:
+def test_device_inventory_seeds_existing_rack_devices(client) -> None:
     response = client.get("/api/v1/device-inventory")
 
     assert response.status_code == 200
     devices = response.json()
-    assert {item["device_type"] for item in devices} == {"ilo", "cisco_switch", "esxi_host", "netapp"}
+    # ESXi is not seeded: it is software on a server, shown inside the machine
+    # that runs it rather than as a rack unit of its own.
+    assert {item["device_type"] for item in devices} == {"ilo", "cisco_switch", "netapp"}
     assert next(item for item in devices if item["device_type"] == "ilo")["host"] == os.environ["ILO_TEST_HOST"]
 
 
@@ -250,7 +252,7 @@ def test_seed_recovers_when_rows_exist_without_the_marker(client, db_session) ->
     assert response.status_code == 200
     devices = response.json()
     seed_types = [item["device_type"] for item in devices]
-    # The missing three seeds were backfilled, the surviving row was not
-    # duplicated, and the marker now exists so the seed never runs again.
-    assert sorted(seed_types) == sorted(["ilo", "cisco_switch", "esxi_host", "netapp"])
+    # The missing seeds were backfilled, the surviving row was not duplicated,
+    # and the marker now exists so the seed never runs again.
+    assert sorted(seed_types) == sorted(["ilo", "cisco_switch", "netapp"])
     assert db_session.get(DeviceInventoryState, "legacy-seed-v1") is not None
