@@ -14707,3 +14707,84 @@ Frontend production build passed, and focused Playwright for two-iLO isolation, 
 and local RAID discovery passed 9/9. Full `test_workflow_action_runner.py` still exceeds the Windows
 tool timeout as a whole file, but the task-touched workflow/cache subset is green with a short
 basetemp. No hardware workflow was run; all Codex-run tests used `PROVIDER_MODE=mock`.
+
+## 2026-08-11 — CLAUDE (session handoff: rack is the only home; composable topology started)
+
+This session ran from the wrong working directory (`C:\Asset_Management`), so its history and
+memory filed against that project rather than this repo. All code landed here correctly via
+absolute paths; `C:\Asset_Management` was never touched. The next session should start from
+this repo directory. This entry is the handoff.
+
+### Landed (committed, all verified)
+
+- `ca2dc18` **Per-device iLO credentials, setup intent and RAID intent.** Credentials were a
+  global singleton (`ILO_TEST_*` in one env file, intents keyed only by `provider_id`), so a
+  second iLO overwrote the first. Now a device-scoped `ilo_device_credentials` table plus
+  `(device_id, provider_id)` intent keys, with migration `0005` backfilling the legacy env
+  values onto the one matching device, once. Codex did the bulk; three defects were found and
+  fixed on review: the backend matched `device_type == "ilo"` exactly while the rack normalizes
+  "HPE ILO"/"bmc" (so a real board showed the iLO panel then had every request rejected); the
+  one-shot backfill marker had been poisoned by an earlier startup against half-written code,
+  stranding real credentials; and a raw runtime-mode string leaked into the operator rail.
+- `085f02e` **Rack drill-down.** Selecting a server opens "inside this machine" below the rack,
+  and selecting an item there opens its setup below that, with a breadcrumb. Local volumes are
+  listed individually under the controller's own names; the chassis bay map is coloured by
+  owning volume. Storage is attributed to a machine only when the cached probe targeted that
+  machine, so a second server cannot appear to own the first one's disks.
+- `73b95dd` **The old topology map is deleted** (~1000 lines: `OperatorOverviewPage`,
+  `OverviewLabMap`, `MapDeviceEditor`, `GenericDevicePanel`, dead `LabTopologyMap`).
+  `/overview`, `/control-center`, `/settings`, `/providers` redirect to `/simple`. Kit
+  create/activate/continue no longer navigate to the map. The rack gained a real
+  **Remove from rack** with confirmation (cancel issues no request; confirm issues exactly one
+  DELETE). Also fixed a genuine stall: `netapp_state` called `init_database()` per request,
+  re-running schema setup while holding a pooled connection — a live log had **112 QueuePool
+  timeouts**; schema init is now once per engine and 24 concurrent reads produce none.
+  Test suite went 132 → 96; the 36 removed described only the deleted surface.
+
+### In progress, uncommitted at handoff: composable lab topology
+
+Steve's lab is three servers — **DL380 `.38`, DL360 A `.42`, DL360 B `.43`** — and a build may be
+a single server on local storage, a vCenter cluster on NetApp (NFS or iSCSI), or vSAN across the
+hosts. The app could express none of that: `_deployment_mode()` in `services/lab_topology.py` was
+a two-boolean truth table producing four fixed strings, `storage_protocol` had no `vsan` member,
+and `LabAddressPlan` is single-valued per role with no cluster entity anywhere.
+
+Key insight: the address plan does **not** need to become multi-valued. Device inventory is
+already the multi-server source of truth, so cluster membership references inventory device ids.
+
+Backend done and green (18 new tests in `tests/test_lab_shape.py`):
+- `LabProfileFeatures` gains `cluster_member_device_ids: list[str]` and
+  `shared_storage: none|vsan|netapp_nfs|netapp_iscsi`.
+- `_feature_state` still emits every legacy field, derived from the new ones, because ~40 call
+  sites branch on `netapp_enabled`/`vcenter_enabled`/`storage_protocol` and
+  `esxi_installer_artifact.py:843` is an exact-string gate on `deployment_mode`. vSAN maps to the
+  local-storage mode (correct: vSAN consumes local disks) and is forced `supported: True`, because
+  the legacy table would otherwise call a valid vSAN cluster "unsupported vCenter without NetApp".
+- Kits saved before this field keep their meaning: absent `shared_storage` is read back from
+  `netapp_enabled` + `storage_protocol` rather than silently becoming "none".
+- `validate_lab_shape()` in `services/lab_profiles.py` blocks invalid shapes with plain reasons
+  (vSAN needs 3+ hosts and names your count; vCenter needs 2+; NetApp storage needs a NetApp in
+  the rack; members must still exist). Unreadable inventory never blocks a save.
+
+**Remaining for the next session:** the frontend. The kit form (`App.tsx:7005+`) still uses a
+two-value `LabDeploymentMode` (`App.tsx:414`) that cannot express three storage backings; it needs
+member checkboxes over real rack devices, a vCenter toggle and four storage choices, with blocked
+combinations disabling save and showing the reason. Then surface the shape on the rack rail and
+make the drill-down's vSAN tile real when `shared_storage === "vsan"`. Frontend consumers to
+update are listed in the plan; `operatorHomeModel.ts:461` also compares against
+`"single_server_local_raid"`, a string that is not in the Literal (dead code).
+
+### Lab state as left
+
+Inventory corrected to the three real servers (duplicate `.42` removed, DL380 `.38` added,
+renamed by model). The `192.168.1.x` ESXi/NetApp/Cisco entries are stale from an older profile and
+still need attention — note that the standalone "ESXi Host" device is conceptually wrong per
+Steve: ESXi runs *on* a server, it is not its own rack unit. Active kit is "vSAN Lab". A probe kit
+created during live testing was removed and the active kit restored (`.local/lab-profiles.json`,
+backup alongside).
+
+### Standing constraints
+
+Read-only by default; every hardware write stays behind its existing confirmation. Never show
+green without current proof bound to the exact target. `PROVIDER_MODE=mock` for agent-run tests.
+Backend has 8 known pre-existing failures unrelated to this work.

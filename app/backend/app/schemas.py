@@ -474,6 +474,18 @@ class LabProfileDevices(BaseModel):
 class LabProfileFeatures(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    # The lab's shape, described rather than picked from presets: which rack
+    # servers form the cluster, and what backs their shared storage. Local
+    # per-host volumes exist regardless and are not represented here.
+    cluster_member_device_ids: list[str] = Field(default_factory=list, max_length=32)
+    # None means "this kit never said", which is not the same as choosing none:
+    # kits saved before this field existed must keep deriving their storage from
+    # netapp_enabled/storage_protocol rather than being switched to local.
+    shared_storage: Literal["none", "vsan", "netapp_nfs", "netapp_iscsi"] | None = None
+    # Everything below is derived from the two fields above (see
+    # lab_topology._feature_state). They stay because ~40 call sites branch on
+    # netapp_enabled / vcenter_enabled / storage_protocol, and deployment_mode
+    # is an exact-string gate in esxi_installer_artifact.
     netapp_enabled: bool = True
     vcenter_enabled: bool = False
     deployment_mode: Literal[

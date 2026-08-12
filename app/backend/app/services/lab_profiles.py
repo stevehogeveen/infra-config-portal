@@ -103,6 +103,7 @@ def list_lab_profiles() -> dict[str, Any]:
 def create_lab_profile(payload: dict[str, Any]) -> dict[str, Any]:
     store = _read_store()
     now = _now()
+    validate_lab_shape(payload)
     components = _normalize_profile_components(payload)
     profile = {
         "id": f"lab-{uuid4().hex[:12]}",
@@ -147,6 +148,7 @@ def update_lab_profile(profile_id: str, payload: dict[str, Any]) -> dict[str, An
             "field_presence": deepcopy(profile.get("field_presence") or {}),
         }
     )
+    validate_lab_shape(payload)
     components = _normalize_profile_components(payload)
     profile["name"] = payload["name"]
     profile["description"] = payload.get("description") or ""
@@ -781,6 +783,101 @@ def _runtime_profile_components() -> dict[str, Any]:
     except LabProfileError:
         safe_address_plan = {"subnet": address_plan.get("subnet")}
         return _derive_components({**payload, "address_plan": safe_address_plan})
+
+
+VSAN_MINIMUM_HOSTS = 3
+VCENTER_MINIMUM_HOSTS = 2
+
+
+def validate_lab_shape(payload: dict[str, Any]) -> None:
+    """Refuse lab shapes that cannot be built, saying what would fix them.
+
+    The rules live here rather than in the schema because they depend on what
+    is actually in the rack, and both the API and the kit form need the same
+    answer worded the same way.
+    """
+    features = payload.get("features") or {}
+    if not isinstance(features, dict):
+        return
+    shared_storage = str(features.get("shared_storage") or "none").strip().lower()
+    members = [
+        str(member).strip()
+        for member in (features.get("cluster_member_device_ids") or [])
+        if str(member).strip()
+    ]
+    host_count = len(members)
+    # Kits saved before this field existed enable vCenter without ever listing
+    # members, so a host count cannot be inferred for them. Host-count rules
+    # only apply once the operator actually describes a cluster; applying them
+    # to older kits would refuse labs the app has always supported.
+    describes_cluster = "cluster_member_device_ids" in features
+
+    if shared_storage == "vsan" and host_count < VSAN_MINIMUM_HOSTS:
+        raise LabProfileError(
+            f"vSAN pools disks across at least {VSAN_MINIMUM_HOSTS} hosts, and this kit has "
+            f"{host_count if host_count else 'none'} selected. Add more servers to the cluster, "
+            "or choose local storage instead."
+        )
+
+    if features.get("vcenter_enabled") and describes_cluster and host_count < VCENTER_MINIMUM_HOSTS:
+        raise LabProfileError(
+            "vCenter manages a cluster, so it needs at least "
+            f"{VCENTER_MINIMUM_HOSTS} hosts. Select more servers, or turn vCenter off."
+        )
+
+    if shared_storage in {"netapp_nfs", "netapp_iscsi"} and not _inventory_has_netapp():
+        raise LabProfileError(
+            "This kit uses NetApp storage, but no NetApp appears in the rack. "
+            "Add the NetApp to the rack first, or choose different storage."
+        )
+
+    known = _inventory_server_device_ids()
+    # `known` is None when inventory could not be read at all. Only check
+    # membership against a rack we actually saw, or an unreadable inventory
+    # would reject every cluster.
+    if members and known is not None:
+        missing = [member for member in members if member not in known]
+        if missing:
+            raise LabProfileError(
+                f"{len(missing)} selected cluster {'host is' if len(missing) == 1 else 'hosts are'} "
+                "no longer in the rack. Reselect the servers for this cluster."
+            )
+
+
+def _inventory_devices() -> list[dict[str, Any]] | None:
+    """Rack contents, or None when inventory could not be read.
+
+    None and "the rack is empty" mean different things here: an unreadable
+    inventory must never be the reason a kit cannot be saved.
+    """
+    try:
+        from app.core.database import SessionLocal
+        from app.services.device_inventory import list_devices
+
+        with SessionLocal() as session:
+            return [
+                {"id": str(device.id), "device_type": str(device.device_type or "")}
+                for device in list_devices(session)
+            ]
+    except Exception:
+        return None
+
+
+def _inventory_has_netapp() -> bool:
+    devices = _inventory_devices()
+    if devices is None:
+        return True
+    return any(
+        "netapp" in device["device_type"].casefold() or "ontap" in device["device_type"].casefold()
+        for device in devices
+    )
+
+
+def _inventory_server_device_ids() -> set[str] | None:
+    devices = _inventory_devices()
+    if devices is None:
+        return None
+    return {device["id"] for device in devices}
 
 
 def _normalize_profile_components(payload: dict[str, Any]) -> dict[str, Any]:

@@ -25,9 +25,10 @@ DEPLOYMENT_MODE_SHARED_STORAGE = "server_netapp_vcenter"
 DEPLOYMENT_MODE_SINGLE_SERVER = "single_server_local_storage"
 DEPLOYMENT_MODE_NETAPP_DIRECT = "server_netapp_direct"
 DEPLOYMENT_MODE_UNSUPPORTED = "unsupported_vcenter_without_netapp"
-SUPPORTED_DEPLOYMENT_MODES = {DEPLOYMENT_MODE_SHARED_STORAGE, DEPLOYMENT_MODE_SINGLE_SERVER}
 NETAPP_STORAGE_PROTOCOLS = {"nfs", "iscsi"}
 LOCAL_STORAGE_PROTOCOLS = {"local", "none"}
+SHARED_STORAGE_CHOICES = {"none", "vsan", "netapp_nfs", "netapp_iscsi"}
+NETAPP_SHARED_STORAGE = {"netapp_nfs", "netapp_iscsi"}
 
 HIGH_ADDRESS_OFFSETS = {
     "gateway": 1,
@@ -301,17 +302,57 @@ def _feature_state(
     global_settings: dict[str, Any],
 ) -> dict[str, Any]:
     compact = topology == COMPACT_EDGE_LAB
-    netapp_enabled = (
-        _bool_value(raw_features.get("netapp_enabled"), False)
-        if compact
-        else _bool_value(raw_features.get("netapp_enabled"), _bool_value(global_settings.get("netapp_enabled"), True))
-    )
-    if prefix > 24 and "netapp_enabled" not in raw_features:
+    cluster_members = _cluster_member_ids(raw_features.get("cluster_member_device_ids"))
+    # An explicit choice drives storage; absent, the kit predates this field.
+    explicit_storage = _explicit_shared_storage(raw_features)
+
+    if explicit_storage in NETAPP_SHARED_STORAGE:
+        # The operator describing their lab outranks the topology/prefix
+        # defaults that used to decide this.
+        netapp_enabled = True
+    elif explicit_storage is not None:
         netapp_enabled = False
+    else:
+        netapp_enabled = (
+            _bool_value(raw_features.get("netapp_enabled"), False)
+            if compact
+            else _bool_value(raw_features.get("netapp_enabled"), _bool_value(global_settings.get("netapp_enabled"), True))
+        )
+        if prefix > 24 and "netapp_enabled" not in raw_features:
+            netapp_enabled = False
     vcenter_enabled = _bool_value(raw_features.get("vcenter_enabled"), False)
+    # Derived from the resolved state, not the raw input, so that feeding this
+    # output back in as input produces the same answer. _feature_state runs
+    # twice on a save; an inferred "none" returning as an apparent explicit
+    # choice would switch NetApp off on the second pass.
+    shared_storage = explicit_storage or _inferred_shared_storage(
+        {"netapp_enabled": netapp_enabled, "storage_protocol": raw_features.get("storage_protocol")}
+    )
     deployment = _deployment_mode(netapp_enabled=netapp_enabled, vcenter_enabled=vcenter_enabled)
-    storage_protocol = _storage_protocol(raw_features.get("storage_protocol"), netapp_enabled=netapp_enabled)
+    if shared_storage == "vsan":
+        # The legacy truth table only knew NetApp-or-nothing, so it calls
+        # vCenter without NetApp unsupported. A vSAN cluster is exactly that
+        # and is perfectly valid: it pools the hosts' own disks. Report the
+        # local-storage mode, which is also what the ESXi installer gate wants.
+        deployment = {
+            **deployment,
+            "mode": DEPLOYMENT_MODE_SINGLE_SERVER,
+            "storage_location": "server_local",
+            "supported": True,
+        }
+    deployment["label"] = _shape_label(
+        cluster_members=cluster_members,
+        shared_storage=shared_storage,
+        vcenter_enabled=vcenter_enabled,
+        fallback=deployment["label"],
+    )
+    storage_protocol = _storage_protocol(
+        "iscsi" if shared_storage == "netapp_iscsi" else "nfs" if shared_storage == "netapp_nfs" else raw_features.get("storage_protocol"),
+        netapp_enabled=netapp_enabled,
+    )
     return {
+        "cluster_member_device_ids": cluster_members,
+        "shared_storage": shared_storage,
         "netapp_enabled": netapp_enabled,
         "vcenter_enabled": vcenter_enabled,
         "deployment_mode": deployment["mode"],
@@ -333,6 +374,61 @@ def _feature_state(
         else NETAPP_DISABLED_PREFIX_REASON,
         "vcenter_disabled_reason": None if vcenter_enabled else VCENTER_DISABLED_COMPACT_REASON if compact else "vCenter is disabled by the active lab setup.",
     }
+
+
+def _cluster_member_ids(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    seen: set[str] = set()
+    members: list[str] = []
+    for item in value:
+        member = _clean_string(item)
+        if not member or member in seen:
+            continue
+        seen.add(member)
+        members.append(member)
+    return members
+
+
+def _explicit_shared_storage(raw_features: dict[str, Any]) -> str | None:
+    """The operator's stated storage choice, or None if this kit never said."""
+    choice = (_clean_string(raw_features.get("shared_storage")) or "").lower()
+    return choice if choice in SHARED_STORAGE_CHOICES else None
+
+
+def _inferred_shared_storage(raw_features: dict[str, Any]) -> str:
+    """Read an older kit's storage back from the fields it does carry.
+
+    Kits saved before shared_storage existed must not be reported as "none",
+    which would read as local storage and drop their NetApp.
+    """
+    if _bool_value(raw_features.get("netapp_enabled"), False):
+        protocol = (_clean_string(raw_features.get("storage_protocol")) or "nfs").lower()
+        return "netapp_iscsi" if protocol == "iscsi" else "netapp_nfs"
+    return "none"
+
+
+def _shape_label(
+    *,
+    cluster_members: list[str],
+    shared_storage: str,
+    vcenter_enabled: bool,
+    fallback: str,
+) -> str:
+    """Describe the lab in the operator's terms, not the internal mode string."""
+    parts: list[str] = []
+    if cluster_members:
+        parts.append(f"{len(cluster_members)} host{'s' if len(cluster_members) != 1 else ''}")
+    if vcenter_enabled:
+        parts.append("vCenter")
+    storage_words = {
+        "vsan": "vSAN",
+        "netapp_nfs": "NetApp NFS",
+        "netapp_iscsi": "NetApp iSCSI",
+        "none": "local storage",
+    }
+    parts.append(storage_words.get(shared_storage, "local storage"))
+    return ", ".join(parts) if cluster_members else fallback
 
 
 def _deployment_mode(*, netapp_enabled: bool, vcenter_enabled: bool) -> dict[str, Any]:
