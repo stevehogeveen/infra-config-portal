@@ -88,7 +88,13 @@ def get_hpe_storage_discovery(
     config: IloRedfishConfig | None = None,
 ) -> HpeStorageDiscoveryRead:
     if probe is None:
-        probe, probe_time = get_probe_result(PROVIDER_ID)
+        scope = config.device_id if config is not None else None
+        probe, probe_time = get_probe_result(PROVIDER_ID, scope=scope)
+        if probe is None and scope:
+            # This device has no evidence of its own yet -- fall back to the
+            # shared slot a pre-scoping probe wrote. The identity check below
+            # still discards it unless it really is this device's probe.
+            probe, probe_time = get_probe_result(PROVIDER_ID)
         if config is not None and not _probe_matches_config(probe, config):
             probe = None
             probe_time = None

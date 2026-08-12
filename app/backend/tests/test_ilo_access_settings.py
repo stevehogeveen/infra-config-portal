@@ -27,7 +27,7 @@ def test_last_probe_summary_marks_recent_exact_target_evidence_current(
     monkeypatch.setattr(
         ilo_access_settings,
         "get_probe_result",
-        lambda _provider_id: (
+        lambda _provider_id, **_kwargs: (
             {
                 "status": "ok",
                 "target_fingerprint": ilo_target_fingerprint(host),
@@ -53,7 +53,7 @@ def test_last_probe_summary_marks_stale_exact_target_evidence_not_current(
     monkeypatch.setattr(
         ilo_access_settings,
         "get_probe_result",
-        lambda _provider_id: (
+        lambda _provider_id, **_kwargs: (
             {
                 "status": "ok",
                 "target_fingerprint": ilo_target_fingerprint(host),
@@ -75,7 +75,7 @@ def test_last_probe_summary_never_marks_another_device_current(monkeypatch) -> N
     monkeypatch.setattr(
         ilo_access_settings,
         "get_probe_result",
-        lambda _provider_id: (
+        lambda _provider_id, **_kwargs: (
             {
                 "status": "ok",
                 "target_fingerprint": ilo_target_fingerprint("192.0.2.12"),
@@ -101,7 +101,7 @@ def test_last_probe_summary_marks_missing_evidence_not_checked(
     monkeypatch.setattr(
         ilo_access_settings,
         "get_probe_result",
-        lambda _provider_id: (None, None),
+        lambda _provider_id, **_kwargs: (None, None),
     )
 
     summary = ilo_access_settings._last_probe_summary(

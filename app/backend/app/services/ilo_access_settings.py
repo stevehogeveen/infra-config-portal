@@ -91,6 +91,7 @@ def read_ilo_access_settings(session: Session, device_id: str) -> dict[str, Any]
         password=password,
         verify_tls=verify_tls,
         host_source=host_source,
+        device_id=device_id,
     )
     return {
         "device_id": device_id,
@@ -189,6 +190,7 @@ def ilo_config_for_device(session: Session, device_id: str) -> IloRedfishConfig:
         password=_clean_optional(credentials.get("password")),
         verify_tls=bool_value(credentials.get("verify_tls"), default=True),
         host_source="device_credentials" if credential_host else "device_inventory",
+        device_id=device_id,
     )
 
 
@@ -237,6 +239,7 @@ def _config(
     password: str | None,
     verify_tls: bool,
     host_source: str,
+    device_id: str | None = None,
 ) -> IloRedfishConfig:
     return IloRedfishConfig(
         host=host,
@@ -247,6 +250,7 @@ def _config(
         host_source=host_source,
         fallback_hosts=(),
         fallback_host_sources=(),
+        device_id=device_id,
     )
 
 
@@ -261,7 +265,7 @@ def _next_safe_action(config: IloRedfishConfig) -> str:
 
 
 def _last_probe_summary(host: str | None, config: IloRedfishConfig) -> dict[str, Any]:
-    result, checked_at = get_probe_result(PROVIDER_ID)
+    result, checked_at = get_probe_result(PROVIDER_ID, scope=config.device_id)
     if not isinstance(result, dict):
         return {
             "last_probe_status": "not_checked",

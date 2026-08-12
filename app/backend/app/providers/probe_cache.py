@@ -17,21 +17,46 @@ MAX_CACHE_KEY_PREFIX_CHARS = 72
 _PROBE_RESULTS: dict[str, dict[str, Any]] = {}
 
 
-def record_probe_result(provider_id: str, result: dict[str, Any]) -> dict[str, Any]:
+def record_probe_result(
+    provider_id: str,
+    result: dict[str, Any],
+    *,
+    scope: str | None = None,
+) -> dict[str, Any]:
+    slot = _slot(provider_id, scope)
     checked_at = datetime.now(UTC).isoformat()
     stored = {**result, "checked_at": checked_at}
-    _PROBE_RESULTS[provider_id] = stored
-    _write_probe_result(provider_id, stored)
+    _PROBE_RESULTS[slot] = stored
+    _write_probe_result(slot, stored)
+    if slot != provider_id:
+        # Aggregate readers (firmware compliance, baseline, write-target) ask
+        # for the bare provider slot and mean "the most recent probe from any
+        # device". Mirror into it so scoping a probe never freezes them.
+        _PROBE_RESULTS[provider_id] = stored
+        _write_probe_result(provider_id, stored)
     return stored
 
 
-def get_probe_result(provider_id: str) -> tuple[dict[str, Any] | None, str | None]:
-    result = _PROBE_RESULTS.get(provider_id) or _read_probe_result(provider_id)
+def get_probe_result(
+    provider_id: str,
+    *,
+    scope: str | None = None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    slot = _slot(provider_id, scope)
+    result = _PROBE_RESULTS.get(slot) or _read_probe_result(slot)
     if result is None:
         return None, None
-    _PROBE_RESULTS[provider_id] = result
+    _PROBE_RESULTS[slot] = result
     checked_at = result.get("checked_at")
     return result, checked_at if isinstance(checked_at, str) else None
+
+
+def _slot(provider_id: str, scope: str | None) -> str:
+    # A provider with several devices needs one evidence slot per device.
+    # Without a scope the slot stays exactly the bare provider id, so
+    # single-device providers keep reading the caches they already wrote.
+    clean = scope.strip() if isinstance(scope, str) else ""
+    return f"{provider_id}::{clean}" if clean else provider_id
 
 
 def clear_probe_results() -> None:

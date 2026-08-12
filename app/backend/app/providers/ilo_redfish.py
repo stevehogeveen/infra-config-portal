@@ -57,6 +57,9 @@ class IloRedfishConfig:
     host_source: str = "runtime_env"
     fallback_hosts: tuple[str, ...] = ()
     fallback_host_sources: tuple[str, ...] = ()
+    # Set when the config came from a rack device, so probe evidence is
+    # cached against that device instead of a single shared iLO slot.
+    device_id: str | None = None
 
     @classmethod
     def from_settings(cls) -> "IloRedfishConfig":
@@ -123,7 +126,7 @@ class IloRedfishAdapter:
         self.config = config or IloRedfishConfig.from_settings()
 
     def health(self) -> ProviderStatus:
-        last_result, last_time = get_probe_result(PROVIDER_ID)
+        last_result, last_time = get_probe_result(PROVIDER_ID, scope=self.config.device_id)
         missing_fields = self.config.missing_fields
         last_probe_status = _probe_status(last_result)
         last_probe_target_matches_candidates = _probe_target_matches_candidates(
@@ -565,9 +568,10 @@ class IloRedfishAdapter:
     def _record_result(self, result: dict[str, Any]) -> dict[str, Any]:
         result = _attach_write_target_evidence(result)
         redacted = redact_sensitive(result, self._redaction_values())
-        previous_result, previous_checked_at = get_probe_result(PROVIDER_ID)
+        scope = self.config.device_id
+        previous_result, previous_checked_at = get_probe_result(PROVIDER_ID, scope=scope)
         redacted = _preserve_legacy_identity(redacted, previous_result, previous_checked_at)
-        return record_probe_result(PROVIDER_ID, redacted)
+        return record_probe_result(PROVIDER_ID, redacted, scope=scope)
 
     def _redaction_values(self) -> list[str | None]:
         return ilo_redfish_redaction_values(self.config)
