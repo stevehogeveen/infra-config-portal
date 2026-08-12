@@ -530,10 +530,8 @@ function RackInspector({ selected, word, bays, access, storage, storageMatchesDe
         <div><dt>Notes</dt><dd>{selected.notes || "None"}</dd></div>
       </dl>
       <div className="rack-actions">
-        {isIlo && iloCredentialsReady
-          ? <button className="rack-action is-primary" onClick={onConfigure} type="button">Configure iLO beside rack</button>
-          : isIlo
-          ? <button className="rack-action is-primary" onClick={onEdit} type="button">Continue: set up this iLO</button>
+        {isIlo
+          ? <button className="rack-action is-primary" onClick={onConfigure} type="button">{iloCredentialsReady ? "Configure iLO beside rack" : "Continue: set up this iLO"}</button>
           : canConfigureBesideRack
           ? <button className="rack-action is-primary" onClick={onConfigure} type="button">{`Configure ${rackConfigLabel(selected)} beside rack`}</button>
           : <Link className="rack-action is-primary" to={primaryRoute}>{`Configure ${typeLabel}`}</Link>}
