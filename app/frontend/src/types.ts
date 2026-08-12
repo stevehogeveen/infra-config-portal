@@ -623,6 +623,10 @@ export type LabProfileDevices = {
 export type LabProfileFeatures = {
   netapp_enabled: boolean;
   vcenter_enabled: boolean;
+  /** Rack devices that make up the cluster. vSAN is a property of this set. */
+  cluster_member_device_ids?: string[];
+  /** "none" | "vsan" | "netapp" -- what backs the cluster's shared storage. */
+  shared_storage?: string;
   deployment_mode?: string;
   deployment_label?: string;
   deployment_supported?: boolean;

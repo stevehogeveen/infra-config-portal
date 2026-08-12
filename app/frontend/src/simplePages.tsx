@@ -10,6 +10,7 @@ import type {
   HpeStorageDiscovery,
   HpeVsanReadiness,
   IloAccessSettings,
+  LabProfile,
   LabProfileList,
   ProviderStatus
 } from "./types";
@@ -328,20 +329,40 @@ function localDatastoreItems(storage: HpeStorageDiscovery | null): InsideItem[] 
   });
 }
 
-function vsanItem(vsan: HpeVsanReadiness | null): InsideItem | null {
+/**
+ * vSAN is a property of a cluster of ESXi hosts, not of one machine: it needs
+ * vCenter, three or more members, ESXi actually installed on each of them, and
+ * raw drives to contribute. This host's drive count is the last of those, so
+ * report the first unmet requirement rather than implying a datastore is one
+ * step away whenever some drives happen to be raw.
+ */
+function vsanItem(vsan: HpeVsanReadiness | null, profile: LabProfile | null): InsideItem | null {
   if (!vsan?.storage_inventory_available) return null;
   const summary = (vsan.summary ?? {}) as Record<string, unknown>;
-  const ready = asText(summary.passthrough_ready_count) || String(
-    records(vsan.drives).filter((drive) => asText(drive.vsan_status) === "passthrough_ready").length
-  );
+  const ready = Number(summary.passthrough_ready_count ?? 0) || records(vsan.drives).filter((drive) => asText(drive.vsan_status) === "passthrough_ready").length;
   const capacity = asText(summary.passthrough_ready_capacity_label);
+  const contribution = [`${ready} ${ready === 1 ? "drive" : "drives"} ready to contribute`, capacity].filter(Boolean).join(" · ");
+
+  const features = profile?.features;
+  const memberCount = features?.cluster_member_device_ids?.length ?? 0;
+
+  const blocker = features?.shared_storage !== "vsan"
+    ? `This lab is shaped as ${asText(features?.deployment_label) || "local storage"}, not vSAN`
+    : features.vcenter_enabled !== true
+    ? asText(features.vcenter_disabled_reason) || "vSAN needs vCenter, which is off for this lab"
+    : memberCount < 3
+    ? `vSAN needs 3 or more cluster members; this lab has ${memberCount}`
+    : ready === 0
+    ? "This machine has no raw drives to contribute"
+    : "";
+
   return {
     id: "vsan:cluster",
     kind: "vsan",
     // vSAN datastores are named at the cluster, which this app cannot read
     // yet. Say that rather than inventing a name.
-    name: "vSAN datastore not created yet",
-    detail: [`${ready} drives ready to contribute`, capacity].filter(Boolean).join(" · "),
+    name: blocker ? "vSAN not available yet" : "vSAN datastore not created yet",
+    detail: blocker ? `${blocker} · ${contribution}` : contribution,
     badge: "vSAN"
   };
 }
@@ -363,7 +384,8 @@ function insideItems(
   storage: HpeStorageDiscovery | null,
   vsan: HpeVsanReadiness | null,
   devices: DeviceInventoryItem[],
-  providers: ProviderStatus[]
+  providers: ProviderStatus[],
+  profile: LabProfile | null
 ): InsideItem[] {
   const esxi = providers.find((provider) => provider.id === "esxi-readonly");
   const hypervisor: InsideItem = {
@@ -375,7 +397,8 @@ function insideItems(
       : "No current check has proven this yet",
     badge: "Hypervisor"
   };
-  return [hypervisor, ...localDatastoreItems(storage), ...(vsanItem(vsan) ? [vsanItem(vsan) as InsideItem] : []), ...sharedStorageItems(devices)];
+  const vsanTile = vsanItem(vsan, profile);
+  return [hypervisor, ...localDatastoreItems(storage), ...(vsanTile ? [vsanTile] : []), ...sharedStorageItems(devices)];
 }
 
 function insideItemIcon(kind: InsideItemKind) {
@@ -879,7 +902,7 @@ export function SimpleLabPage() {
   const machineStorage = storageMatchesSelected ? storage : null;
   const machineVsan = storageMatchesSelected ? vsan : null;
   const machineItems = insideAvailable
-    ? insideItems(machineStorage, machineVsan, devices, providers)
+    ? insideItems(machineStorage, machineVsan, devices, providers, profile ?? null)
     : [];
   const selectedItem = machineItems.find((item) => item.id === selectedItemId) ?? null;
   const chassisBays = localRaidInventoryBays(machineStorage);
