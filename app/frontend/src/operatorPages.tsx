@@ -1382,7 +1382,115 @@ export function OperatorServerPage({ health, labProfileState, onReloadLabProfile
 
 type ServerDetailSectionId = "setup" | "ilo" | "checks" | "hardware";
 
-type RackIloTab = "access" | "settings" | "checks";
+type RackIloTab = "access" | "settings" | "checks" | "install";
+
+/**
+ * Guarded actions the rack can run for one iLO, in the order an install uses
+ * them. The backend already accepts these over the normal run endpoint; it
+ * refuses unless the exact confirmation phrase arrives with the request, and
+ * re-checks that server-side. Typing the phrase here is the operator making
+ * that confirmation, not the UI relaxing a gate.
+ */
+const RACK_ILO_GUARDED_ACTIONS = [
+  {
+    actionId: "ilo.virtual-media-insert",
+    title: "Attach the ESXi installer",
+    detail: "Mounts the ESXi ISO on this server as iLO virtual media. Nothing boots yet and no disk is touched."
+  },
+  {
+    actionId: "ilo.one-time-boot",
+    title: "Boot once from the installer",
+    detail: "Sets the next boot only to the attached media. The server still has to be powered on or reset to use it."
+  }
+] as const;
+
+function GuardedActionRunner({
+  action,
+  deviceId,
+  detail,
+  title,
+  onReload
+}: {
+  action: WorkflowAction | undefined;
+  deviceId: string;
+  detail: string;
+  title: string;
+  onReload: () => Promise<void> | void;
+}) {
+  const [typed, setTyped] = useState("");
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<WorkflowActionRun | null>(null);
+  const [error, setError] = useState("");
+
+  if (!action) {
+    return <article className="rack-guarded-action"><h4>{title}</h4><p className="operator-action-message">This action is not in the current workflow registry.</p></article>;
+  }
+
+  const phrase = action.required_confirmations?.[0] ?? "";
+  const gates = action.required_gates ?? [];
+  // Guarded actions advertise ui_run_supported false because the registry asks
+  // without a phrase. guarded_run_supported is the honest signal here.
+  const blockers = action.guarded_run_blockers ?? [];
+  const matches = typed === phrase;
+
+  async function run() {
+    setRunning(true);
+    setError("");
+    setResult(null);
+    try {
+      const run = await api.runWorkflowAction(action!.action_id, {
+        confirmation_phrase: typed,
+        confirmed_gates: gates,
+        device_id: deviceId
+      });
+      setResult(run);
+      setTyped("");
+      await onReload();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <article className="rack-guarded-action">
+      <header>
+        <div><h4>{title}</h4><span className={`rack-guarded-mode is-${action.mode}`}>{action.mode}</span></div>
+        <p>{detail}</p>
+      </header>
+      {blockers.length > 0 && <ul className="rack-guarded-blockers">{blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>}
+      {gates.length > 0 && <p className="rack-guarded-gates">Confirms gate{gates.length > 1 ? "s" : ""}: {gates.join(", ")}</p>}
+      <label>
+        <span>Type <strong>{phrase}</strong> to confirm</span>
+        <input
+          aria-label={`Confirmation phrase for ${title}`}
+          autoComplete="off"
+          disabled={running || blockers.length > 0}
+          onChange={(event) => setTyped(event.target.value)}
+          placeholder={phrase}
+          spellCheck={false}
+          value={typed}
+        />
+      </label>
+      <button
+        className="rack-action is-primary"
+        disabled={!matches || running || blockers.length > 0}
+        onClick={() => void run()}
+        type="button"
+      >
+        {running ? "Running…" : title}
+      </button>
+      {error && <p className="operator-action-message is-error">{error}</p>}
+      {result && <div className={`rack-guarded-result is-${result.status}`}>
+        <strong>{result.status}</strong>
+        <p>{result.summary || result.stderr_summary || ""}</p>
+        {result.blockers?.length > 0 && <ul>{result.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>}
+        {result.next_action && <p className="rack-guarded-next">Next: {result.next_action}</p>}
+      </div>}
+    </article>
+  );
+}
 
 function RackInlineSafetyRail({ deviceLabel }: { deviceLabel: string }) {
   return (
@@ -1529,7 +1637,8 @@ export function RackIloConfigurator({
   const tabs: Array<{ id: RackIloTab; label: string }> = [
     { id: "access", label: "Access" },
     { id: "settings", label: "iLO settings" },
-    { id: "checks", label: "Checks" }
+    { id: "checks", label: "Checks" },
+    { id: "install", label: "Install ESXi" }
   ];
 
   return (
@@ -1547,6 +1656,33 @@ export function RackIloConfigurator({
         {tab === "access" && <IloAccessSettingsPanel deviceId={device.id} initialHost={device.host || address.ilo_initial || ""} onReload={reloadInlineData} plannedHost={address.ilo || ""} />}
         {tab === "settings" && <IloSetupIntentWorkspacePanel deviceId={device.id} />}
         {tab === "checks" && <ServerWorkspaceControls activeProfile={activeProfile} address={address} firmwareSummaries={firmwareSummaries} iloDeviceId={device.id} localStorageMode={localStorageMode} onReload={reloadInlineData} scope="ilo" workflowActions={workflowActions} />}
+        {tab === "install" && <section className="rack-guarded-actions" aria-label={`Install ESXi on ${device.display_name}`}>
+          <header className="rack-guarded-head">
+            <p className="operator-kicker">Guarded writes</p>
+            <h3>Install ESXi on {device.display_name}</h3>
+            <p>
+              These steps write to this server through its iLO. Attaching media and setting a one-time boot
+              are reversible; what follows at the console is not. Installing ESXi overwrites the disk you
+              select in the installer, so confirm the target there before continuing.
+            </p>
+          </header>
+          {loading
+            ? <p className="operator-action-message">Loading guarded actions…</p>
+            : RACK_ILO_GUARDED_ACTIONS.map((entry) => (
+              <GuardedActionRunner
+                action={workflowActions.find((item) => item.action_id === entry.actionId)}
+                detail={entry.detail}
+                deviceId={device.id}
+                key={entry.actionId}
+                onReload={reloadInlineData}
+                title={entry.title}
+              />
+            ))}
+          <p className="rack-guarded-footnote">
+            After the one-time boot, power on or reset the server and complete the installation at the iLO
+            remote console. Then run the Checks tab to prove the result.
+          </p>
+        </section>}
       </div>
       <div className="rack-inline-config-links"><Link to="/storage">Local storage &amp; RAID</Link><Link to="/server">Detailed server workspace</Link></div>
     </aside>

@@ -22242,6 +22242,33 @@ button.design-ilo-port:hover {
 .rack-inline-config-body .network-workspace-controls { border-radius: 12px; }
 .rack-inline-config-body .cisco-console-candidates { grid-template-columns: 1fr; }
 .rack-inline-config-body .design-terminal-output { max-height: 180px; overflow: auto; }
+.rack-guarded-actions { display: grid; gap: 14px; }
+.rack-guarded-head { display: grid; gap: 5px; }
+.rack-guarded-head h3 { color: #142d36; font-size: 16px; margin: 0; }
+.rack-guarded-head p { color: #4a626b; font-size: 11px; line-height: 1.5; margin: 0; }
+.rack-guarded-action { background: #fff; border: 1px solid #d8e3e7; border-radius: 12px; display: grid; gap: 10px; padding: 14px; }
+.rack-guarded-action header { display: grid; gap: 5px; }
+.rack-guarded-action header > div { align-items: center; display: flex; gap: 8px; justify-content: space-between; }
+.rack-guarded-action h4 { color: #142d36; font-size: 13px; margin: 0; }
+.rack-guarded-action header p { color: #4a626b; font-size: 11px; line-height: 1.5; margin: 0; }
+.rack-guarded-mode { border-radius: 999px; font-size: 9px; font-weight: 900; letter-spacing: .08em; padding: 3px 8px; text-transform: uppercase; }
+.rack-guarded-mode.is-write { background: #fff3e0; color: #97590a; }
+.rack-guarded-mode.is-destructive { background: #fdecec; color: #a52222; }
+.rack-guarded-action label { display: grid; gap: 5px; }
+.rack-guarded-action label span { color: #4a626b; font-size: 11px; }
+.rack-guarded-action label strong { color: #142d36; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.rack-guarded-action input { border: 1px solid #bfd0d7; border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; padding: 9px 10px; width: 100%; }
+.rack-guarded-action input:focus { border-color: #0a8f93; outline: none; }
+.rack-guarded-action button.rack-action:disabled { cursor: not-allowed; opacity: .45; }
+.rack-guarded-blockers, .rack-guarded-result ul { color: #a52222; display: grid; font-size: 11px; gap: 3px; margin: 0; padding-left: 16px; }
+.rack-guarded-gates { color: #97590a; font-size: 10px; font-weight: 700; margin: 0; }
+.rack-guarded-result { background: #f6fafb; border-radius: 9px; display: grid; gap: 4px; padding: 10px; }
+.rack-guarded-result strong { font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.rack-guarded-result.is-completed strong { color: #16794f; }
+.rack-guarded-result.is-blocked strong, .rack-guarded-result.is-failed strong { color: #a52222; }
+.rack-guarded-result p { color: #4a626b; font-size: 11px; line-height: 1.5; margin: 0; }
+.rack-guarded-next { color: #0b777b; font-weight: 700; }
+.rack-guarded-footnote { color: #4a626b; font-size: 11px; line-height: 1.5; margin: 0; }
 .rack-inline-config-links { border-top: 1px solid var(--rack-line); display: flex; gap: 14px; justify-content: center; padding: 12px 16px; }
 .rack-inline-config-links a { color: #0b777b; font-size: 10px; font-weight: 800; text-decoration: none; }
 
