@@ -14788,3 +14788,92 @@ backup alongside).
 Read-only by default; every hardware write stays behind its existing confirmation. Never show
 green without current proof bound to the exact target. `PROVIDER_MODE=mock` for agent-run tests.
 Backend has 8 known pre-existing failures unrelated to this work.
+
+## 2026-08-12 — CLAUDE (design handoff: dashboard + build flow settled, no app code changed)
+
+**Nothing in `app/` changed this session beyond the two commits below.** This entry exists so the
+next session (Codex included) can pick up a settled design direction without re-litigating it.
+
+### Where the design landed
+
+Steve reviewed five concepts and rejected the first round outright ("baby drawings"). The
+direction that stuck is a three-column workspace, light theme, with the rack kept as the hero:
+
+- **Metal** — the existing rack elevation, physical devices only. No software ever appears here.
+- **Software** — one card per server, beside its rack unit: controller + mode, a drive strip that
+  mirrors the real bays, ESXi as a slot *on the machine*, and VM chips once it runs.
+- **Cluster** — a vSAN capsule that visually spans its member cards, vCenter as a VM chip, and the
+  datastore list.
+
+Published mockups (Steve has the links; they are read-only pages, not code):
+- Dashboard, built state: `https://claude.ai/code/artifact/68aad59e-d5de-4383-b60a-dd4dd0137d5b`
+- Four deeper looks (stages, drive panel, VM placement, vCenter order):
+  `https://claude.ai/code/artifact/24cef9fc-0b76-4c73-9548-8a4fca85480a`
+- **Build flow, interactive prototype** (the live one to work from):
+  `https://claude.ai/code/artifact/02014d24-4a99-4344-b6ec-1ae79a6e26d9`
+
+Steve's framing: the dashboard is *what is*, the flow page is *what you are building*. They are
+two surfaces, not one.
+
+### Design rules that are now decided
+
+1. **Two drives per host are the ESXi boot pair (RAID 1) and can never join vSAN.** This changes
+   the arithmetic everywhere: DL360s are 8 bays − 2 = 6 to vSAN; DL380A is 16 − 2 − any local.
+   Every drive gets exactly one job and the tally can never exceed the probed bay count.
+2. **Provenance is displayed per field, three levels.** *Proven* (hardware answered, green, always
+   with a timestamp) / *Saved plan* (in the lab profile, never verified, amber) / *Blank* (nothing
+   knows it). ESXi management addresses start **blank** — no host runs a hypervisor, so nothing can
+   answer for them. A suggested address renders teal as "suggested, unverified", never green.
+3. **The flow must handle servers the app has never met.** Add by name + address + iLO UID +
+   password, saved locally, then an explicit *Run first contact*. Until it replies, model and bay
+   count stay unknown and the drive step refuses to draw bays for it.
+4. **First-contact failure has seven distinct outcomes, taken from our own backend** (`_endpoint_message`
+   / `_classify_collection_access_response` in `providers/ilo_redfish.py`): `network_unreachable`,
+   `auth_failed`, `redfish_collection_unauthorized`, `web_available_redfish_not_found`, `tls_failed`,
+   `legacy_available_redfish_not_found`, and `target_mismatch`. Each gets its own words and its own
+   ordered checks. Note especially that *no permission* is not *wrong password* — the password was
+   accepted; the iLO account lacks the inventory role. Failures never invent anything; bays stay `?`.
+5. A VM chip says **where it runs**; its colour swatch says **where it is stored**. vCenter is just
+   the first VM.
+
+### Findings worth acting on
+
+- **The active kit contradicts its own name.** "vSAN Lab" is stored as
+  `deployment_mode: single_server_local_storage`, `vcenter_enabled: false`, `shared_storage: none`,
+  `cluster_member_device_ids: []`. The frontend kit form still can't express anything else — this is
+  the work the previous handoff flagged, and the flow prototype is the proposed shape for it.
+- **Profile addresses drift from reality.** Profile plans iLO `10.238.207.201` and ESXi
+  `10.238.207.203`; the machines that actually answered are `.38`, `.42`, `.43`. Nothing has ever
+  replied at `.201`.
+- **NetApp is auto-disabled with a real reason** — "NetApp high-address defaults require a /24 or
+  larger lab subnet." Surface it verbatim rather than hiding the option.
+- **Live drive truth as of 13:08 today:** DL360 B has 8/8 passthrough-ready; DL360 A (8) and
+  DL380A (16) have **zero** — all bays sit in RAID volumes. So vSAN is blocked on RAID rework, not
+  on ESXi. Also note none of them has a boot pair carved yet.
+- There is a polished but **entirely mock** configurator prototype outside this repo at
+  `C:\Users\TLANADMIN\Documents\Codex\2026-08-12\ta` (single component `app/StrataDesigner.tsx`,
+  640 lines, `hostDrives: [6,6,6,6]` hardcoded, Gen11/NVMe/25GbE, localStorage only, no API calls).
+  Worth reading for chrome ideas; none of its data applies to this Gen10 lab.
+
+### Branch state
+
+`rack-workspace-visual-redesign` is cut from this branch and is currently **empty of code changes** —
+it exists so the redesign does not destabilise `unified-build-journey`. Two small commits landed on
+this trunk earlier today from the Claude side: `34d19de` (stale `/overview` test assertion) and
+`143c071` (deleted the June UX screenshot set and the stale AGENTS.md backup). `f000983` made every
+iLO open the same beside-rack configurator instead of forking on saved credentials.
+
+### Build order proposed
+
+1. **Drive allocation panel** — smallest piece that delivers the boot-pair rule, maps onto
+   `hpe-raid-intent` / `hpe-raid-plan-preview` / `hpe-storage-discovery`, and everything downstream
+   depends on knowing which drives are spoken for.
+2. Stage-dependent rendering of the three-column workspace (mostly conditional rendering; no new data).
+3. The build flow as its own page, writing to the lab profile rather than localStorage; drift
+   between plan and proof then falls out for free.
+4. VM placement and the vCenter sequence — only meaningful once a host actually runs ESXi.
+
+### Standing constraints unchanged
+
+Read-only by default; every hardware write stays behind its existing preview-then-confirm.
+Never green without current proof bound to the exact target. `PROVIDER_MODE=mock` for agent tests.
