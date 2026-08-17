@@ -1,0 +1,530 @@
+<title>Lab Builder — Boot Drives, Storage &amp; VMs, Deeper</title>
+<style>
+  :root{
+    --paper:#EEF3F4; --panel:#FFFFFF; --sunk:#E7EDEE;
+    --ink:#16262C; --dim:#5F7278; --faint:#8B9BA1;
+    --line:#DCE5E7; --line2:#C9D5D8;
+    --acc:#0E8A97; --acc-br:#17B3C2; --acc-wash:#E6F4F5;
+    --proof:#1E9E5A; --proof-wash:#E6F5EC;
+    --amber:#B4801F; --amber-wash:#FBF2E0;
+    --red:#C0392B; --red-wash:#FBEBE9;
+    --boot:#2F4858; --boot-wash:#E7ECEF;
+    --nap:#5C63C4; --nap-wash:#ECEDFA;
+    --loc:#8B9AA2; --loc-wash:#EDF1F2;
+    --metal-hi:#FFFFFF; --metal-lo:#E7EDEE; --metal-edge:#C3D0D3;
+    --shadow:0 1px 2px rgba(22,38,44,.06), 0 8px 20px -12px rgba(22,38,44,.18);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#1B2429; --panel:#222D33; --sunk:#1A2328;
+      --ink:#E8EFF1; --dim:#A0B1B7; --faint:#7B8D94;
+      --line:#33424A; --line2:#3F515A;
+      --acc:#2FC0D0; --acc-br:#4AD4E2; --acc-wash:#17323A;
+      --proof:#3FCB7C; --proof-wash:#16332A;
+      --amber:#DFA84D; --amber-wash:#33291A;
+      --red:#E4695C; --red-wash:#3A2320;
+      --boot:#9FB6C4; --boot-wash:#2A3941;
+      --nap:#989DEA; --nap-wash:#24264A;
+      --loc:#9AAAB2; --loc-wash:#263136;
+      --metal-hi:#2E3B42; --metal-lo:#232E34; --metal-edge:#3D4C54;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 20px -12px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#1B2429; --panel:#222D33; --sunk:#1A2328;
+    --ink:#E8EFF1; --dim:#A0B1B7; --faint:#7B8D94;
+    --line:#33424A; --line2:#3F515A;
+    --acc:#2FC0D0; --acc-br:#4AD4E2; --acc-wash:#17323A;
+    --proof:#3FCB7C; --proof-wash:#16332A;
+    --amber:#DFA84D; --amber-wash:#33291A;
+    --red:#E4695C; --red-wash:#3A2320;
+    --boot:#9FB6C4; --boot-wash:#2A3941;
+    --nap:#989DEA; --nap-wash:#24264A;
+    --loc:#9AAAB2; --loc-wash:#263136;
+    --metal-hi:#2E3B42; --metal-lo:#232E34; --metal-edge:#3D4C54;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 20px -12px rgba(0,0,0,.5);
+  }
+  :root[data-theme="light"]{
+    --paper:#EEF3F4; --panel:#FFFFFF; --sunk:#E7EDEE;
+    --ink:#16262C; --dim:#5F7278; --faint:#8B9BA1;
+    --line:#DCE5E7; --line2:#C9D5D8;
+    --acc:#0E8A97; --acc-br:#17B3C2; --acc-wash:#E6F4F5;
+    --proof:#1E9E5A; --proof-wash:#E6F5EC;
+    --amber:#B4801F; --amber-wash:#FBF2E0;
+    --red:#C0392B; --red-wash:#FBEBE9;
+    --boot:#2F4858; --boot-wash:#E7ECEF;
+    --nap:#5C63C4; --nap-wash:#ECEDFA;
+    --loc:#8B9AA2; --loc-wash:#EDF1F2;
+    --metal-hi:#FFFFFF; --metal-lo:#E7EDEE; --metal-edge:#C3D0D3;
+    --shadow:0 1px 2px rgba(22,38,44,.06), 0 8px 20px -12px rgba(22,38,44,.18);
+  }
+
+  *{box-sizing:border-box; margin:0}
+  html,body{background:var(--paper)}
+  body{color:var(--ink); font-size:15px; line-height:1.55;
+    font-family:"Segoe UI Variable Display","Segoe UI","Avenir Next",system-ui,sans-serif;
+    padding:0 20px 90px}
+  .mono{font-family:"Cascadia Code",Consolas,ui-monospace,monospace; font-variant-numeric:tabular-nums}
+  main{max-width:1320px; margin:0 auto}
+  .prose{max-width:74ch}
+  header.mast{padding:58px 0 20px; border-bottom:2px solid var(--ink); margin-bottom:26px}
+  .eyebrow{font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--acc); font-weight:700; margin-bottom:10px}
+  h1{font-size:clamp(28px,4vw,40px); line-height:1.1; letter-spacing:-.02em; font-weight:650; margin-bottom:13px; text-wrap:balance}
+  .stand{font-size:17px; color:var(--dim); max-width:66ch}
+  h2{font-size:23px; font-weight:650; letter-spacing:-.015em; margin-bottom:4px}
+  .sub2{font-size:15.5px; color:var(--dim); font-style:italic; margin-bottom:20px; max-width:70ch}
+  section{margin:54px 0}
+  hr.rule{border:0; border-top:1px solid var(--line); margin:46px 0}
+  .tag{font-size:11px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:var(--acc); display:block; margin-bottom:4px}
+  figcaption{font-size:13px; color:var(--dim); margin-top:14px; max-width:80ch}
+  .scroll{overflow-x:auto}
+
+  /* shared atoms */
+  .chip{font-size:10.5px; font-weight:650; padding:4px 10px; border-radius:99px; white-space:nowrap; display:inline-block}
+  .chip.ok{color:var(--proof); background:var(--proof-wash); border:1px solid rgba(30,158,90,.28)}
+  .chip.wait{color:var(--faint); background:var(--sunk); border:1px solid var(--line2)}
+  .chip.am{color:var(--amber); background:var(--amber-wash); border:1px solid rgba(180,128,31,.32)}
+  .btn{font-size:12.5px; font-weight:650; border-radius:9px; padding:9px 16px; border:1px solid var(--line2);
+    background:var(--panel); color:var(--dim); display:inline-block}
+  .btn.primary{color:#fff; border-color:transparent; background:linear-gradient(135deg,var(--acc-br),var(--acc));
+    box-shadow:0 6px 16px -5px rgba(14,138,151,.6)}
+  .btn.danger{color:#fff; border-color:transparent; background:linear-gradient(135deg,#D6584A,var(--red))}
+  .btn.dim{opacity:.5}
+
+  /* ============ 1 · STAGES ============ */
+  .stages{display:flex; flex-direction:column; gap:10px; min-width:1180px}
+  .stage{display:grid; grid-template-columns:132px 200px 1fr 300px; gap:14px; align-items:center;
+    background:var(--panel); border:1px solid var(--line); border-radius:13px; padding:13px 16px; box-shadow:var(--shadow)}
+  .stage.now{border-color:rgba(14,138,151,.45); box-shadow:0 0 0 3px var(--acc-wash), var(--shadow)}
+  .stnum{font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); font-weight:700}
+  .stname{font-size:14px; font-weight:650; letter-spacing:-.01em; margin-top:2px}
+  .stwhen{font-size:10.5px; color:var(--faint); margin-top:1px}
+  .stage.now .stname{color:var(--acc)}
+  .baystrip{display:flex; gap:3px}
+  .bx{width:15px; height:19px; border-radius:3px; position:relative;
+    background:linear-gradient(180deg,var(--panel),var(--sunk)); border:1px solid var(--line2)}
+  .bx::after{content:""; position:absolute; left:2px; right:2px; bottom:2px; height:2px; border-radius:1px; background:#BCC9CD}
+  .bx.bt{border-color:var(--boot); background:linear-gradient(180deg,var(--panel),var(--boot-wash))}
+  .bx.bt::after{background:var(--boot)}
+  .bx.vs{border-color:rgba(14,138,151,.5); background:linear-gradient(180deg,#fff,var(--acc-wash))}
+  .bx.vs::after{background:var(--acc)}
+  .bx.lc{border-color:var(--loc); background:linear-gradient(180deg,var(--panel),var(--loc-wash))}
+  .bx.lc::after{background:var(--loc)}
+  .baylbl{font-size:9.5px; color:var(--faint); margin-top:5px}
+  .stmid{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+  .esxbox{display:inline-flex; align-items:center; gap:9px; border:1px solid var(--line2); border-radius:9px;
+    padding:7px 12px; background:var(--sunk); font-size:12px}
+  .esxbox.on{border-color:rgba(30,158,90,.4); background:var(--proof-wash)}
+  .esxbox.on b{color:var(--proof)}
+  .esxbox .g{width:26px;height:26px;border-radius:7px; background:var(--panel); border:1px solid var(--line2);
+    display:flex; align-items:center; justify-content:center; font-size:8px; font-weight:700; color:var(--faint)}
+  .esxbox.on .g{border-color:rgba(30,158,90,.4); color:var(--proof)}
+  .vmchip{display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line2); border-radius:7px;
+    padding:5px 9px; font-size:11px; background:var(--panel)}
+  .vmchip i{width:8px;height:8px;border-radius:2.5px}
+  .vmchip i.v{background:var(--acc)} .vmchip i.n{background:var(--nap)} .vmchip i.l{background:var(--loc)}
+  .vmchip.mgr{border-color:rgba(14,138,151,.45); background:var(--acc-wash); font-weight:650}
+  .stcl{border-left:1px solid var(--line); padding-left:14px}
+  .clstate{font-size:12.5px; font-weight:650}
+  .clstate.no{color:var(--faint); font-weight:400}
+  .clstate.on{color:var(--acc)}
+  .cldet{font-size:10.5px; color:var(--faint); margin-top:2px}
+  .clbar{height:5px; border-radius:3px; background:var(--sunk); overflow:hidden; margin-top:7px}
+  .clbar i{display:block; height:100%; border-radius:3px; background:linear-gradient(90deg,var(--acc-br),var(--proof))}
+
+  /* ============ 2 · DRIVE PANEL ============ */
+  .panel{background:var(--panel); border:1px solid var(--line2); border-radius:16px; overflow:hidden;
+    box-shadow:0 2px 6px rgba(22,38,44,.07), 0 24px 44px -26px rgba(22,38,44,.32); min-width:1060px}
+  .phead{display:flex; align-items:center; gap:14px; padding:16px 22px; border-bottom:1px solid var(--line)}
+  .phead .t{font-size:17px; font-weight:650; letter-spacing:-.015em}
+  .phead .s{font-size:11.5px; color:var(--faint)}
+  .sp{flex:1}
+  .pbody{display:grid; grid-template-columns:1fr 316px}
+  .pmain{padding:20px 22px}
+  .pside{padding:20px 22px; border-left:1px solid var(--line); background:var(--sunk)}
+  .plbl{font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--faint); font-weight:700; margin-bottom:11px}
+
+  .drives{display:grid; grid-template-columns:repeat(8,1fr); gap:10px}
+  .dv{border:1.5px solid var(--line2); border-radius:10px; padding:9px 8px 8px; background:var(--panel); position:relative}
+  .dv .n{font-size:9px; color:var(--faint)}
+  .dv .sz{font-size:10.5px; font-weight:650; margin-top:1px}
+  .dv .bar{height:4px; border-radius:2px; background:#C9D5D8; margin-top:9px}
+  .dv .role{font-size:8.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; margin-top:7px; color:var(--faint)}
+  .dv.boot{border-color:var(--boot); background:linear-gradient(180deg,var(--panel),var(--boot-wash))}
+  .dv.boot .bar{background:var(--boot)} .dv.boot .role{color:var(--boot)}
+  .dv.vsan{border-color:rgba(14,138,151,.55); background:linear-gradient(180deg,#fff,var(--acc-wash))}
+  .dv.vsan .bar{background:var(--acc)} .dv.vsan .role{color:var(--acc)}
+  .dv.local{border-color:var(--loc); background:linear-gradient(180deg,var(--panel),var(--loc-wash))}
+  .dv.local .bar{background:var(--loc)} .dv.local .role{color:var(--loc)}
+  .mirrorband{grid-column:span 2; height:22px; border:1.5px solid var(--boot); border-top:0;
+    border-radius:0 0 8px 8px; margin-top:-2px; position:relative}
+  .mirrorband span{position:absolute; left:50%; transform:translateX(-50%); top:5px; font-size:9px;
+    letter-spacing:.08em; color:var(--boot); font-weight:700; background:var(--panel); padding:0 7px}
+
+  .roleset{display:flex; gap:9px; margin-top:22px; flex-wrap:wrap}
+  .rolebtn{display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line2); border-radius:9px;
+    padding:8px 13px; font-size:12.5px; background:var(--panel)}
+  .rolebtn i{width:11px;height:11px;border-radius:3px}
+  .rolebtn i.b{background:var(--boot)} .rolebtn i.v{background:var(--acc)} .rolebtn i.l{background:var(--loc)}
+  .rolebtn.on{border-color:var(--acc); background:var(--acc-wash); font-weight:650; color:var(--acc)}
+  .rolehint{font-size:11.5px; color:var(--faint); margin-top:10px}
+
+  .tally{display:flex; gap:0; border:1px solid var(--line); border-radius:11px; overflow:hidden; margin-bottom:16px}
+  .tally div{flex:1; padding:11px 13px; border-right:1px solid var(--line)}
+  .tally div:last-child{border-right:0}
+  .tally dt{font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); font-weight:700}
+  .tally dd{font-size:17px; font-weight:650; margin-top:2px; letter-spacing:-.02em}
+  .tally dd.b{color:var(--boot)} .tally dd.v{color:var(--acc)} .tally dd.l{color:var(--loc)}
+  .rule-list{list-style:none; padding:0; margin:0}
+  .rule-list li{display:flex; gap:9px; align-items:baseline; font-size:12px; padding:7px 0; border-top:1px solid var(--line)}
+  .rule-list li:first-child{border-top:0}
+  .rule-list .ic{width:14px; flex:none; text-align:center; font-size:11px}
+  .rule-list .ic.ok{color:var(--proof)} .rule-list .ic.no{color:var(--faint)} .rule-list .ic.bad{color:var(--red)}
+  .rule-list small{display:block; color:var(--faint); font-size:10.5px}
+  .warn{border:1px solid rgba(192,57,43,.4); background:var(--red-wash); border-radius:11px; padding:12px 14px; margin-top:16px}
+  .warn b{font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--red); font-weight:700; display:block; margin-bottom:4px}
+  .warn p{font-size:12px; margin:0}
+  .warn small{font-size:11px; color:var(--dim); display:block; margin-top:5px}
+  .pfoot{display:flex; align-items:center; gap:12px; padding:14px 22px; border-top:1px solid var(--line); background:var(--panel)}
+  .pfoot .note{font-size:11.5px; color:var(--faint)}
+
+  /* ============ 3 · VM PLACEMENT ============ */
+  .two{display:grid; grid-template-columns:1fr 1fr; gap:22px}
+  .axis{border:1px solid var(--line); border-radius:12px; padding:16px 18px; background:var(--panel)}
+  .axis h4{font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); font-weight:700; margin-bottom:3px}
+  .axis .q{font-size:14.5px; font-weight:650; margin-bottom:12px; letter-spacing:-.01em}
+  .pick{display:flex; align-items:center; gap:11px; border:1px solid var(--line2); border-radius:10px;
+    padding:11px 13px; margin-bottom:8px; font-size:12.5px; background:var(--panel)}
+  .pick:last-child{margin-bottom:0}
+  .pick .r{width:14px;height:14px;border-radius:50%; border:1.7px solid var(--line2); flex:none}
+  .pick.on{border-color:var(--acc); background:var(--acc-wash)}
+  .pick.on .r{border-color:var(--acc); border-width:4.5px}
+  .pick.off{opacity:.55}
+  .pick b{font-weight:650}
+  .pick small{display:block; color:var(--faint); font-size:10.5px}
+  .pick .rt{margin-left:auto; font-size:10.5px; color:var(--faint); text-align:right}
+  .pick .rt.am{color:var(--amber)}
+  .dsic{width:26px;height:26px;border-radius:7px; flex:none; display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:700; color:#fff}
+  .dsic.v{background:linear-gradient(135deg,var(--acc-br),var(--acc))}
+  .dsic.n{background:linear-gradient(135deg,#7C82DA,var(--nap))}
+  .dsic.l{background:linear-gradient(135deg,#A3B0B7,var(--loc))}
+  .resultbar{display:flex; align-items:center; gap:14px; margin-top:20px; border:1px solid rgba(14,138,151,.4);
+    background:var(--acc-wash); border-radius:12px; padding:14px 18px}
+  .resultbar .txt{font-size:14px}
+  .resultbar .txt b{font-weight:650}
+
+  /* ============ 4 · vCENTER ============ */
+  .vcgrid{display:grid; grid-template-columns:1fr 340px; gap:22px; align-items:start}
+  .vcstep{display:flex; gap:13px; padding:14px 0; border-top:1px solid var(--line)}
+  .vcstep:first-child{border-top:0; padding-top:0}
+  .vcnum{width:24px;height:24px;border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:700; border:2px solid var(--proof); color:var(--proof); background:var(--panel)}
+  .vcnum.next{border-color:var(--acc); color:var(--acc)}
+  .vcnum.wait{border-color:var(--line2); color:var(--faint)}
+  .vcstep b{font-size:13.5px; font-weight:650; display:block}
+  .vcstep small{font-size:11.5px; color:var(--faint)}
+  .vcstep .st{margin-left:auto; flex:none}
+  .callout{border:1px solid rgba(14,138,151,.4); background:var(--acc-wash); border-radius:12px; padding:16px 18px}
+  .callout h4{font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--acc); font-weight:700; margin-bottom:7px}
+  .callout p{font-size:13px; margin-bottom:9px}
+  .callout p:last-child{margin:0}
+  .callout .mono{font-size:12px}
+
+  .verdict{background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--acc);
+    border-radius:12px; padding:20px 24px; box-shadow:var(--shadow)}
+  .verdict p{margin-bottom:12px} .verdict p:last-child{margin:0}
+  code{font-family:"Cascadia Code",Consolas,ui-monospace,monospace; font-size:13px;
+    background:var(--sunk); padding:1px 6px; border-radius:4px}
+</style>
+
+<main>
+<header class="mast">
+  <p class="eyebrow">Lab Builder &middot; the boot-drive direction, developed</p>
+  <h1>Four more looks at the layout you liked</h1>
+  <p class="stand">How the same three columns behave as the build progresses &mdash; and what opens when you click into drives, VMs, and vCenter. Same language throughout: two dark bays are always the hypervisor&rsquo;s.</p>
+</header>
+
+<!-- ============ 1 ============ -->
+<section>
+  <span class="tag">Visual 1</span>
+  <h2>The same screen, four stages of the build</h2>
+  <p class="sub2">The layout shouldn&rsquo;t only look good when finished. Here is one host and the cluster rail at each stage &mdash; including today, where almost nothing is true yet.</p>
+
+  <figure><div class="scroll"><div class="stages">
+
+    <div class="stage now">
+      <div><div class="stnum">Stage 01 &middot; now</div><div class="stname">Proven, bare metal</div><div class="stwhen mono">13:08 today</div></div>
+      <div>
+        <div class="baystrip">
+          <i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i>
+        </div>
+        <div class="baylbl">8 raw &middot; no roles assigned</div>
+      </div>
+      <div class="stmid">
+        <span class="esxbox"><span class="g">ESXi</span><span><b>No hypervisor</b><br><span style="font-size:10.5px;color:var(--faint)">media staged, nothing written</span></span></span>
+        <span class="chip am">next: carve boot pair</span>
+      </div>
+      <div class="stcl">
+        <div class="clstate no">vSAN &mdash; not formed</div>
+        <div class="cldet">0 of 3 members &middot; no host runs ESXi</div>
+        <div class="clbar"><i style="width:6%"></i></div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div><div class="stnum">Stage 02</div><div class="stname">Boot pair carved</div><div class="stwhen">RAID 1 mirror created</div></div>
+      <div>
+        <div class="baystrip">
+          <i class="bx bt"></i><i class="bx bt"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i>
+        </div>
+        <div class="baylbl">2 mirrored &middot; 6 left raw</div>
+      </div>
+      <div class="stmid">
+        <span class="esxbox"><span class="g">ESXi</span><span><b>Installing&hellip;</b><br><span style="font-size:10.5px;color:var(--faint)">virtual media boot &middot; writes to the mirror</span></span></span>
+        <span class="chip wait">guarded write &middot; confirmed</span>
+      </div>
+      <div class="stcl">
+        <div class="clstate no">vSAN &mdash; not formed</div>
+        <div class="cldet">0 of 3 &middot; drives reserved, hosts not up</div>
+        <div class="clbar"><i style="width:22%"></i></div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div><div class="stnum">Stage 03</div><div class="stname">Hypervisor proven</div><div class="stwhen">all three hosts respond</div></div>
+      <div>
+        <div class="baystrip">
+          <i class="bx bt"></i><i class="bx bt"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i>
+        </div>
+        <div class="baylbl">2 boot &middot; 6 offered to vSAN</div>
+      </div>
+      <div class="stmid">
+        <span class="esxbox on"><span class="g">ESXi</span><span><b>ESXi 8.0.3 responding</b><br><span style="font-size:10.5px;color:var(--faint)">mgmt <span class="mono">10.238.207.43</span></span></span></span>
+        <span class="chip ok">&#10003; proven</span>
+      </div>
+      <div class="stcl">
+        <div class="clstate on">vSAN &mdash; ready to form</div>
+        <div class="cldet">3 hosts up &middot; 18 drives offered &middot; vCenter needed</div>
+        <div class="clbar"><i style="width:70%"></i></div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div><div class="stnum">Stage 04</div><div class="stname">Cluster carrying load</div><div class="stwhen">vCenter + VMs</div></div>
+      <div>
+        <div class="baystrip">
+          <i class="bx bt"></i><i class="bx bt"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i><i class="bx vs"></i>
+        </div>
+        <div class="baylbl">2 boot &middot; 6 pooled</div>
+      </div>
+      <div class="stmid">
+        <span class="esxbox on"><span class="g">ESXi</span><span><b>ESXi 8.0.3</b><br><span style="font-size:10.5px;color:var(--faint)">2 VMs resident</span></span></span>
+        <span class="vmchip mgr"><i class="v"></i>vCenter</span>
+        <span class="vmchip"><i class="v"></i>APP-01</span>
+        <span class="vmchip"><i class="n"></i>FILE-01</span>
+      </div>
+      <div class="stcl">
+        <div class="clstate on">vSAN &mdash; formed &#10003;</div>
+        <div class="cldet">3 of 3 &middot; 18 drives pooled &middot; FTT=1</div>
+        <div class="clbar"><i style="width:100%"></i></div>
+      </div>
+    </div>
+
+  </div></div>
+  <figcaption>Only the bay strip, the hypervisor box, and the cluster line change &mdash; the frame never moves. Stage 01 is today: eight raw drives, nothing assigned, and the honest next action is to carve the mirror before anything can be installed.</figcaption>
+  </figure>
+</section>
+
+<hr class="rule">
+
+<!-- ============ 2 ============ -->
+<section>
+  <span class="tag">Visual 2</span>
+  <h2>Opening a server&rsquo;s drives</h2>
+  <p class="sub2">Every bay gets exactly one job, and the panel refuses to let you spend the same drive twice. This is where the two ESXi drives are actually claimed.</p>
+
+  <figure><div class="scroll"><div class="panel">
+    <div class="phead">
+      <div><div class="t">DL360 B &middot; drive allocation</div><div class="s">8 &times; SAS behind Smart Array P408i-a &middot; controller mode <span class="mono">Mixed</span> &middot; read 13:08</div></div>
+      <span class="sp"></span>
+      <span class="chip ok">&#10003; inventory current</span>
+    </div>
+    <div class="pbody">
+      <div class="pmain">
+        <div class="plbl">Bays &mdash; click a bay, then a role</div>
+        <div class="drives">
+          <div class="dv boot"><div class="n mono">BAY 01</div><div class="sz">1.2 TB SAS</div><div class="bar"></div><div class="role">ESXi boot</div></div>
+          <div class="dv boot"><div class="n mono">BAY 02</div><div class="sz">1.2 TB SAS</div><div class="bar"></div><div class="role">ESXi boot</div></div>
+          <div class="dv vsan"><div class="n mono">BAY 03</div><div class="sz">1.2 TB SAS</div><div class="bar"></div><div class="role">vSAN</div></div>
+          <div class="dv vsan"><div class="n mono">BAY 04</div><div class="sz">1.2 TB SAS</div><div class="bar"></div><div class="role">vSAN</div></div>
+          <div class="dv vsan"><div class="n mono">BAY 05</div><div class="sz">1.2 TB SAS</div><div class="bar"></div><div class="role">vSAN</div></div>
+          <div class="dv vsan"><div class="n mono">BAY 06</div><div class="sz">1.2 TB SAS</div><div class="bar"></div><div class="role">vSAN</div></div>
+          <div class="dv vsan"><div class="n mono">BAY 07</div><div class="sz">1.2 TB SAS</div><div class="bar"></div><div class="role">vSAN</div></div>
+          <div class="dv local"><div class="n mono">BAY 08</div><div class="sz">1.2 TB SAS</div><div class="bar"></div><div class="role">Local</div></div>
+          <div class="mirrorband"><span>RAID 1 MIRROR</span></div>
+        </div>
+
+        <div class="roleset">
+          <span class="rolebtn on"><i class="b"></i>ESXi boot <span style="color:var(--faint);font-weight:400">&middot; needs exactly 2</span></span>
+          <span class="rolebtn"><i class="v"></i>vSAN passthrough</span>
+          <span class="rolebtn"><i class="l"></i>Local datastore</span>
+        </div>
+        <p class="rolehint">Bays 01&ndash;02 are selected. The mirror is drawn under them because ESXi always boots from a pair &mdash; a single drive would take the host down with it.</p>
+      </div>
+
+      <aside class="pside">
+        <div class="plbl">This host</div>
+        <dl class="tally">
+          <div><dt>Boot</dt><dd class="b">2</dd></div>
+          <div><dt>vSAN</dt><dd class="v">5</dd></div>
+          <div><dt>Local</dt><dd class="l">1</dd></div>
+        </dl>
+
+        <div class="plbl">Rules</div>
+        <ul class="rule-list">
+          <li><span class="ic ok">&#10003;</span><div>Boot pair is exactly 2 drives<small>mirrored, survives one failure</small></div></li>
+          <li><span class="ic ok">&#10003;</span><div>At least one drive left for vSAN<small>5 offered to the pool</small></div></li>
+          <li><span class="ic no">&#9675;</span><div>Cluster needs 3 contributing hosts<small>DL360 A and DL380A still all-RAID</small></div></li>
+        </ul>
+
+        <div class="warn">
+          <b>Destructive step ahead</b>
+          <p>Creating the mirror erases bays 01&ndash;02.</p>
+          <small>Lab Builder will show the exact controller command and ask again before writing. Nothing is sent to the P408i-a until you confirm.</small>
+        </div>
+      </aside>
+    </div>
+    <div class="pfoot">
+      <span class="note">Plan only &mdash; no controller writes yet</span>
+      <span class="sp"></span>
+      <span class="btn">Discard</span>
+      <span class="btn danger">Preview controller changes &rarr;</span>
+    </div>
+  </div></div>
+  <figcaption>The tally is the whole point: 2 + 5 + 1 = 8, and it can never exceed the bays the probe found. The red footer button reflects the app&rsquo;s existing fail-closed contract &mdash; preview first, write only on a second confirmation.</figcaption>
+  </figure>
+</section>
+
+<hr class="rule">
+
+<!-- ============ 3 ============ -->
+<section>
+  <span class="tag">Visual 3</span>
+  <h2>Deploying a VM is two questions, never one</h2>
+  <p class="sub2">Where does it run, and where does it live? The panel asks them separately because the answers are independent &mdash; and that is exactly the thing a rack diagram can never show.</p>
+
+  <figure><div class="scroll"><div class="panel" style="min-width:980px">
+    <div class="phead">
+      <div><div class="t">Deploy a virtual machine</div><div class="s">from <span class="mono">DepOps_W2K22_Template_VMware7.0</span> &middot; template found in media inventory</div></div>
+      <span class="sp"></span>
+      <span class="chip ok">cluster healthy</span>
+    </div>
+    <div class="pmain" style="padding:22px">
+      <div class="two">
+        <div class="axis">
+          <h4>Question one</h4>
+          <div class="q">Which server runs it?</div>
+          <div class="pick on"><span class="r"></span><div><b>DL360 A</b><small>ESXi 8.0.3 &middot; 2 VMs resident</small></div><span class="rt">most free memory</span></div>
+          <div class="pick"><span class="r"></span><div><b>DL360 B</b><small>ESXi 8.0.3 &middot; 2 VMs resident</small></div><span class="rt">&nbsp;</span></div>
+          <div class="pick"><span class="r"></span><div><b>DL380A</b><small>ESXi 8.0.3 &middot; 2 VMs resident</small></div><span class="rt">&nbsp;</span></div>
+          <p class="rolehint">The host supplies CPU and memory. If it fails, vSAN keeps the disk alive elsewhere.</p>
+        </div>
+
+        <div class="axis">
+          <h4>Question two</h4>
+          <div class="q">Which datastore stores it?</div>
+          <div class="pick on"><span class="dsic v">V</span><div><b>vsanDatastore</b><small>pooled from 18 drives across 3 hosts</small></div><span class="rt">survives a host loss</span></div>
+          <div class="pick off"><span class="dsic n">N</span><div><b>netapp-nfs-01</b><small>served by ONTAP over NFS</small></div><span class="rt am">needs a /24 subnet</span></div>
+          <div class="pick"><span class="dsic l">L</span><div><b>local-DL380A</b><small>that server&rsquo;s own RAID volume</small></div><span class="rt am">dies with its host</span></div>
+          <p class="rolehint">The datastore holds the disk. Shared ones let the VM move; local ones pin it forever.</p>
+        </div>
+      </div>
+
+      <div class="resultbar">
+        <span class="dsic v">V</span>
+        <div class="txt"><b>SQL-02</b> will run on <b>DL360 A</b> and be stored on <b>vsanDatastore</b><br>
+        <span style="font-size:11.5px; color:var(--dim)">Because the disk lives in the cluster pool, this VM can restart on another host without moving data.</span></div>
+        <span class="sp"></span>
+        <span class="btn primary">Deploy &rarr;</span>
+      </div>
+    </div>
+  </div></div>
+  <figcaption>Notice the greyed NetApp row keeps its real blocker verbatim rather than disappearing, and the local option is selectable but warns that the VM would die with its host. Both are honest, neither is hidden.</figcaption>
+  </figure>
+</section>
+
+<hr class="rule">
+
+<!-- ============ 4 ============ -->
+<section>
+  <span class="tag">Visual 4</span>
+  <h2>vCenter, the chicken-and-egg VM</h2>
+  <p class="sub2">vSAN needs vCenter to manage it, and vCenter is a VM that needs somewhere to live. The panel shows the order that resolves the loop.</p>
+
+  <figure><div class="scroll"><div class="panel" style="min-width:1000px">
+    <div class="phead">
+      <div><div class="t">Deploy vCenter</div><div class="s">VCSA 8.0.3 &middot; <span class="mono">VMware-VCSA-all-8.0.3-24853646.iso</span> &middot; 12.5 GB, in media</div></div>
+      <span class="sp"></span>
+      <span class="chip am">required before the cluster forms</span>
+    </div>
+    <div class="pmain" style="padding:22px">
+      <div class="vcgrid">
+        <div>
+          <div class="vcstep">
+            <span class="vcnum">&#10003;</span>
+            <div><b>ESXi running on a host</b><small>DL360 A responding &middot; proven 13:41</small></div>
+            <span class="st chip ok">done</span>
+          </div>
+          <div class="vcstep">
+            <span class="vcnum next">2</span>
+            <div><b>Deploy VCSA onto that host&rsquo;s local datastore</b><small>vSAN doesn&rsquo;t exist yet, so it lands on local storage first</small></div>
+            <span class="st chip am">next</span>
+          </div>
+          <div class="vcstep">
+            <span class="vcnum wait">3</span>
+            <div><b>Add all three hosts to vCenter</b><small>creates the cluster object that vSAN attaches to</small></div>
+            <span class="st chip wait">waiting</span>
+          </div>
+          <div class="vcstep">
+            <span class="vcnum wait">4</span>
+            <div><b>Enable vSAN and claim the passthrough drives</b><small>18 drives across 3 hosts become one datastore</small></div>
+            <span class="st chip wait">waiting</span>
+          </div>
+          <div class="vcstep">
+            <span class="vcnum wait">5</span>
+            <div><b>Migrate vCenter onto vSAN</b><small>the manager finally lives on the storage it manages</small></div>
+            <span class="st chip wait">optional</span>
+          </div>
+        </div>
+
+        <aside class="callout">
+          <h4>Why the order matters</h4>
+          <p>vCenter cannot start on vSAN, because vSAN cannot exist without vCenter. It is deployed to <b>local storage</b> first, then moved once the pool is real.</p>
+          <p>Lab Builder shows this as a five-step chain rather than one button, so the temporary local placement is a visible decision instead of a surprise.</p>
+          <p class="mono" style="color:var(--dim)">step 2 target &rarr; local-DL360A</p>
+        </aside>
+      </div>
+    </div>
+    <div class="pfoot">
+      <span class="note">Steps 3&ndash;5 unlock as each one is proven</span>
+      <span class="sp"></span>
+      <span class="btn dim">Back</span>
+      <span class="btn primary">Deploy VCSA to local-DL360A &rarr;</span>
+    </div>
+  </div></div>
+  <figcaption>This is the one sequence in the whole build that can&rsquo;t be reordered, so it earns its own screen rather than hiding inside the cluster card.</figcaption>
+  </figure>
+</section>
+
+<hr class="rule">
+
+<section class="prose">
+  <h2>What I&rsquo;d build first</h2>
+  <div class="verdict">
+    <p><strong>Visual 2 &mdash; the drive allocation panel.</strong> It is the smallest piece that delivers the boot-pair idea, it maps onto endpoints that already exist (<code>hpe-raid-intent</code>, <code>hpe-raid-plan-preview</code>, <code>hpe-storage-discovery</code>), and every later screen depends on knowing which drives are spoken for.</p>
+    <p>Then <strong>Visual 1&rsquo;s stage behaviour</strong> in the main workspace, since it is mostly conditional rendering of the layout you already approved &mdash; no new data required.</p>
+    <p>Visuals 3 and 4 come after ESXi actually installs, because until a host runs a hypervisor there is nothing to place a VM on.</p>
+  </div>
+</section>
+</main>

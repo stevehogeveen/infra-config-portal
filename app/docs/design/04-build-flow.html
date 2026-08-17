@@ -1,0 +1,1006 @@
+<title>Lab Builder — Build Flow</title>
+<style>
+  :root{
+    --paper:#EEF3F4; --panel:#FFFFFF; --sunk:#E7EDEE;
+    --ink:#16262C; --dim:#5F7278; --faint:#8B9BA1;
+    --line:#DCE5E7; --line2:#C9D5D8;
+    --acc:#0E8A97; --acc-br:#17B3C2; --acc-wash:#E6F4F5;
+    --proof:#1E9E5A; --proof-wash:#E6F5EC;
+    --amber:#B4801F; --amber-wash:#FBF2E0;
+    --red:#C0392B; --red-wash:#FBEBE9;
+    --boot:#2F4858; --boot-wash:#E7ECEF;
+    --nap:#5C63C4; --nap-wash:#ECEDFA;
+    --loc:#8B9AA2; --loc-wash:#EDF1F2;
+    --shadow:0 1px 2px rgba(22,38,44,.06), 0 8px 20px -12px rgba(22,38,44,.18);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#1B2429; --panel:#222D33; --sunk:#1A2328;
+      --ink:#E8EFF1; --dim:#A0B1B7; --faint:#7B8D94;
+      --line:#33424A; --line2:#3F515A;
+      --acc:#2FC0D0; --acc-br:#4AD4E2; --acc-wash:#17323A;
+      --proof:#3FCB7C; --proof-wash:#16332A;
+      --amber:#DFA84D; --amber-wash:#33291A;
+      --red:#E4695C; --red-wash:#3A2320;
+      --boot:#9FB6C4; --boot-wash:#2A3941;
+      --nap:#989DEA; --nap-wash:#24264A;
+      --loc:#9AAAB2; --loc-wash:#263136;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 20px -12px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#1B2429; --panel:#222D33; --sunk:#1A2328;
+    --ink:#E8EFF1; --dim:#A0B1B7; --faint:#7B8D94;
+    --line:#33424A; --line2:#3F515A;
+    --acc:#2FC0D0; --acc-br:#4AD4E2; --acc-wash:#17323A;
+    --proof:#3FCB7C; --proof-wash:#16332A;
+    --amber:#DFA84D; --amber-wash:#33291A;
+    --red:#E4695C; --red-wash:#3A2320;
+    --boot:#9FB6C4; --boot-wash:#2A3941;
+    --nap:#989DEA; --nap-wash:#24264A;
+    --loc:#9AAAB2; --loc-wash:#263136;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 20px -12px rgba(0,0,0,.5);
+  }
+  :root[data-theme="light"]{
+    --paper:#EEF3F4; --panel:#FFFFFF; --sunk:#E7EDEE;
+    --ink:#16262C; --dim:#5F7278; --faint:#8B9BA1;
+    --line:#DCE5E7; --line2:#C9D5D8;
+    --acc:#0E8A97; --acc-br:#17B3C2; --acc-wash:#E6F4F5;
+    --proof:#1E9E5A; --proof-wash:#E6F5EC;
+    --amber:#B4801F; --amber-wash:#FBF2E0;
+    --red:#C0392B; --red-wash:#FBEBE9;
+    --boot:#2F4858; --boot-wash:#E7ECEF;
+    --nap:#5C63C4; --nap-wash:#ECEDFA;
+    --loc:#8B9AA2; --loc-wash:#EDF1F2;
+    --shadow:0 1px 2px rgba(22,38,44,.06), 0 8px 20px -12px rgba(22,38,44,.18);
+  }
+
+  *{box-sizing:border-box; margin:0}
+  html,body{background:var(--paper)}
+  body{color:var(--ink); font-size:15px; line-height:1.55;
+    font-family:"Segoe UI Variable Display","Segoe UI","Avenir Next",system-ui,sans-serif;
+    padding:24px 16px 60px}
+  .mono{font-family:"Cascadia Code",Consolas,ui-monospace,monospace; font-variant-numeric:tabular-nums}
+  .stage{overflow-x:auto}
+  .app{min-width:1180px; max-width:1360px; margin:0 auto; background:var(--panel);
+    border:1px solid var(--line); border-radius:18px; overflow:hidden;
+    box-shadow:0 1px 3px rgba(22,38,44,.05), 0 30px 60px -34px rgba(22,38,44,.35)}
+
+  .top{display:flex; align-items:center; gap:14px; padding:15px 26px; border-bottom:1px solid var(--line)}
+  .mark{width:30px;height:30px;border-radius:8px; flex:none; position:relative;
+    background:linear-gradient(135deg,var(--acc-br),var(--acc)); box-shadow:0 3px 10px -2px rgba(14,138,151,.5)}
+  .mark::before{content:""; position:absolute; inset:8px 7px; border-radius:2px;
+    background:repeating-linear-gradient(180deg,rgba(255,255,255,.9) 0 3px,transparent 3px 6px)}
+  .top h1{font-size:16.5px; font-weight:650; letter-spacing:-.01em}
+  .top .crumb{color:var(--faint); font-weight:400}
+  .sp{flex:1}
+  .pill{display:inline-flex; align-items:center; gap:7px; font-size:11.5px; font-weight:650;
+    padding:6px 13px; border-radius:99px; border:1px solid var(--line2); letter-spacing:.04em}
+  .pill.plan{color:var(--acc); background:var(--acc-wash); border-color:rgba(14,138,151,.35)}
+
+  .cols{display:grid; grid-template-columns:236px 1fr 314px; min-height:610px}
+  .cols > * + *{border-left:1px solid var(--line)}
+
+  /* step rail */
+  .rail{padding:22px 18px; background:var(--sunk)}
+  .raill{font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); font-weight:700; margin-bottom:14px}
+  .step{display:flex; gap:11px; align-items:flex-start; padding:9px 0; cursor:pointer}
+  .sdot{width:22px;height:22px;border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
+    font-size:10.5px; font-weight:700; border:2px solid var(--line2); color:var(--faint); background:var(--panel)}
+  .step.done .sdot{border-color:var(--proof); color:var(--proof)}
+  .step.on .sdot{border-color:var(--acc); color:#fff; background:var(--acc)}
+  .step .sl{font-size:12.5px; font-weight:600; color:var(--dim); padding-top:1px}
+  .step.on .sl{color:var(--ink); font-weight:650}
+  .step.todo .sl{color:var(--faint); font-weight:400}
+  .step .sv{font-size:10.5px; color:var(--faint); display:block; font-weight:400; margin-top:1px}
+  .step.on .sv{color:var(--acc)}
+
+  /* question area */
+  .q{padding:26px 30px 22px}
+  .qnum{font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--acc); font-weight:700; margin-bottom:7px}
+  .qt{font-size:26px; font-weight:650; letter-spacing:-.022em; line-height:1.15; margin-bottom:6px; text-wrap:balance}
+  .qh{font-size:14px; color:var(--dim); margin-bottom:20px; max-width:60ch}
+
+  .opts{display:grid; gap:11px}
+  .opts.two{grid-template-columns:1fr 1fr}
+  .opt{border:1.5px solid var(--line2); border-radius:12px; padding:14px 16px; background:var(--panel);
+    cursor:pointer; display:flex; gap:13px; align-items:flex-start; text-align:left; width:100%; font:inherit; color:inherit}
+  .opt:hover{border-color:var(--line2); background:var(--sunk)}
+  .opt.on{border-color:var(--acc); background:var(--acc-wash); box-shadow:0 0 0 3px rgba(14,138,151,.1)}
+  .opt.blocked{opacity:.6; cursor:not-allowed}
+  .opt .rr{width:16px;height:16px;border-radius:50%; border:1.8px solid var(--line2); flex:none; margin-top:2px}
+  .opt.on .rr{border-color:var(--acc); border-width:5px}
+  .opt .sq{width:16px;height:16px;border-radius:4px; border:1.8px solid var(--line2); flex:none; margin-top:2px;
+    display:flex; align-items:center; justify-content:center; font-size:10px; color:#fff}
+  .opt.on .sq{border-color:var(--acc); background:var(--acc)}
+  .opt b{font-size:14.5px; font-weight:650; display:block; letter-spacing:-.01em}
+  .opt p{font-size:12.5px; color:var(--dim); margin-top:2px}
+  .opt .why{font-size:11.5px; color:var(--amber); font-weight:600; margin-top:5px; display:block}
+  .opt .meta{margin-left:auto; font-size:11px; color:var(--faint); text-align:right; flex:none}
+  .opt .meta b{font-size:12px; color:var(--ink)}
+
+  .fields{display:grid; grid-template-columns:1fr 1fr; gap:14px 18px; max-width:640px}
+  .f label{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); font-weight:700; display:block; margin-bottom:5px}
+  .f input{width:100%; font:inherit; font-family:"Cascadia Code",Consolas,ui-monospace,monospace; font-size:13.5px;
+    padding:10px 12px; border-radius:9px; border:1.5px solid var(--line2); background:var(--panel); color:var(--ink)}
+  .f input:focus{outline:none; border-color:var(--acc); box-shadow:0 0 0 3px rgba(14,138,151,.13)}
+  .f .hint{font-size:11px; color:var(--faint); margin-top:4px}
+  .f .known{font-size:11px; color:var(--proof); margin-top:4px; font-weight:600}
+
+  /* provenance */
+  .src{font-size:11px; margin-top:5px; font-weight:600}
+  .src.saved{color:var(--amber)} .src.blank{color:var(--faint); font-weight:400}
+  .src.typed{color:var(--dim)} .src.sugd{color:var(--acc)}
+  .prov{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:18px;
+    padding:10px 14px; background:var(--sunk); border-radius:10px}
+  .pv{font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:99px; letter-spacing:.03em}
+  .pv.proven{color:var(--proof); background:var(--proof-wash); border:1px solid rgba(30,158,90,.3)}
+  .pv.saved{color:var(--amber); background:var(--amber-wash); border:1px solid rgba(180,128,31,.3)}
+  .pv.blank{color:var(--faint); background:var(--panel); border:1px dashed var(--line2)}
+  .pvd{font-size:11px; color:var(--faint); margin-right:10px}
+  .ilonote{border:1px solid rgba(30,158,90,.3); background:var(--proof-wash);
+    border-radius:11px; padding:13px 16px; margin:18px 0}
+  .ilonote > b{font-size:10.5px; letter-spacing:.11em; text-transform:uppercase; color:var(--proof);
+    font-weight:700; display:block; margin-bottom:8px}
+  .ilorow{display:flex; align-items:center; gap:12px; padding:4px 0; font-size:12.5px}
+  .ilorow .nm{font-weight:650; width:78px}
+  .ilorow .ad{color:var(--ink)}
+  .ilonote .drift{font-size:11.5px; color:var(--dim); margin-top:9px; padding-top:9px;
+    border-top:1px solid rgba(30,158,90,.25)}
+  /* add-a-server */
+  .grouplbl{font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--faint);
+    font-weight:700; margin:16px 0 9px}
+  .grouplbl:first-of-type{margin-top:0}
+  .newrow{display:flex; gap:9px; align-items:stretch}
+  .newrow .opt{flex:1}
+  .btn.contact{flex:none; align-self:center; font-size:12px; padding:8px 13px;
+    color:var(--acc); border-color:rgba(14,138,151,.45); background:var(--acc-wash)}
+  .addbtn{display:block; width:100%; margin-top:12px; font:inherit; font-size:13.5px; font-weight:650;
+    padding:13px; border-radius:11px; border:1.5px dashed var(--line2); background:var(--sunk);
+    color:var(--acc); cursor:pointer}
+  .addbtn:hover{border-color:var(--acc); background:var(--acc-wash)}
+  .addform{border:1.5px solid rgba(14,138,151,.45); border-radius:13px; padding:17px 18px;
+    margin-top:14px; background:var(--acc-wash)}
+  .afh{margin-bottom:14px}
+  .afh b{font-size:14.5px; font-weight:650; display:block; margin-bottom:3px}
+  .afh span{font-size:12px; color:var(--dim)}
+  .addform .fields{max-width:none}
+  .addform input{background:var(--panel)}
+  .aff{display:flex; align-items:center; gap:10px; margin-top:15px}
+  .afn{font-size:11.5px; color:var(--dim); flex:1}
+  /* failure card */
+  .failcard{border:1.5px solid rgba(192,57,43,.4); background:var(--red-wash); border-radius:12px;
+    padding:15px 17px; margin:-2px 0 12px}
+  .fh{display:flex; gap:11px; align-items:flex-start; margin-bottom:9px}
+  .fx{width:22px;height:22px;border-radius:50%; flex:none; background:var(--red); color:#fff;
+    font-weight:700; font-size:13px; display:flex; align-items:center; justify-content:center}
+  .fh b{font-size:15px; font-weight:650; display:block; letter-spacing:-.01em}
+  .fw{font-size:11.5px; color:var(--dim); display:block; margin-top:2px}
+  .fm{font-size:13px; margin:0 0 12px; max-width:68ch}
+  .fck{background:var(--panel); border-radius:9px; padding:11px 14px 11px 8px; margin-bottom:11px}
+  .fck > b{font-size:10px; letter-spacing:.11em; text-transform:uppercase; color:var(--red);
+    font-weight:700; display:block; margin:0 0 6px 22px}
+  .fck ol{margin:0; padding-left:30px; font-size:12.5px}
+  .fck li{margin-bottom:3px}
+  .fck li:last-child{margin:0}
+  .ftech{font-size:12px; margin-bottom:10px}
+  .ftech summary{cursor:pointer; color:var(--dim); font-weight:600; font-size:11.5px}
+  .ftech p{margin:7px 0 0; padding:9px 11px; background:var(--panel); border-radius:8px;
+    font-size:11px; color:var(--dim); line-height:1.5}
+  .fk{font-size:11.5px; color:var(--dim); font-style:italic; margin:0 0 12px}
+  .fact{display:flex; gap:9px; align-items:center; flex-wrap:wrap}
+  .btn.alt{color:var(--acc); border-color:rgba(14,138,151,.4); background:var(--acc-wash)}
+  .prevbar{display:flex; align-items:center; gap:10px; margin-top:12px; padding:9px 13px;
+    background:var(--sunk); border:1px dashed var(--line2); border-radius:9px}
+  .pvl{font-size:10px; letter-spacing:.11em; text-transform:uppercase; color:var(--faint); font-weight:700}
+  .prevbar select{font:inherit; font-size:12.5px; padding:5px 9px; border-radius:7px;
+    border:1px solid var(--line2); background:var(--panel); color:var(--ink)}
+  .pvn{font-size:11px; color:var(--faint); font-style:italic}
+
+  .hostblk.unknown{border-style:dashed; background:var(--sunk)}
+  .unk{font-size:13px; color:var(--amber); font-weight:600}
+  .unk small{display:block; font-weight:400; color:var(--dim); font-size:11.5px; margin-top:4px}
+
+  .esxiblk{border:1.5px dashed var(--line2); border-radius:12px; padding:15px 16px; margin-top:4px}
+  .ebh{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:13px}
+  .ebh b{font-size:13.5px; font-weight:650}
+  .ebs{font-size:11.5px; color:var(--faint); flex:1; min-width:240px}
+  .btn.sug{font-size:12px; padding:7px 13px; color:var(--acc); border-color:rgba(14,138,151,.4); background:var(--acc-wash)}
+
+  /* drive allocation */
+  .hostblk{border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:12px; background:var(--panel)}
+  .hostblk .hh{display:flex; align-items:baseline; gap:10px; margin-bottom:11px}
+  .hostblk .hn{font-size:14.5px; font-weight:650}
+  .hostblk .hs{font-size:11px; color:var(--faint)}
+  .hostblk .tally{margin-left:auto; font-size:11.5px}
+  .hostblk .tally span{margin-left:11px; font-weight:650}
+  .tb{color:var(--boot)} .tv{color:var(--acc)} .tl{color:var(--loc)}
+  .baygrid{display:flex; gap:6px; flex-wrap:wrap}
+  .bcell{width:44px; border-radius:8px; padding:6px 4px 5px; text-align:center; cursor:pointer;
+    border:1.5px solid var(--line2); background:var(--panel)}
+  .bcell .bn{font-size:8px; color:var(--faint)}
+  .bcell .br{font-size:8.5px; font-weight:700; letter-spacing:.03em; margin-top:4px; color:var(--faint)}
+  .bcell .bbar{height:3px; border-radius:2px; background:#C9D5D8; margin-top:4px}
+  .bcell.boot{border-color:var(--boot); background:var(--boot-wash); cursor:default}
+  .bcell.boot .br{color:var(--boot)} .bcell.boot .bbar{background:var(--boot)}
+  .bcell.vsan{border-color:rgba(14,138,151,.55); background:var(--acc-wash)}
+  .bcell.vsan .br{color:var(--acc)} .bcell.vsan .bbar{background:var(--acc)}
+  .bcell.local{border-color:var(--loc); background:var(--loc-wash)}
+  .bcell.local .br{color:var(--loc)} .bcell.local .bbar{background:var(--loc)}
+  .bayhint{font-size:11.5px; color:var(--faint); margin-top:9px}
+
+  /* review */
+  .rev{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+  .rcard{border:1px solid var(--line); border-radius:11px; padding:13px 15px; background:var(--panel)}
+  .rcard h4{font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); font-weight:700; margin-bottom:6px}
+  .rcard .v{font-size:14.5px; font-weight:650; letter-spacing:-.01em}
+  .rcard .d{font-size:11.5px; color:var(--dim); margin-top:2px}
+  .seq{margin-top:16px; border-top:1px solid var(--line); padding-top:14px}
+  .seq h4{font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--acc); font-weight:700; margin-bottom:10px}
+  .sq2{display:flex; gap:11px; padding:7px 0; font-size:13px; align-items:baseline}
+  .sq2 .n{width:19px;height:19px;border-radius:50%; flex:none; border:1.6px solid var(--line2); color:var(--faint);
+    font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center}
+  .sq2 small{color:var(--faint); font-size:11.5px; display:block}
+
+  /* summary rail */
+  .sum{padding:22px 20px}
+  .suml{font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); font-weight:700; margin-bottom:13px}
+  .srow{display:flex; gap:10px; padding:9px 0; border-top:1px solid var(--line); font-size:12.5px; align-items:baseline}
+  .srow:first-of-type{border-top:0}
+  .srow .k{color:var(--faint); flex:none; width:78px; font-size:11px}
+  .srow .v{font-weight:650; flex:1}
+  .srow .v.none{color:var(--faint); font-weight:400}
+  .checks{margin-top:16px; border-top:1px solid var(--line); padding-top:13px}
+  .chk{display:flex; gap:9px; font-size:12px; padding:6px 0; align-items:baseline}
+  .chk .i{width:14px; flex:none; text-align:center}
+  .chk .i.ok{color:var(--proof)} .chk .i.no{color:var(--faint)} .chk .i.bad{color:var(--amber)}
+  .chk small{display:block; color:var(--faint); font-size:11px}
+  .chk.bad span:not(.i){color:var(--amber)}
+
+  .foot{display:flex; align-items:center; gap:12px; padding:14px 26px; border-top:1px solid var(--line); background:var(--sunk)}
+  .btn{font:inherit; font-size:13px; font-weight:650; border-radius:10px; padding:10px 18px; cursor:pointer;
+    border:1px solid var(--line2); background:var(--panel); color:var(--dim)}
+  .btn:disabled{opacity:.4; cursor:not-allowed}
+  .btn.primary{color:#fff; border-color:transparent; background:linear-gradient(135deg,var(--acc-br),var(--acc));
+    box-shadow:0 6px 16px -5px rgba(14,138,151,.6)}
+  .foot .note{font-size:11.5px; color:var(--faint)}
+
+  .banner{padding:11px 26px; background:var(--amber-wash); border-bottom:1px solid rgba(180,128,31,.3);
+    font-size:12.5px; color:var(--ink); display:flex; gap:9px; align-items:baseline}
+  .banner b{color:var(--amber); font-weight:700; letter-spacing:.06em; font-size:10.5px; text-transform:uppercase; flex:none}
+  .hidden{display:none !important}
+  @media (prefers-reduced-motion: reduce){*{animation:none!important; transition:none!important}}
+</style>
+
+<div class="stage"><div class="app">
+  <header class="top">
+    <div class="mark"></div>
+    <h1>Lab Builder <span class="crumb">/ Build flow</span></h1>
+    <div class="sp"></div>
+    <span class="pill plan">Planning only &middot; nothing is written yet</span>
+  </header>
+
+  <div class="banner"><b>Found in your rack</b><span>3 servers whose iLOs answered a read-only check today. Everything else on these pages is either a saved plan or blank &mdash; each field says which.</span></div>
+
+  <div class="cols">
+    <aside class="rail">
+      <div class="raill">Your answers</div>
+      <div id="rail"></div>
+    </aside>
+
+    <main class="q" id="q"></main>
+
+    <aside class="sum">
+      <div class="suml">The build so far</div>
+      <div id="summary"></div>
+      <div class="checks" id="checks"></div>
+    </aside>
+  </div>
+
+  <footer class="foot">
+    <button class="btn" id="back">&larr; Back</button>
+    <span class="note" id="foothint"></span>
+    <span class="sp"></span>
+    <button class="btn primary" id="next">Continue &rarr;</button>
+  </footer>
+</div></div>
+
+<script>
+(function(){
+  // Known hosts have answered a read-only probe: model, bay count and iLO are facts.
+  // A server the app has never met knows NOTHING until first contact succeeds —
+  // not its model, not how many bays it has. It starts as a name and a way in.
+  var HOSTS = [
+    { id:"dl380a", name:"DL380A",  model:"ProLiant DL380 Gen10 · 2U", ilo:"10.238.207.38", proven:"13:05", bays:16, esxi:"", state:"proven" },
+    { id:"dl360a", name:"DL360 A", model:"ProLiant DL360 Gen10 · 1U", ilo:"10.238.207.42", proven:"13:08", bays:8,  esxi:"", state:"proven" },
+    { id:"dl360b", name:"DL360 B", model:"ProLiant DL360 Gen10 · 1U", ilo:"10.238.207.43", proven:"13:08", bays:8,  esxi:"", state:"proven" }
+  ];
+  // state: "proven" | "new" (typed, never contacted) | "contacting" | "failed"
+
+  // Seven ways first contact really ends, taken from the backend's own
+  // classifications. Each needs a different fix, so each gets different words.
+  var FAILURES = {
+    network_unreachable: {
+      head: "Nothing answered",
+      meaning: "No reply at all. Either the machine is off, the iLO port isn't on this network, or the address you read has changed since you read it.",
+      checks: [
+        "The front display &mdash; it shows the address iLO holds right now",
+        "A link light on the iLO port (the small one marked with a wrench)",
+        "Whether this address is reachable from this machine at all",
+        "Your DHCP leases, in case it moved"
+      ],
+      tech: "network_unreachable &middot; iLO target is unreachable; review routing, firewall, address, and connectivity.",
+      keep: "It stays in the build as planned. Nothing about it can be read until it replies."
+    },
+    web_available_redfish_not_found: {
+      head: "Something answered, but it isn't an iLO",
+      meaning: "A web server replied at this address &mdash; it just isn't iLO. Usually the address belongs to a switch, a PDU, or another machine entirely.",
+      checks: [
+        "That you read the <b>iLO</b> address, not the server's own OS address",
+        "Whether this address belongs to another device in the rack",
+        "The front display again &mdash; iLO's address is the one labelled iLO"
+      ],
+      tech: "web_available_redfish_not_found &middot; The web root responded, but Redfish root was not found. HTTP reachability alone does not prove this target supports Redfish.",
+      keep: "Nothing was changed on whatever did answer. Lab Builder only sent a read."
+    },
+    auth_failed: {
+      head: "It's an iLO, but the sign-in was refused",
+      meaning: "The machine is there and it is iLO. The username or password didn't work &mdash; so nothing about the hardware could be read.",
+      checks: [
+        "The pull-out tag on the front of the server &mdash; the factory password is printed there",
+        "Whether this iLO was already set up with a different password",
+        "That the account isn't locked out from earlier attempts",
+        "Capitals and zeros vs letter O &mdash; factory passwords mix them"
+      ],
+      tech: "auth_failed &middot; iLO authentication failed; review configured credentials or iLO permissions.",
+      keep: "Your sign-in stays saved locally so you can correct just the wrong part."
+    },
+    redfish_collection_unauthorized: {
+      head: "Signed in, but not allowed to read the hardware",
+      meaning: "The password was accepted &mdash; this is a permission problem, not a wrong-password problem. The account can log in but can't read the inventory.",
+      checks: [
+        "That this iLO account has an administrator or read-only-inventory role",
+        "Whether it's a restricted account made for something else",
+        "iLO's user list &mdash; a different account may already have the right role"
+      ],
+      tech: "redfish_collection_unauthorized &middot; Redfish inventory collection GET returned unauthorized. Review iLO account permissions or Redfish authentication method. No settings were changed.",
+      keep: "Changing the account's role is done in iLO itself &mdash; Lab Builder will not alter permissions."
+    },
+    tls_failed: {
+      head: "The certificate couldn't be verified",
+      meaning: "iLO answered but presented a certificate this machine won't trust. Lab iLOs almost always use a self-signed one, which is normal for a lab.",
+      checks: [
+        "Whether this is your own lab iLO &mdash; if so, self-signed is expected",
+        "That the address matches the name on the certificate",
+        "Whether your organisation replaced iLO certificates centrally"
+      ],
+      tech: "tls_failed &middot; TLS verification failed; lab/self-signed iLO may require verify_tls to be off for this device.",
+      keep: "You can allow this device's certificate without weakening any other connection.",
+      extra: "Trust this iLO's certificate"
+    },
+    legacy_available_redfish_not_found: {
+      head: "An older iLO answered",
+      meaning: "This is a real iLO, but an earlier generation that doesn't speak the modern Redfish API. Lab Builder reads hardware through Redfish, so it can't inventory this one.",
+      checks: [
+        "The iLO generation &mdash; Gen9 and older ship iLO 4",
+        "Whether an iLO firmware update is available for it",
+        "Whether this server belongs in a Gen10-based vSAN build at all"
+      ],
+      tech: "legacy_available_redfish_not_found &middot; Legacy iLO endpoint is available, but Redfish root was not found.",
+      keep: "You can keep it in the rack for reference, but it can't be a cluster member."
+    },
+    target_mismatch: {
+      head: "It answered &mdash; but it's a machine you already have",
+      meaning: "The iLO at this address replied, and its identity matches <b>DL360 A</b>, already in your rack. Either you typed an address that belongs to it, or DL360 A moved to this address.",
+      checks: [
+        "Whether this is genuinely a second machine",
+        "Whether DL360 A's address changed and the old one is stale",
+        "The serial on the pull-out tag against the one already recorded"
+      ],
+      tech: "target_mismatch &middot; Probe succeeded but the target fingerprint does not match the configured candidate for this device.",
+      keep: "Nothing was added twice. Resolve which record is the real one.",
+      extra: "Update DL360 A's address instead"
+    }
+  };
+  var FAIL_ORDER = ["network_unreachable","auth_failed","redfish_collection_unauthorized",
+                    "web_available_redfish_not_found","tls_failed","legacy_available_redfish_not_found","target_mismatch"];
+  var FAIL_LABEL = {
+    network_unreachable:"Nothing answers", auth_failed:"Wrong sign-in",
+    redfish_collection_unauthorized:"No permission", web_available_redfish_not_found:"Not an iLO",
+    tls_failed:"Certificate", legacy_available_redfish_not_found:"Older iLO", target_mismatch:"Already in rack"
+  };
+  var previewOutcome = "success";
+
+  // What the saved lab profile holds. Typed once, never verified against hardware.
+  var PROFILE = { ilo:"10.238.207.201", esxi:"10.238.207.203", gateway:"10.238.207.1", cisco:"10.238.207.204" };
+
+  var S = {
+    purpose:"vsan",
+    members:["dl380a","dl360a","dl360b"],
+    subnet:"10.238.207.0/24",
+    gateway:PROFILE.gateway,
+    gatewaySrc:"profile",
+    vlan:"",
+    vcenter:"yes",
+    backing:"vsan",
+    esxiSrc:{},   // "" | "suggested" | "typed" — provenance per host
+    drives:{},
+    adding:false,
+    draft:{ name:"", addr:"", uid:"", pw:"" }
+  };
+  HOSTS.forEach(function(h){
+    var roles = [];
+    for (var i=0;i<h.bays;i++) roles.push(i<2 ? "boot" : "vsan");
+    S.drives[h.id] = roles;
+  });
+
+  var STEPS = [
+    { id:"purpose", label:"What you're building" },
+    { id:"members", label:"Which servers" },
+    { id:"network", label:"Addresses" },
+    { id:"mgmt",    label:"Management" },
+    { id:"storage", label:"Storage" },
+    { id:"drives",  label:"Drives" },
+    { id:"review",  label:"Review" }
+  ];
+  var step = 0;
+
+  function memberHosts(){ return HOSTS.filter(function(h){ return S.members.indexOf(h.id) >= 0; }); }
+  function count(hostId, role){
+    return (S.drives[hostId]||[]).filter(function(r){ return r === role; }).length;
+  }
+  function totalVsan(){
+    return memberHosts().reduce(function(t,h){ return t + count(h.id,"vsan"); }, 0);
+  }
+  function hostsWithVsan(){
+    return memberHosts().filter(function(h){ return count(h.id,"vsan") > 0; }).length;
+  }
+  function is24(){ return /\/(2[0-4])$/.test(S.subnet); }
+
+  function unproven(){ return memberHosts().filter(function(h){ return h.state !== "proven"; }); }
+
+  function rules(){
+    var r = [];
+    var n = memberHosts().length;
+    r.push({ ok:n>=1, txt:n + " server" + (n===1?"":"s") + " selected", sub:n>=1?null:"pick at least one" });
+
+    var up = unproven();
+    r.push({ ok:up.length===0, txt:"Every server has answered first contact",
+             sub:up.length===0 ? "models and bay counts are real readings"
+                               : up.map(function(h){return h.name;}).join(", ") + " never replied — nothing is known about them" });
+
+    var proven = memberHosts().filter(function(h){ return h.state === "proven"; });
+    var allBoot = proven.length > 0 && proven.every(function(h){ return count(h.id,"boot") === 2; });
+    r.push({ ok:allBoot, txt:"Every host has a 2-drive boot pair",
+             sub:allBoot ? "ESXi installs onto the mirror"
+                         : (proven.length ? "ESXi needs exactly two mirrored drives" : "no server has reported its bays yet") });
+    if (S.backing === "vsan"){
+      r.push({ ok:n>=3, txt:"vSAN needs 3 hosts", sub:n>=3?null:"only " + n + " selected" });
+      r.push({ ok:hostsWithVsan()===n && n>0, txt:"Every member gives drives to vSAN",
+               sub:(hostsWithVsan()===n&&n>0)?totalVsan()+" drives pooled":"a member with 0 drives can't join" });
+      r.push({ ok:S.vcenter==="yes", txt:"vSAN requires vCenter", sub:S.vcenter==="yes"?"VCSA will be deployed":"turn management on" });
+    }
+    if (S.backing === "netapp-nfs" || S.backing === "netapp-iscsi"){
+      r.push({ ok:is24(), txt:"NetApp needs a /24 or larger subnet",
+               sub:is24()?null:"current subnet is smaller than /24" });
+    }
+    var missing = memberHosts().filter(function(h){ return !h.esxi.trim(); }).length;
+    r.push({ ok:missing===0, txt:"Every host has an ESXi address",
+             sub:missing===0 ? "none verified yet — they can't be until ESXi runs"
+                             : missing + " still blank · no host runs a hypervisor to ask" });
+    return r;
+  }
+  function blockers(){ return rules().filter(function(x){ return !x.ok; }); }
+
+  function purposeLabel(){
+    return { single:"Single ESXi host", vsan:"3-node vSAN cluster", shared:"Cluster on NetApp", custom:"Custom build" }[S.purpose];
+  }
+  function backingLabel(){
+    return { vsan:"vSAN pool", "netapp-nfs":"NetApp NFS", "netapp-iscsi":"NetApp iSCSI", local:"Local datastores" }[S.backing];
+  }
+
+  function railValue(id){
+    if (id==="purpose") return purposeLabel();
+    if (id==="members") return memberHosts().length + " servers";
+    if (id==="network") return S.subnet;
+    if (id==="mgmt")    return S.vcenter==="yes" ? "vCenter (VCSA)" : "Standalone hosts";
+    if (id==="storage") return backingLabel();
+    if (id==="drives")  return totalVsan() + " drives to vSAN";
+    return null;
+  }
+
+  function renderRail(){
+    document.getElementById("rail").innerHTML = STEPS.map(function(s,i){
+      var cls = i===step ? "on" : (i<step ? "done" : "todo");
+      var val = i<=step ? railValue(s.id) : null;
+      return '<div class="step '+cls+'" data-i="'+i+'">'
+        + '<span class="sdot">'+(i<step?"&#10003;":(i+1))+'</span>'
+        + '<span class="sl">'+s.label+(val?'<span class="sv">'+val+'</span>':'')+'</span></div>';
+    }).join("");
+    Array.prototype.forEach.call(document.querySelectorAll(".step"), function(el){
+      el.addEventListener("click", function(){
+        var i = +el.getAttribute("data-i");
+        if (i <= step) { step = i; render(); }
+      });
+    });
+  }
+
+  function renderSummary(){
+    var rows = [
+      ["Building", purposeLabel()],
+      ["Servers", memberHosts().map(function(h){return h.name;}).join(", ") || null],
+      ["Subnet", S.subnet],
+      ["Manager", S.vcenter==="yes" ? "vCenter VCSA 8.0.3" : "none — standalone"],
+      ["Storage", backingLabel()],
+      ["Boot", memberHosts().length + " × 2-drive mirror"],
+      ["vSAN pool", S.backing==="vsan" ? totalVsan() + " drives" : "—"]
+    ];
+    document.getElementById("summary").innerHTML = rows.map(function(r){
+      return '<div class="srow"><span class="k">'+r[0]+'</span><span class="v'+(r[1]?"":" none")+'">'+(r[1]||"not set")+'</span></div>';
+    }).join("");
+
+    document.getElementById("checks").innerHTML = rules().map(function(r){
+      return '<div class="chk'+(r.ok?"":" bad")+'"><span class="i '+(r.ok?"ok":"bad")+'">'+(r.ok?"&#10003;":"!")+'</span>'
+        + '<span>'+r.txt+(r.sub?'<small>'+r.sub+'</small>':'')+'</span></div>';
+    }).join("");
+  }
+
+  function optHTML(on, blocked, kind, title, desc, why, meta){
+    return '<button class="opt'+(on?" on":"")+(blocked?" blocked":"")+'" '+(blocked?'disabled':'')+'>'
+      + '<span class="'+(kind==="check"?"sq":"rr")+'">'+(kind==="check"&&on?"&#10003;":"")+'</span>'
+      + '<span style="flex:1"><b>'+title+'</b><p>'+desc+'</p>'+(why?'<span class="why">'+why+'</span>':'')+'</span>'
+      + (meta?'<span class="meta">'+meta+'</span>':'') + '</button>';
+  }
+
+  function renderQ(){
+    var el = document.getElementById("q");
+    var s = STEPS[step];
+    var html = '<div class="qnum">Question '+(step+1)+' of '+STEPS.length+'</div>';
+
+    if (s.id === "purpose"){
+      html += '<div class="qt">What are you building?</div>'
+        + '<div class="qh">This sets the defaults for everything after it. You can change any of them later.</div><div class="opts">'
+        + optHTML(S.purpose==="single", false, "radio", "A single ESXi host",
+            "One server running the hypervisor, storing VMs on its own drives. No cluster, no vCenter needed.", null, "1 server")
+        + optHTML(S.purpose==="vsan", false, "radio", "A vSAN cluster",
+            "Three or more servers pooling their local drives into one shared datastore.", null, "3+ servers<br><b>your kit</b>")
+        + optHTML(S.purpose==="shared", false, "radio", "A cluster on shared storage",
+            "Servers run the VMs; the NetApp array holds them over NFS or iSCSI.", null, "2+ servers")
+        + optHTML(S.purpose==="custom", false, "radio", "Something else",
+            "Pick every option yourself with no preset.", null, null)
+        + '</div>';
+    }
+
+    if (s.id === "members"){
+      html += '<div class="qt">Which servers are in it?</div>'
+        + '<div class="qh">Tick the ones Lab Builder has already reached. For a machine it has never met, add it below &mdash; a name and a way in is all you need to start.</div>';
+
+      var knownList = HOSTS.filter(function(h){ return h.state === "proven"; });
+      var newList   = HOSTS.filter(function(h){ return h.state !== "proven"; });
+
+      if (knownList.length){
+        html += '<div class="grouplbl">Already reached</div><div class="opts">'
+          + knownList.map(function(h){
+              var on = S.members.indexOf(h.id) >= 0;
+              return optHTML(on, false, "check", h.name, h.model + ' &middot; iLO <span class="mono">' + h.ilo + '</span>',
+                null, h.bays + ' bays<br><b>proven ' + h.proven + '</b>');
+            }).join("")
+          + '</div>';
+      }
+
+      if (newList.length){
+        html += '<div class="grouplbl">Added by you &mdash; not yet reached</div><div class="opts">'
+          + newList.map(function(h){
+              var on = S.members.indexOf(h.id) >= 0;
+              var meta, why, F = h.failure ? FAILURES[h.failure] : null;
+              if (h.state === "contacting"){
+                meta = '<b style="color:var(--acc)">contacting&hellip;</b>'; why = null;
+              } else if (h.state === "failed"){
+                meta = '<b style="color:var(--red)">'+FAIL_LABEL[h.failure]+'</b><br><span style="color:var(--faint)">bays still ?</span>';
+                why = null;
+              } else {
+                meta = 'bays <b>?</b><br><span style="color:var(--amber)">never contacted</span>';
+                why = 'Model and drives stay unknown until it replies';
+              }
+              var row = '<div class="newrow">'
+                + optHTML(on, false, "check", h.name, 'iLO <span class="mono">'+h.ilo+'</span> &middot; sign-in saved locally', why, meta)
+                + '<button class="btn contact" data-contact="'+h.id+'">'
+                + (h.state==="contacting" ? "Contacting…" : (h.state==="failed" ? "Try again" : "Run first contact"))
+                + '</button></div>';
+
+              if (h.state === "failed" && F){
+                row += '<div class="failcard">'
+                  + '<div class="fh"><span class="fx">!</span><div><b>'+F.head+'</b>'
+                  + '<span class="fw">Tried <span class="mono">'+h.ilo+'</span>'
+                  + (h.failure==="auth_failed" || h.failure==="redfish_collection_unauthorized"
+                       ? ' &middot; signed in as <span class="mono">Administrator</span>' : '')
+                  + ' &middot; read-only, nothing was changed</span></div></div>'
+                  + '<p class="fm">'+F.meaning+'</p>'
+                  + '<div class="fck"><b>Check, in this order</b><ol>'
+                  + F.checks.map(function(c){ return '<li>'+c+'</li>'; }).join("")
+                  + '</ol></div>'
+                  + '<details class="ftech"><summary>Technical detail</summary><p class="mono">'+F.tech+'</p></details>'
+                  + '<p class="fk">'+F.keep+'</p>'
+                  + '<div class="fact">'
+                  + '<button class="btn" data-edit="'+h.id+'">Edit details</button>'
+                  + (F.extra ? '<button class="btn alt" data-extra="'+h.id+'">'+F.extra+'</button>' : '')
+                  + '<span class="sp"></span>'
+                  + '<button class="btn" data-drop="'+h.id+'">Remove from build</button>'
+                  + '<button class="btn primary" data-contact2="'+h.id+'">Try again</button>'
+                  + '</div></div>';
+              }
+              return row;
+            }).join("")
+          + '</div>';
+      }
+
+      if (newList.length){
+        html += '<div class="prevbar"><span class="pvl">Preview outcome</span>'
+          + '<select id="prevsel"><option value="success">First contact succeeds</option>'
+          + FAIL_ORDER.map(function(k){
+              return '<option value="'+k+'"'+(previewOutcome===k?' selected':'')+'>'+FAIL_LABEL[k]+'</option>';
+            }).join("")
+          + '</select><span class="pvn">design control &mdash; real contact decides this itself</span></div>';
+      }
+
+      if (!S.adding){
+        html += '<button class="addbtn" id="addopen">+ Add a server Lab Builder has never met</button>';
+      } else {
+        html += '<div class="addform">'
+          + '<div class="afh"><b>New server</b><span>Read the two things below off the machine itself &mdash; the front display shows the address it picked up, the pull-out tag carries the factory sign-in.</span></div>'
+          + '<div class="fields">'
+          + '<div class="f"><label>Name it</label><input id="a-name" value="'+S.draft.name+'" placeholder="DL360 C">'
+            + '<div class="src typed">Yours to choose &middot; how it appears in the rack</div></div>'
+          + '<div class="f"><label>Address it answers on</label><input id="a-addr" value="'+S.draft.addr+'" placeholder="10.238.207.44">'
+            + '<div class="src blank">From the front display or your DHCP leases</div></div>'
+          + '<div class="f"><label>iLO UID / username</label><input id="a-uid" value="'+S.draft.uid+'" placeholder="Administrator">'
+            + '<div class="src blank">Printed on the pull-out tag</div></div>'
+          + '<div class="f"><label>iLO password</label><input id="a-pw" type="password" value="'+S.draft.pw+'" placeholder="••••••••">'
+            + '<div class="src blank">Stored locally &middot; never sent anywhere</div></div>'
+          + '</div>'
+          + '<div class="aff"><span class="afn">Saving only records it. Nothing connects until you run first contact.</span>'
+          + '<button class="btn" id="a-cancel">Cancel</button>'
+          + '<button class="btn primary" id="a-save">Add server</button></div>'
+          + '</div>';
+      }
+
+      if (S.backing === "vsan" && memberHosts().length < 3){
+        html += '<p class="bayhint" style="color:var(--amber); font-weight:600; margin-top:14px">vSAN needs three members — with '
+          + memberHosts().length + ' selected it cannot form.</p>';
+      }
+    }
+
+    if (s.id === "network"){
+      var anyBlank = memberHosts().some(function(h){ return !h.esxi.trim(); });
+      html += '<div class="qt">What addresses will they use?</div>'
+        + '<div class="qh">Only the iLO addresses are known &mdash; hardware answered on them. Everything else is either a saved plan or still blank, and this page says which.</div>'
+
+        + '<div class="prov"><span class="pv proven">&#10003; Proven</span><span class="pvd">hardware answered here</span>'
+        + '<span class="pv saved">Saved plan</span><span class="pvd">typed before, never checked</span>'
+        + '<span class="pv blank">Blank</span><span class="pvd">nothing knows this yet</span></div>'
+
+        + '<div class="fields">'
+        + '<div class="f"><label>Lab subnet</label><input id="i-subnet" value="'+S.subnet+'">'
+          + '<div class="src saved">Saved plan &middot; NetApp needs /24 or larger</div></div>'
+        + '<div class="f"><label>Gateway</label><input id="i-gw" value="'+S.gateway+'">'
+          + '<div class="src saved">Saved plan &middot; <span class="mono">'+PROFILE.gateway+'</span> &mdash; never reached</div></div>'
+        + '</div>'
+
+        + '<div class="ilonote"><b>The iLOs you can trust</b>'
+        + memberHosts().map(function(h){
+            return '<div class="ilorow"><span class="nm">'+h.name+'</span>'
+              + '<span class="mono ad">'+h.ilo+'</span>'
+              + '<span class="pv proven">&#10003; answered '+h.proven+'</span></div>';
+          }).join("")
+        + '<div class="drift">Your saved profile still plans iLO at <span class="mono">'+PROFILE.ilo+'</span> &mdash; '
+        + 'no hardware ever answered there. The three above are what actually replied.</div></div>'
+
+        + '<div class="esxiblk"><div class="ebh"><b>ESXi management addresses</b>'
+        + '<span class="ebs">Nothing runs a hypervisor yet, so none of these exist. Type them, or start from a suggestion.</span>'
+        + '<button class="btn sug" id="suggest">Suggest from subnet</button></div>'
+        + '<div class="fields">'
+        + memberHosts().map(function(h){
+            var src = S.esxiSrc[h.id] || "";
+            var srcHtml = !h.esxi.trim()
+              ? '<div class="src blank">Blank &mdash; nothing knows this</div>'
+              : (src === "suggested"
+                  ? '<div class="src sugd">Suggested &middot; free-looking, but unverified</div>'
+                  : '<div class="src typed">You typed this &middot; unverified</div>');
+            return '<div class="f"><label>'+h.name+'</label>'
+              + '<input data-esxi="'+h.id+'" value="'+h.esxi+'" placeholder="not set">'
+              + srcHtml + '</div>';
+          }).join("")
+        + '</div></div>'
+
+        + '<div class="fields" style="margin-top:16px">'
+        + '<div class="f"><label>vSAN VLAN</label><input id="i-vlan" value="'+S.vlan+'" placeholder="not set">'
+          + '<div class="src '+(S.vlan.trim()?"typed":"blank")+'">'
+          + (S.vlan.trim()?"You typed this &middot; unverified":"Blank &mdash; read it off the Catalyst or pick one")+'</div></div>'
+        + '</div>';
+
+      if (anyBlank){
+        html += '<p class="bayhint" style="color:var(--amber); font-weight:600; margin-top:14px">'
+          + 'These stay unverified until ESXi is installed and answers on them &mdash; the dashboard will show them as planned, never as proven.</p>';
+      }
+    }
+
+    if (s.id === "mgmt"){
+      html += '<div class="qt">Will vCenter manage it?</div>'
+        + '<div class="qh">vCenter is a virtual machine, not a device. It runs on one of these hosts and manages the rest.</div><div class="opts">'
+        + optHTML(S.vcenter==="yes", false, "radio", "Yes — deploy vCenter",
+            "VCSA 8.0.3 is in your media folder. It installs onto local storage first, then moves onto vSAN once the pool exists.",
+            S.backing==="vsan" ? "Required — vSAN cannot be enabled without it" : null, "12.5 GB<br><b>in media</b>")
+        + optHTML(S.vcenter==="no", S.backing==="vsan", "radio", "No — standalone hosts",
+            "Each host is managed on its own. Simpler, but no cluster features.",
+            S.backing==="vsan" ? "Unavailable while storage is set to vSAN" : null, null)
+        + '</div>';
+    }
+
+    if (s.id === "storage"){
+      var n = memberHosts().length;
+      html += '<div class="qt">What will hold your virtual machines?</div>'
+        + '<div class="qh">This is where VM disks live — separate from the two drives that boot the hypervisor.</div><div class="opts">'
+        + optHTML(S.backing==="vsan", n<3, "radio", "vSAN — pool the servers' own drives",
+            "Each host contributes drives to one shared datastore. Survives a host failure.",
+            n<3 ? "Needs 3 servers — you have " + n : null, "needs 3 hosts")
+        + optHTML(S.backing==="netapp-nfs", !is24(), "radio", "NetApp over NFS",
+            "The ONTAP array serves a shared datastore to every host.",
+            !is24() ? "Your subnet is smaller than /24" : null, "shared")
+        + optHTML(S.backing==="netapp-iscsi", !is24(), "radio", "NetApp over iSCSI",
+            "Block storage from the same array, presented as a VMFS datastore.",
+            !is24() ? "Your subnet is smaller than /24" : null, "shared")
+        + optHTML(S.backing==="local", false, "radio", "Local datastores only",
+            "Each host keeps its own drives. Simplest, but a VM dies with its host.", null, "no sharing")
+        + '</div>';
+    }
+
+    if (s.id === "drives"){
+      html += '<div class="qt">Which drives do what?</div>'
+        + '<div class="qh">Two drives on every host are reserved as a mirrored pair for ESXi — they can never join the pool. Click any other bay to move it between vSAN and local.</div>';
+      html += memberHosts().map(function(h){
+        if (h.state !== "proven"){
+          return '<div class="hostblk unknown"><div class="hh"><span class="hn">'+h.name+'</span>'
+            + '<span class="hs">iLO <span class="mono">'+h.ilo+'</span></span></div>'
+            + '<div class="unk">Bays unknown &mdash; this server has never replied.'
+            + '<small>Drive layout comes from the controller itself. Run first contact on question 2 and its real bay count appears here.</small></div></div>';
+        }
+        var roles = S.drives[h.id];
+        return '<div class="hostblk"><div class="hh"><span class="hn">'+h.name+'</span>'
+          + '<span class="hs">'+h.bays+' bays · P408i-a</span>'
+          + '<span class="tally"><span class="tb">'+count(h.id,"boot")+' boot</span>'
+          + '<span class="tv">'+count(h.id,"vsan")+' vSAN</span>'
+          + '<span class="tl">'+count(h.id,"local")+' local</span></span></div>'
+          + '<div class="baygrid">'
+          + roles.map(function(r,i){
+              var lab = r==="boot" ? "BOOT" : (r==="vsan" ? "vSAN" : "LOCAL");
+              return '<div class="bcell '+r+'" data-host="'+h.id+'" data-bay="'+i+'">'
+                + '<div class="bn mono">'+String(i+1).padStart(2,"0")+'</div>'
+                + '<div class="bbar"></div><div class="br">'+lab+'</div></div>';
+            }).join("")
+          + '</div></div>';
+      }).join("");
+      html += '<p class="bayhint">Dark bays are the boot mirror. Nothing here writes to a controller — the plan is previewed before any change.</p>';
+    }
+
+    if (s.id === "review"){
+      var b = blockers();
+      html += '<div class="qt">Here&rsquo;s the build</div>'
+        + '<div class="qh">Saving stores this as the target. The dashboard then shows how far the real lab is from it.</div>'
+        + '<div class="rev">'
+        + '<div class="rcard"><h4>Shape</h4><div class="v">'+purposeLabel()+'</div><div class="d">'
+          + memberHosts().map(function(h){return h.name;}).join(" · ")+'</div></div>'
+        + '<div class="rcard"><h4>Storage</h4><div class="v">'+backingLabel()+'</div><div class="d">'
+          + (S.backing==="vsan" ? totalVsan()+" drives pooled across "+hostsWithVsan()+" hosts" : "VM disks live here")+'</div></div>'
+        + '<div class="rcard"><h4>Hypervisor boot</h4><div class="v">'+memberHosts().length+' × 2-drive mirror</div>'
+          + '<div class="d">RAID 1 · never pooled</div></div>'
+        + '<div class="rcard"><h4>Management</h4><div class="v">'+(S.vcenter==="yes"?"vCenter VCSA 8.0.3":"Standalone")+'</div>'
+          + '<div class="d">'+(S.vcenter==="yes"?"a VM on the first host":"no cluster features")+'</div></div>'
+        + '</div>';
+      html += '<div class="seq"><h4>What Lab Builder will do, in order</h4>'
+        + [
+            ["Carve a 2-drive RAID 1 mirror on each host","destructive — previewed and confirmed first"],
+            ["Install ESXi 8.0.3 onto each mirror","boots via iLO virtual media"],
+            (S.vcenter==="yes" ? ["Deploy vCenter to local storage","vSAN doesn't exist yet, so it lands local"] : null),
+            (S.backing==="vsan" ? ["Form the cluster and enable vSAN","claims "+totalVsan()+" passthrough drives"] : null),
+            (S.backing==="vsan" && S.vcenter==="yes" ? ["Migrate vCenter onto vSAN","the manager moves onto the pool it manages"] : null)
+          ].filter(Boolean).map(function(x,i){
+            return '<div class="sq2"><span class="n">'+(i+1)+'</span><span>'+x[0]+'<small>'+x[1]+'</small></span></div>';
+          }).join("")
+        + '</div>';
+      if (b.length){
+        html += '<p class="bayhint" style="color:var(--amber); font-weight:600; margin-top:14px">'
+          + b.length + ' thing' + (b.length===1?"":"s") + ' still block this build — see the checks on the right.</p>';
+      }
+    }
+
+    el.innerHTML = html;
+    wire(s.id);
+  }
+
+  function wire(id){
+    var opts = document.querySelectorAll("#q .opt");
+    if (id === "purpose"){
+      var keys = ["single","vsan","shared","custom"];
+      opts.forEach(function(o,i){ o.addEventListener("click", function(){
+        S.purpose = keys[i];
+        if (keys[i]==="single"){ S.members=["dl360b"]; S.backing="local"; S.vcenter="no"; }
+        if (keys[i]==="vsan"){ S.members=HOSTS.map(function(h){return h.id;}); S.backing="vsan"; S.vcenter="yes"; }
+        if (keys[i]==="shared"){ S.backing="netapp-nfs"; S.vcenter="yes"; }
+        render();
+      });});
+    }
+    if (id === "members"){
+      var order = HOSTS.filter(function(h){ return h.state === "proven"; })
+                  .concat(HOSTS.filter(function(h){ return h.state !== "proven"; }));
+      opts.forEach(function(o,i){ o.addEventListener("click", function(){
+        var h = order[i]; if (!h) return;
+        var at = S.members.indexOf(h.id);
+        if (at >= 0) S.members.splice(at,1); else S.members.push(h.id);
+        render();
+      });});
+
+      var open = document.getElementById("addopen");
+      if (open) open.addEventListener("click", function(){ S.adding = true; render(); });
+      var cancel = document.getElementById("a-cancel");
+      if (cancel) cancel.addEventListener("click", function(){
+        S.adding = false; S.draft = { name:"", addr:"", uid:"", pw:"" }; render();
+      });
+      ["name","addr","uid","pw"].forEach(function(k){
+        var el = document.getElementById("a-" + k);
+        if (el) el.addEventListener("input", function(){ S.draft[k] = el.value; });
+      });
+      var save = document.getElementById("a-save");
+      if (save) save.addEventListener("click", function(){
+        var d = S.draft;
+        if (!d.name.trim() || !d.addr.trim() || !d.uid.trim()) return;
+        var id = "h" + Date.now();
+        HOSTS.push({ id:id, name:d.name.trim(), model:"unknown until it replies",
+                     ilo:d.addr.trim(), proven:null, bays:null, esxi:"", state:"new" });
+        S.members.push(id);
+        S.adding = false; S.draft = { name:"", addr:"", uid:"", pw:"" };
+        render();
+      });
+
+      var sel = document.getElementById("prevsel");
+      if (sel) sel.addEventListener("change", function(){ previewOutcome = sel.value; });
+
+      function runContact(hid){
+        var h = HOSTS.filter(function(x){ return x.id === hid; })[0];
+        if (!h || h.state === "contacting") return;
+        h.state = "contacting"; h.failure = null; render();
+        window.setTimeout(function(){
+          if (previewOutcome === "success"){
+            // A real first contact is a read-only Redfish probe. It returns the
+            // model and the drive inventory — which is why neither shows before it.
+            h.state = "proven"; h.proven = "just now";
+            h.model = "ProLiant DL360 Gen10 · 1U"; h.bays = 8;
+            var roles = [];
+            for (var i=0;i<h.bays;i++) roles.push(i<2 ? "boot" : "vsan");
+            S.drives[h.id] = roles;
+          } else {
+            // Failure never invents anything: model, bays and drives stay unknown.
+            h.state = "failed"; h.failure = previewOutcome;
+            h.model = "unknown until it replies"; h.bays = null;
+            delete S.drives[h.id];
+          }
+          render();
+        }, 1100);
+      }
+
+      document.querySelectorAll("[data-contact]").forEach(function(b){
+        b.addEventListener("click", function(){ runContact(b.getAttribute("data-contact")); });
+      });
+      document.querySelectorAll("[data-contact2]").forEach(function(b){
+        b.addEventListener("click", function(){ runContact(b.getAttribute("data-contact2")); });
+      });
+      document.querySelectorAll("[data-drop]").forEach(function(b){
+        b.addEventListener("click", function(){
+          var hid = b.getAttribute("data-drop");
+          var at = S.members.indexOf(hid); if (at >= 0) S.members.splice(at,1);
+          for (var i=HOSTS.length-1;i>=0;i--) if (HOSTS[i].id === hid) HOSTS.splice(i,1);
+          delete S.drives[hid]; render();
+        });
+      });
+      document.querySelectorAll("[data-edit]").forEach(function(b){
+        b.addEventListener("click", function(){
+          var h = HOSTS.filter(function(x){ return x.id === b.getAttribute("data-edit"); })[0];
+          if (!h) return;
+          S.draft = { name:h.name, addr:h.ilo, uid:"", pw:"" };
+          var at = S.members.indexOf(h.id); if (at >= 0) S.members.splice(at,1);
+          for (var i=HOSTS.length-1;i>=0;i--) if (HOSTS[i].id === h.id) HOSTS.splice(i,1);
+          S.adding = true; render();
+        });
+      });
+      document.querySelectorAll("[data-extra]").forEach(function(b){
+        b.addEventListener("click", function(){
+          var hid = b.getAttribute("data-extra");
+          var h = HOSTS.filter(function(x){ return x.id === hid; })[0];
+          if (!h) return;
+          if (h.failure === "tls_failed"){ previewOutcome = "success"; runContact(hid); }
+          else { // target_mismatch — the duplicate is dropped, the real record keeps the address
+            var at = S.members.indexOf(hid); if (at >= 0) S.members.splice(at,1);
+            for (var i=HOSTS.length-1;i>=0;i--) if (HOSTS[i].id === hid) HOSTS.splice(i,1);
+            var a = HOSTS.filter(function(x){ return x.name === "DL360 A"; })[0];
+            if (a) a.ilo = h.ilo;
+            render();
+          }
+        });
+      });
+    }
+    if (id === "mgmt"){
+      var mk = ["yes","no"];
+      opts.forEach(function(o,i){ o.addEventListener("click", function(){ S.vcenter = mk[i]; render(); });});
+    }
+    if (id === "storage"){
+      var bk = ["vsan","netapp-nfs","netapp-iscsi","local"];
+      opts.forEach(function(o,i){ o.addEventListener("click", function(){
+        S.backing = bk[i];
+        if (bk[i]==="vsan") S.vcenter = "yes";
+        render();
+      });});
+    }
+    if (id === "network"){
+      var sub = document.getElementById("i-subnet");
+      if (sub) sub.addEventListener("input", function(){ S.subnet = sub.value; renderSummary(); });
+      var gw = document.getElementById("i-gw");
+      if (gw) gw.addEventListener("input", function(){ S.gateway = gw.value; S.gatewaySrc = "typed"; });
+      var vl = document.getElementById("i-vlan");
+      if (vl) vl.addEventListener("input", function(){ S.vlan = vl.value; });
+      document.querySelectorAll("[data-esxi]").forEach(function(inp){
+        inp.addEventListener("input", function(){
+          var hid = inp.getAttribute("data-esxi");
+          var h = HOSTS.filter(function(x){ return x.id === hid; })[0];
+          if (h){ h.esxi = inp.value; S.esxiSrc[hid] = inp.value.trim() ? "typed" : ""; renderSummary(); }
+        });
+      });
+      var sg = document.getElementById("suggest");
+      if (sg) sg.addEventListener("click", function(){
+        // Offer the next free-looking addresses above the proven iLOs.
+        var base = (S.subnet.split("/")[0] || "10.238.207.0").split(".").slice(0,3).join(".");
+        var taken = HOSTS.map(function(h){ return h.ilo; }).concat([PROFILE.gateway, PROFILE.cisco, PROFILE.esxi]);
+        var next = 60;
+        memberHosts().forEach(function(h){
+          var cand;
+          do { cand = base + "." + next; next++; } while (taken.indexOf(cand) >= 0);
+          taken.push(cand);
+          h.esxi = cand;
+          S.esxiSrc[h.id] = "suggested";
+        });
+        render();
+      });
+    }
+    if (id === "drives"){
+      document.querySelectorAll(".bcell").forEach(function(c){
+        c.addEventListener("click", function(){
+          var hid = c.getAttribute("data-host"), bi = +c.getAttribute("data-bay");
+          var cur = S.drives[hid][bi];
+          if (cur === "boot") return;
+          S.drives[hid][bi] = cur === "vsan" ? "local" : "vsan";
+          render();
+        });
+      });
+    }
+  }
+
+  function render(){
+    renderRail(); renderQ(); renderSummary();
+    document.getElementById("back").disabled = step === 0;
+    var next = document.getElementById("next");
+    var last = step === STEPS.length - 1;
+    next.textContent = last ? "Save this build →" : "Continue →";
+    next.disabled = last && blockers().length > 0;
+    document.getElementById("foothint").textContent = last
+      ? (blockers().length ? blockers().length + " blocker" + (blockers().length===1?"":"s") + " to clear first" : "Stored as the target — nothing is written to hardware")
+      : "Nothing is written while you answer";
+  }
+
+  document.getElementById("next").addEventListener("click", function(){
+    if (step < STEPS.length - 1){ step++; render(); }
+  });
+  document.getElementById("back").addEventListener("click", function(){
+    if (step > 0){ step--; render(); }
+  });
+
+  render();
+})();
+</script>

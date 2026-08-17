@@ -1,0 +1,434 @@
+<title>Lab Builder — Strata Concept</title>
+<style>
+  :root{
+    --paper:#EEF3F4; --panel:#FFFFFF; --sunk:#E4EBEC;
+    --ink:#16262C; --dim:#5F7278; --faint:#8B9BA1;
+    --line:#DCE5E7; --line2:#C9D5D8;
+    --acc:#0E8A97; --acc-br:#17B3C2; --acc-wash:#E6F4F5;
+    --proof:#1E9E5A; --proof-wash:#E6F5EC;
+    --amber:#B4801F; --amber-wash:#FBF2E0;
+    --metal-hi:#FFFFFF; --metal-lo:#E7EDEE; --metal-edge:#C3D0D3;
+    --shadow:0 1px 2px rgba(22,38,44,.06), 0 8px 20px -12px rgba(22,38,44,.18);
+    --shadow-lift:0 2px 4px rgba(22,38,44,.07), 0 18px 34px -18px rgba(22,38,44,.28);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#1B2429; --panel:#222D33; --sunk:#1A2328;
+      --ink:#E8EFF1; --dim:#A0B1B7; --faint:#7B8D94;
+      --line:#33424A; --line2:#3F515A;
+      --acc:#2FC0D0; --acc-br:#4AD4E2; --acc-wash:#17323A;
+      --proof:#3FCB7C; --proof-wash:#16332A;
+      --amber:#DFA84D; --amber-wash:#33291A;
+      --metal-hi:#2E3B42; --metal-lo:#232E34; --metal-edge:#3D4C54;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 20px -12px rgba(0,0,0,.5);
+      --shadow-lift:0 2px 4px rgba(0,0,0,.35), 0 18px 34px -18px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#1B2429; --panel:#222D33; --sunk:#1A2328;
+    --ink:#E8EFF1; --dim:#A0B1B7; --faint:#7B8D94;
+    --line:#33424A; --line2:#3F515A;
+    --acc:#2FC0D0; --acc-br:#4AD4E2; --acc-wash:#17323A;
+    --proof:#3FCB7C; --proof-wash:#16332A;
+    --amber:#DFA84D; --amber-wash:#33291A;
+    --metal-hi:#2E3B42; --metal-lo:#232E34; --metal-edge:#3D4C54;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 20px -12px rgba(0,0,0,.5);
+    --shadow-lift:0 2px 4px rgba(0,0,0,.35), 0 18px 34px -18px rgba(0,0,0,.6);
+  }
+  :root[data-theme="light"]{
+    --paper:#EEF3F4; --panel:#FFFFFF; --sunk:#E4EBEC;
+    --ink:#16262C; --dim:#5F7278; --faint:#8B9BA1;
+    --line:#DCE5E7; --line2:#C9D5D8;
+    --acc:#0E8A97; --acc-br:#17B3C2; --acc-wash:#E6F4F5;
+    --proof:#1E9E5A; --proof-wash:#E6F5EC;
+    --amber:#B4801F; --amber-wash:#FBF2E0;
+    --metal-hi:#FFFFFF; --metal-lo:#E7EDEE; --metal-edge:#C3D0D3;
+    --shadow:0 1px 2px rgba(22,38,44,.06), 0 8px 20px -12px rgba(22,38,44,.18);
+    --shadow-lift:0 2px 4px rgba(22,38,44,.07), 0 18px 34px -18px rgba(22,38,44,.28);
+  }
+
+  *{box-sizing:border-box; margin:0}
+  html,body{background:var(--paper)}
+  body{color:var(--ink); font-size:14px; line-height:1.5;
+    font-family:"Segoe UI Variable Display","Segoe UI","Avenir Next",system-ui,sans-serif;
+    padding:26px 16px 44px;
+    background:
+      radial-gradient(1100px 520px at 20% -8%, rgba(14,138,151,.07), transparent 62%),
+      radial-gradient(900px 460px at 92% 108%, rgba(30,158,90,.05), transparent 62%),
+      var(--paper);}
+  .mono{font-family:"Cascadia Code",Consolas,ui-monospace,monospace; font-variant-numeric:tabular-nums}
+  .stage{overflow-x:auto}
+  .app{min-width:1400px; max-width:1500px; margin:0 auto; background:var(--panel);
+    border:1px solid var(--line); border-radius:18px; overflow:hidden;
+    box-shadow:0 1px 3px rgba(22,38,44,.05), 0 30px 60px -34px rgba(22,38,44,.35)}
+
+  /* ===== top ===== */
+  .top{display:flex; align-items:center; gap:16px; padding:15px 26px;
+    border-bottom:1px solid var(--line); background:linear-gradient(180deg,#fff,rgba(255,255,255,0)), var(--panel)}
+  :root[data-theme="dark"] .top, @media (prefers-color-scheme: dark){}
+  .mark{width:30px;height:30px;border-radius:8px; position:relative; flex:none;
+    background:linear-gradient(135deg,var(--acc-br),var(--acc));
+    box-shadow:0 3px 10px -2px rgba(14,138,151,.5)}
+  .mark::before{content:""; position:absolute; inset:8px 7px; border-radius:2px;
+    background:repeating-linear-gradient(180deg,rgba(255,255,255,.9) 0 3px,transparent 3px 6px)}
+  .top h1{font-size:16.5px; font-weight:650; letter-spacing:-.01em}
+  .top .crumb{color:var(--faint); font-weight:400}
+  .sp{flex:1}
+  .pill{display:inline-flex; align-items:center; gap:7px; font-size:11.5px; font-weight:650;
+    letter-spacing:.05em; padding:6px 13px; border-radius:99px; border:1px solid var(--line2)}
+  .pill .dot{width:7px;height:7px;border-radius:50%}
+  .pill.mode{color:var(--amber); border-color:rgba(180,128,31,.35); background:var(--amber-wash)}
+  .pill.mode .dot{background:var(--amber)}
+  .pill.health{color:var(--proof); border-color:rgba(30,158,90,.3); background:var(--proof-wash)}
+  .pill.health .dot{background:var(--proof)}
+  .clock{color:var(--faint); font-size:12px}
+
+  /* ===== columns ===== */
+  .cols{display:grid; grid-template-columns:352px minmax(600px,1fr) 348px;
+    gap:24px; padding:22px 26px 26px; position:relative; align-items:start}
+  .coltitle{font-size:11px; font-weight:700; letter-spacing:.15em; text-transform:uppercase;
+    color:var(--faint); margin-bottom:13px; height:18px; display:flex; align-items:baseline; gap:9px}
+  .coltitle b{color:var(--acc); font-weight:700}
+  .coltitle small{font-size:10.5px; font-weight:400; letter-spacing:.01em; text-transform:none; color:var(--faint)}
+
+  /* ===== RACK ===== */
+  .rackframe{background:linear-gradient(180deg,var(--sunk),var(--paper));
+    border:1px solid var(--line2); border-radius:14px; padding:15px 13px; position:relative;
+    box-shadow:inset 0 2px 6px rgba(22,38,44,.07)}
+  .rackframe::before,.rackframe::after{content:""; position:absolute; top:14px; bottom:14px; width:8px;
+    border-radius:4px; background:linear-gradient(90deg,var(--metal-lo),var(--metal-hi));
+    border:1px solid var(--metal-edge)}
+  .rackframe::before{left:3px}.rackframe::after{right:3px}
+  .unit{display:flex; gap:9px; align-items:stretch; margin:8px 6px; position:relative}
+  .uno{width:16px; flex:none; display:flex; align-items:center; justify-content:center;
+    color:var(--faint); font-size:9.5px}
+  .face{flex:1; border-radius:8px; padding:11px 13px 11px; position:relative;
+    background:linear-gradient(180deg,var(--metal-hi) 0%, var(--metal-lo) 100%);
+    border:1px solid var(--metal-edge);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.9), var(--shadow)}
+  .face::before,.face::after{content:""; position:absolute; top:50%; width:5px;height:5px; border-radius:50%;
+    background:radial-gradient(circle at 35% 35%, #fff, var(--metal-edge));
+    border:1px solid var(--metal-edge); transform:translateY(-50%)}
+  .face::before{left:4px} .face::after{right:4px}
+  .frow{display:flex; align-items:center; gap:9px; padding:0 7px}
+  .name{font-size:13.5px; font-weight:650; letter-spacing:-.005em}
+  .sub{font-size:9.5px; color:var(--faint)}
+  .led{width:9px;height:9px;border-radius:50%; flex:none}
+  .led.ok{background:var(--proof); box-shadow:0 0 0 2.5px var(--proof-wash), 0 0 8px rgba(30,158,90,.5);
+    animation:ledpulse 3.4s ease-in-out infinite}
+  .led.idle{background:#B6C3C7; box-shadow:0 0 0 2.5px rgba(0,0,0,.03)}
+  @keyframes ledpulse{0%,100%{box-shadow:0 0 0 2.5px var(--proof-wash), 0 0 6px rgba(30,158,90,.35)}
+                      50%{box-shadow:0 0 0 2.5px var(--proof-wash), 0 0 12px rgba(30,158,90,.6)}}
+  .iloTag{font-size:8.5px; padding:2.5px 7px; border-radius:4px; color:var(--dim);
+    background:var(--panel); border:1px solid var(--line2)}
+  .bays{display:flex; gap:4px; margin:9px 7px 0}
+  .bay{height:16px; flex:1; border-radius:3px; position:relative;
+    background:linear-gradient(180deg,var(--panel),var(--sunk)); border:1px solid var(--line2)}
+  .bay::after{content:""; position:absolute; left:3px; right:3px; bottom:3px; height:2.5px;
+    border-radius:1px; background:#BCC9CD}
+  .bay.lit{border-color:rgba(14,138,151,.5); background:linear-gradient(180deg,#fff,var(--acc-wash))}
+  .bay.lit::after{background:var(--acc); box-shadow:0 0 5px rgba(23,179,194,.55)}
+  .ports{display:grid; grid-template-columns:repeat(12,1fr); gap:3.5px; margin:9px 7px 0}
+  .ports i{height:9px; border-radius:1.5px; background:var(--sunk); border:1px solid var(--line2)}
+  .disks{display:grid; grid-template-columns:repeat(12,1fr); gap:3.5px; margin:9px 7px 0}
+  .disks i{height:12px; border-radius:2px; background:linear-gradient(180deg,var(--panel),var(--sunk));
+    border:1px solid var(--line2)}
+  .unit.empty .face{background:transparent; border:1.5px dashed var(--line2); box-shadow:none;
+    display:flex; align-items:center; justify-content:center; padding:8px}
+  .unit.empty .face::before,.unit.empty .face::after{display:none}
+  .unit.empty span{color:var(--faint); font-size:10px; letter-spacing:.12em}
+  .racknote{margin-top:13px; font-size:11.5px; color:var(--faint); text-align:center; line-height:1.5}
+  .racknote b{color:var(--dim); font-weight:650}
+
+  /* ===== SOFTWARE ===== */
+  .plane{display:flex; flex-direction:column; gap:16px}
+  .scard{background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:16px 20px 17px; box-shadow:var(--shadow);
+    height:190px; display:flex; flex-direction:column; justify-content:space-between}
+  .scard.star{border-color:rgba(14,138,151,.42); box-shadow:0 0 0 3px var(--acc-wash), var(--shadow-lift)}
+  .srow1{display:flex; align-items:baseline; gap:10px}
+  .sname{font-size:17px; font-weight:650; letter-spacing:-.015em}
+  .ssub{font-size:11px; color:var(--faint)}
+  .chip{font-size:10.5px; font-weight:650; padding:4px 10px; border-radius:99px; white-space:nowrap}
+  .chip.ok{color:var(--proof); background:var(--proof-wash); border:1px solid rgba(30,158,90,.28)}
+  .srow2{display:flex; align-items:center; gap:14px}
+  .ctl{font-size:11.5px; color:var(--dim); white-space:nowrap}
+  .mbays{display:flex; gap:5px; flex:1; max-width:286px}
+  .mbays.wide{max-width:330px; gap:3px}
+  .mbay{height:18px; flex:1; border-radius:3px; position:relative;
+    background:linear-gradient(180deg,var(--panel),var(--sunk)); border:1px solid var(--line2)}
+  .mbay::after{content:""; position:absolute; left:3px; right:3px; bottom:3px; height:2.5px;
+    border-radius:1px; background:#BCC9CD}
+  .mbay.lit{border-color:rgba(14,138,151,.5); background:linear-gradient(180deg,#fff,var(--acc-wash))}
+  .mbay.lit::after{background:var(--acc); box-shadow:0 0 5px rgba(23,179,194,.5)}
+  .scap{font-size:11.5px; color:var(--faint); white-space:nowrap}
+  .scap.good{color:var(--acc); font-weight:600}
+  .esximini{display:flex; align-items:center; gap:14px; border:1.5px dashed var(--line2);
+    border-radius:11px; padding:12px 16px; background:var(--paper)}
+  .scard.star .esximini{border-color:rgba(14,138,151,.45); background:var(--acc-wash)}
+  .glyph{width:40px; height:40px; border-radius:10px; flex:none; position:relative;
+    background:var(--panel); border:1px solid var(--line2)}
+  .glyph::before{content:"ESXi"; position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; font-size:10px; font-weight:700; letter-spacing:.03em; color:var(--faint)}
+  .scard.star .glyph{border-color:rgba(14,138,151,.4)}
+  .scard.star .glyph::before{color:var(--acc)}
+  .esximini b{font-size:13.5px; font-weight:650; display:block}
+  .esximini small{font-size:11.5px; color:var(--dim)}
+  .btn{font-size:12.5px; font-weight:650; border-radius:9px; padding:9px 16px; cursor:default;
+    border:1px solid var(--line2); white-space:nowrap; background:var(--panel); color:var(--dim)}
+  .btn.primary{color:#fff; border-color:transparent;
+    background:linear-gradient(135deg,var(--acc-br),var(--acc));
+    box-shadow:0 6px 16px -5px rgba(14,138,151,.65)}
+
+  /* ===== CLUSTER ===== */
+  .capsule{border:2px dashed rgba(14,138,151,.42); border-radius:18px; position:relative;
+    background:linear-gradient(180deg,var(--acc-wash),rgba(255,255,255,0) 55%), var(--panel);
+    height:654px; display:flex; flex-direction:column}
+  .cap-head{padding:17px 22px 10px}
+  .cap-head h3{font-size:16px; font-weight:650; letter-spacing:-.015em}
+  .cap-head .sub{font-size:11.5px; color:var(--faint); margin-top:1px}
+  .state{float:right; font-size:10.5px; font-weight:650; color:var(--acc);
+    border:1px solid rgba(14,138,151,.35); background:var(--panel); border-radius:99px; padding:3.5px 11px}
+  .mrow{flex:1; margin:0 16px 0 0; padding:0 18px 0 30px; position:relative;
+    display:flex; flex-direction:column; justify-content:center; gap:4px}
+  .mrow + .mrow{border-top:1px solid var(--line)}
+  .socket{position:absolute; left:-11px; top:50%; transform:translateY(-50%);
+    width:20px; height:20px; border-radius:50%; background:var(--panel);
+    border:2px solid rgba(14,138,151,.5)}
+  .socket::after{content:""; position:absolute; inset:4.5px; border-radius:50%; background:var(--sunk)}
+  .socket::before{content:""; position:absolute; right:20px; top:50%; width:24px; height:0;
+    border-top:2px dashed rgba(14,138,151,.4)}
+  .who{font-size:13px; font-weight:650}
+  .st{font-size:11.5px; color:var(--faint)}
+  .st.good{color:var(--acc)}
+  .cap-foot{padding:14px 22px 16px; border-top:1px solid var(--line)}
+  .members{font-size:12px; color:var(--dim)}
+  .members b{color:var(--ink); font-weight:650}
+  .meter{height:6px; border-radius:3px; background:var(--sunk); overflow:hidden; margin-top:8px}
+  .meter i{display:block; height:100%; width:8%; border-radius:3px;
+    background:linear-gradient(90deg,var(--acc-br),var(--proof))}
+  .cl-card{background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:15px 20px; margin-top:14px; box-shadow:var(--shadow)}
+  .vc{display:flex; gap:13px; align-items:center}
+  .vglyph{width:38px;height:38px;border-radius:10px; flex:none; display:flex;align-items:center;justify-content:center;
+    border:1.5px dashed var(--line2); color:var(--faint); font-size:9.5px; font-weight:700}
+  .vc p{font-size:11.5px; color:var(--dim)}
+  .vc b{color:var(--ink); font-weight:650; font-size:13px; display:block; margin-bottom:1px}
+  .backing h4{font-size:11px; letter-spacing:.13em; text-transform:uppercase; color:var(--faint); font-weight:700}
+  .seg{display:flex; flex-direction:column; gap:7px; margin-top:10px}
+  .opt{display:flex; align-items:center; gap:10px; border:1px solid var(--line2); border-radius:9px;
+    padding:9px 13px; font-size:12.5px; background:var(--panel)}
+  .opt .r{width:13px; height:13px; border-radius:50%; border:1.7px solid var(--line2); flex:none}
+  .opt small{margin-left:auto; color:var(--faint); font-size:10.5px; text-align:right}
+  .opt.lock{background:var(--paper); color:var(--faint)}
+  .opt.lock small{color:var(--amber)}
+
+  /* threads */
+  .threads{position:absolute; inset:0; pointer-events:none}
+  .threads path{stroke:var(--acc); stroke-width:1.7; stroke-dasharray:5 7; fill:none; opacity:.55;
+    animation:march 3s linear infinite}
+  @keyframes march{to{stroke-dashoffset:-24}}
+  .threads circle{fill:var(--acc)}
+
+  /* next bar */
+  .nextbar{display:flex; align-items:center; gap:16px; padding:15px 26px;
+    border-top:1px solid var(--line); background:var(--acc-wash)}
+  .nextbar .lbl{font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--acc); font-weight:700}
+  .nextbar .what{font-size:13.5px}
+  .nextbar .what b{font-weight:650}
+  .nextbar .mono{color:var(--faint); font-size:11.5px}
+  @media (prefers-reduced-motion: reduce){ *{animation:none !important} }
+</style>
+
+<div class="stage"><div class="app">
+
+  <header class="top">
+    <div class="mark"></div>
+    <h1>Lab Builder <span class="crumb">/ Rack Workspace</span></h1>
+    <div class="sp"></div>
+    <span class="pill health"><span class="dot"></span>Backend healthy</span>
+    <span class="pill mode"><span class="dot"></span>LIVE &middot; GUARDED WRITES</span>
+    <span class="clock mono">13:20</span>
+  </header>
+
+  <div class="cols">
+
+    <!-- ============ METAL ============ -->
+    <aside>
+      <div class="coltitle"><b>Metal</b> <small>the rack &mdash; physical devices only</small></div>
+      <div class="rackframe">
+
+        <div class="unit">
+          <div class="uno mono">06</div>
+          <div class="face">
+            <div class="frow"><span class="name">DL360 A</span><span class="sub">Gen10</span><span class="sp"></span><span class="iloTag mono">iLO .42</span><span class="led ok"></span></div>
+            <div class="bays"><i class="bay"></i><i class="bay"></i><i class="bay"></i><i class="bay"></i><i class="bay"></i><i class="bay"></i><i class="bay"></i><i class="bay"></i></div>
+          </div>
+        </div>
+
+        <div class="unit empty">
+          <div class="uno mono">05</div>
+          <div class="face"><span>1U AVAILABLE</span></div>
+        </div>
+
+        <div class="unit">
+          <div class="uno mono">04</div>
+          <div class="face">
+            <div class="frow"><span class="name">NetApp ONTAP</span><span class="sp"></span><span class="led idle"></span></div>
+            <div class="disks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+        </div>
+
+        <div class="unit">
+          <div class="uno mono">03</div>
+          <div class="face">
+            <div class="frow"><span class="name">Cisco Catalyst</span><span class="sp"></span><span class="led idle"></span></div>
+            <div class="ports"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+        </div>
+
+        <div class="unit">
+          <div class="uno mono">02</div>
+          <div class="face">
+            <div class="frow"><span class="name">DL360 B</span><span class="sub">Gen10</span><span class="sp"></span><span class="iloTag mono">iLO .43</span><span class="led ok"></span></div>
+            <div class="bays"><i class="bay lit"></i><i class="bay lit"></i><i class="bay lit"></i><i class="bay lit"></i><i class="bay lit"></i><i class="bay lit"></i><i class="bay lit"></i><i class="bay lit"></i></div>
+          </div>
+        </div>
+
+        <div class="unit">
+          <div class="uno mono">01</div>
+          <div class="face">
+            <div class="frow"><span class="name">DL380A</span><span class="sub">Gen10 &middot; 2U</span><span class="sp"></span><span class="iloTag mono">iLO .38</span><span class="led ok"></span></div>
+            <div class="bays"><i class="bay"></i><i class="bay"></i><i class="bay"></i><i class="bay"></i><i class="bay"></i><i class="bay"></i><i class="bay"></i><i class="bay"></i></div>
+            <div class="bays"><i class="bay"></i><i class="bay"></i><i class="bay"></i><i class="bay"></i><i class="bay"></i><i class="bay"></i><i class="bay"></i><i class="bay"></i></div>
+          </div>
+        </div>
+
+      </div>
+      <p class="racknote"><b>No software lives in the rack.</b><br>A green light means a check passed just now.</p>
+    </aside>
+
+    <!-- ============ SOFTWARE ============ -->
+    <section>
+      <div class="coltitle"><b>Software</b> <small>installed on the servers</small></div>
+      <div class="plane">
+
+        <div class="scard">
+          <div class="srow1"><span class="sname">DL360 A</span><span class="ssub">unit 06</span><span class="sp"></span><span class="chip ok">iLO &#10003; 13:08</span></div>
+          <div class="srow2">
+            <span class="ctl mono">P408i-a &middot; Mixed</span>
+            <div class="mbays"><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i></div>
+            <span class="scap">0 of 8 pass through &mdash; locked in RAID</span>
+          </div>
+          <div class="esximini">
+            <div class="glyph"></div>
+            <div><b>No hypervisor</b><small>ESXi installs onto this server &mdash; never into the rack</small></div>
+            <span class="sp"></span>
+            <button class="btn">Install ESXi</button>
+          </div>
+        </div>
+
+        <div class="scard star">
+          <div class="srow1"><span class="sname">DL360 B</span><span class="ssub">unit 02</span><span class="sp"></span><span class="chip ok">iLO &#10003; 13:08</span></div>
+          <div class="srow2">
+            <span class="ctl mono">P408i-a &middot; Mixed</span>
+            <div class="mbays"><i class="mbay lit"></i><i class="mbay lit"></i><i class="mbay lit"></i><i class="mbay lit"></i><i class="mbay lit"></i><i class="mbay lit"></i><i class="mbay lit"></i><i class="mbay lit"></i></div>
+            <span class="scap good">&#9672; 8 of 8 pass through &mdash; vSAN-ready</span>
+          </div>
+          <div class="esximini">
+            <div class="glyph"></div>
+            <div><b>No hypervisor</b><small>media ready &middot; <span class="mono">VMware-ESXi-8.0.3 HPE</span></small></div>
+            <span class="sp"></span>
+            <button class="btn primary">Install ESXi&ensp;&rarr;</button>
+          </div>
+        </div>
+
+        <div class="scard">
+          <div class="srow1"><span class="sname">DL380A</span><span class="ssub">unit 01 &middot; 2U</span><span class="sp"></span><span class="chip ok">iLO &#10003; 13:05</span></div>
+          <div class="srow2">
+            <span class="ctl mono">P408i-a &middot; Mixed</span>
+            <div class="mbays wide"><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i><i class="mbay"></i></div>
+            <span class="scap">0 of 16 pass through</span>
+          </div>
+          <div class="esximini">
+            <div class="glyph"></div>
+            <div><b>No hypervisor</b><small>ESXi installs onto this server &mdash; never into the rack</small></div>
+            <span class="sp"></span>
+            <button class="btn">Install ESXi</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ============ CLUSTER ============ -->
+    <aside>
+      <div class="coltitle"><b>Cluster</b> <small>spans the servers</small></div>
+
+      <div class="capsule">
+        <div class="cap-head">
+          <span class="state">not formed</span>
+          <h3>vSAN &middot; &ldquo;vsan-lab&rdquo;</h3>
+          <div class="sub">one datastore, pooled from every member&rsquo;s drives</div>
+        </div>
+
+        <div class="mrow">
+          <span class="socket"></span>
+          <span class="who">DL360 A</span>
+          <span class="st">socket open &mdash; joins once ESXi is proven</span>
+          <span class="st">would contribute <span class="mono">0</span> drives today</span>
+        </div>
+        <div class="mrow">
+          <span class="socket"></span>
+          <span class="who">DL360 B</span>
+          <span class="st good">socket open &mdash; drives already eligible</span>
+          <span class="st good">would contribute <span class="mono">8</span> drives</span>
+        </div>
+        <div class="mrow">
+          <span class="socket"></span>
+          <span class="who">DL380A</span>
+          <span class="st">socket open &mdash; joins once ESXi is proven</span>
+          <span class="st">would contribute <span class="mono">0</span> drives today</span>
+        </div>
+
+        <div class="cap-foot">
+          <div class="members"><b>0 of 3</b> members &middot; the cluster forms at three</div>
+          <div class="meter"><i></i></div>
+        </div>
+      </div>
+
+      <div class="cl-card vc">
+        <div class="vglyph">VM</div>
+        <p><b>vCenter</b>not deployed &mdash; becomes a VM on the first ESXi host, then manages the cluster</p>
+      </div>
+
+      <div class="cl-card backing">
+        <h4>Storage backing</h4>
+        <div class="seg">
+          <div class="opt lock"><span class="r"></span>vSAN<small>needs 3 ESXi hosts &middot; 0 of 3</small></div>
+          <div class="opt"><span class="r"></span>NetApp NFS</div>
+          <div class="opt"><span class="r"></span>NetApp iSCSI</div>
+          <div class="opt"><span class="r"></span>Local datastores only</div>
+        </div>
+      </div>
+    </aside>
+
+    <svg class="threads" aria-hidden="true">
+      <path d="M 1030 150 C 1046 150 1042 208 1058 208"/>
+      <circle cx="1030" cy="150" r="3.2"/>
+      <path d="M 1030 356 C 1044 356 1044 360 1058 360"/>
+      <circle cx="1030" cy="356" r="3.2"/>
+      <path d="M 1030 562 C 1046 562 1042 512 1058 512"/>
+      <circle cx="1030" cy="562" r="3.2"/>
+    </svg>
+
+  </div>
+
+  <footer class="nextbar">
+    <span class="lbl">Next across the lab</span>
+    <span class="what"><b>Install ESXi on DL360&nbsp;B</b> &mdash; its drives are already vSAN-ready</span>
+    <span class="sp"></span>
+    <span class="mono">then DL360&nbsp;A &middot; then DL380A &middot; then the cluster forms</span>
+  </footer>
+
+</div></div>

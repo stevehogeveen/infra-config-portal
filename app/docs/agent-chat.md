@@ -14805,11 +14805,15 @@ direction that stuck is a three-column workspace, light theme, with the rack kep
 - **Cluster** — a vSAN capsule that visually spans its member cards, vCenter as a VM chip, and the
   datastore list.
 
-Published mockups (Steve has the links; they are read-only pages, not code):
+All five are committed under `app/docs/design/` (self-contained HTML, no build step, no network).
+The claude.ai links below are the same pages hosted; use the committed copies if those are
+unreachable from your machine.
+
 - Dashboard, built state: `https://claude.ai/code/artifact/68aad59e-d5de-4383-b60a-dd4dd0137d5b`
 - Four deeper looks (stages, drive panel, VM placement, vCenter order):
   `https://claude.ai/code/artifact/24cef9fc-0b76-4c73-9548-8a4fca85480a`
-- **Build flow, interactive prototype** (the live one to work from):
+- **Build flow, interactive prototype** (the live one to work from; local copy committed at
+  `app/docs/design/04-build-flow.html` — open it in a browser):
   `https://claude.ai/code/artifact/02014d24-4a99-4344-b6ec-1ae79a6e26d9`
 
 Steve's framing: the dashboard is *what is*, the flow page is *what you are building*. They are
