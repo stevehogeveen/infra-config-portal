@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.enums import RequestStatus, WorkflowRunStatus
-from app.models import Request, WorkflowRun
+from app.models import AuditEvent, Request, WorkflowRun
+from app.providers.action_policy import current_lab_action_policy
+from app.providers.esxi_readonly import EsxiReadonlyConfig
+from app.services import firmware_file_selections, lab_profiles, lab_safety_settings, provider_mode_settings
 
 
 def test_health(client: TestClient) -> None:
@@ -23,6 +28,41 @@ def test_build_verification_endpoint_returns_status(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["provider_id"] == "build-verification"
     assert "status" in response.json()
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("get", "/api/v1/lab/vcenter-netapp/readiness"),
+        ("get", "/api/v1/providers/netapp-ontap/setup-preview"),
+        ("post", "/api/v1/providers/netapp-ontap/setup-apply"),
+        ("get", "/api/v1/providers/netapp-ontap/nfs-vcenter-readiness"),
+    ],
+)
+def test_single_server_profile_marks_netapp_vcenter_provider_endpoints_not_in_scope(
+    client: TestClient,
+    monkeypatch,
+    tmp_path: Path,
+    method: str,
+    path: str,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    lab_profiles.create_lab_profile(
+        {
+            "name": "Single Server Lab",
+            "features": {"netapp_enabled": False, "vcenter_enabled": False},
+            "subnet_cidr": "10.10.5.0/26",
+            "address_plan": {"subnet": "10.10.5.0/26"},
+        }
+    )
+
+    response = getattr(client, method)(path)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "not_in_scope"
+    assert payload["blockers"] == []
+    assert "active lab profile" in json.dumps(payload).lower()
 
 
 def test_control_action_catalog_exposes_device_actions_without_direct_runs(
@@ -84,6 +124,182 @@ def test_control_action_catalog_exposes_device_actions_without_direct_runs(
     assert "PASSWORD" not in lab_profile["env_update_command"].upper()
 
 
+def test_ui_intent_resolves_only_allowlisted_layout_regions(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/ui-intent",
+        json={
+            "page": "overview",
+            "request": "hide advanced proof and run rebuild",
+            "regions": [
+                {"id": "topology", "label": "Living lab topology", "kind": "section"},
+                {"id": "advanced-proof", "label": "Advanced proof", "kind": "drawer"},
+            ],
+            "current_layout": {
+                "topology": {"visible": True, "collapsed": False, "order": 0},
+                "advanced-proof": {"visible": True, "collapsed": False, "order": 1},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "local_rules"
+    assert payload["ops"] == [{"region_id": "advanced-proof", "op": "hide"}]
+    assert "rebuild" not in json.dumps(payload).lower()
+
+
+def test_ui_intent_drops_unknown_or_unmatched_requests(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/ui-intent",
+        json={
+            "page": "storage",
+            "request": "factory reset the netapp",
+            "regions": [
+                {"id": "reference", "label": "Storage reference", "kind": "section"},
+            ],
+            "current_layout": {},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ops"] == []
+    assert payload["summary"] == "No safe layout change matched this page."
+
+
+def test_ui_intent_applies_this_box_when_manifest_is_target_scoped(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/ui-intent",
+        json={
+            "page": "overview",
+            "request": "hide this box",
+            "regions": [
+                {"id": "topology", "label": "Living lab topology", "kind": "section"},
+            ],
+            "current_layout": {
+                "topology": {"visible": True, "collapsed": False, "order": 0},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "local_rules"
+    assert payload["ops"] == [{"region_id": "topology", "op": "hide"}]
+
+
+def test_ui_intent_uses_anthropic_when_key_is_present_and_validates_manifest(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeAnthropicResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "resolve_ui_intent",
+                        "input": {
+                            "ops": [
+                                {"region_id": "advanced-proof", "op": "hide"},
+                                {"region_id": "factory-reset", "op": "show"},
+                                {"region_id": "advanced-proof", "op": "run"},
+                            ],
+                            "summary": "Hid advanced proof.",
+                        },
+                    }
+                ]
+            }
+
+    class FakeAnthropicClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+        def post(self, url: str, *, headers: dict[str, str], json: dict[str, object]):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            return FakeAnthropicResponse()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_UI_INTENT_MODEL", "test-model")
+    monkeypatch.setattr("app.services.ui_intent.httpx.Client", FakeAnthropicClient)
+
+    response = client.post(
+        "/api/v1/ui-intent",
+        json={
+            "page": "overview",
+            "request": "password=supersecret please remove the proof clutter",
+            "regions": [
+                {"id": "topology", "label": "Living lab topology", "kind": "section"},
+                {"id": "advanced-proof", "label": "Advanced proof", "kind": "drawer"},
+            ],
+            "current_layout": {},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "external_ai"
+    assert payload["ops"] == [{"region_id": "advanced-proof", "op": "hide"}]
+    encoded_request = json.dumps(captured["json"])
+    assert "supersecret" not in encoded_request
+    assert "password=[REDACTED]" in encoded_request
+
+
+def test_ai_change_request_endpoint_queues_markdown_without_running_actions(client: TestClient) -> None:
+    mailbox = Path(__file__).resolve().parents[2] / "docs" / "agent-chat.md"
+    original_mailbox = mailbox.read_text(encoding="utf-8") if mailbox.exists() else ""
+    response = client.post(
+        "/api/v1/ai-change-requests",
+        json={
+            "page": "overview",
+            "route": "/overview",
+            "request": "make the topology map support drag and drop device creation",
+            "target": "Living lab topology (topology)",
+            "regions": [
+                {"id": "topology", "label": "Living lab topology", "kind": "section"},
+            ],
+            "current_layout": {
+                "topology": {"visible": True, "collapsed": False, "order": 0},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "queued"
+    assert payload["artifact"].startswith("docs/change-requests/")
+    artifact = Path(__file__).resolve().parents[2] / payload["artifact"]
+    try:
+        text = artifact.read_text(encoding="utf-8")
+        assert "capture-only" in text
+        assert "drag and drop device creation" in text
+        assert "Living lab topology (topology)" in text
+        assert "does not execute code" in text
+        mailbox_text = mailbox.read_text(encoding="utf-8")
+        assert "New AI change request queued" in mailbox_text
+        assert payload["artifact"] in mailbox_text
+        assert "make the topology map support drag and drop device creation" in mailbox_text
+        assert "Living lab topology (topology)" in mailbox_text
+        assert "sent to Claude+Codex mailbox" in mailbox_text
+        assert payload["message"] == "Sent to the Claude+Codex mailbox and saved as a review artifact."
+    finally:
+        artifact.unlink(missing_ok=True)
+        mailbox.write_text(original_mailbox, encoding="utf-8")
+
+
 def test_control_action_catalog_keeps_netapp_readonly_actions_runnable_when_state_blocked(
     client: TestClient,
 ) -> None:
@@ -96,6 +312,8 @@ def test_control_action_catalog_keeps_netapp_readonly_actions_runnable_when_stat
     readonly_ids = {
         "netapp.console-autodiscovery",
         "netapp.console-read-state",
+        "netapp.console-login-state",
+        "netapp.ha-node-diagnose",
         "netapp.live-state",
         "netapp.setup-preview",
         "netapp.nfs-setup-preview",
@@ -162,6 +380,17 @@ def test_provider_mode_settings_exposes_real_lab_runtime_options(
     assert payload["mode_env_path"].endswith("app-mode.env")
 
 
+def test_provider_mode_default_paths_use_posix_separators(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    monkeypatch.delenv("PROVIDER_MODE_SETTINGS_STORE", raising=False)
+    monkeypatch.delenv("APP_MODE_ENV_FILE", raising=False)
+    monkeypatch.setattr(provider_mode_settings, "REPO_ROOT", tmp_path)
+
+    payload = provider_mode_settings.read_provider_mode_settings()
+
+    assert payload["mode_env_path"] == ".local/app-mode.env"
+    assert payload["store_path"] == ".local/provider-mode-settings.json"
+
+
 def test_provider_mode_settings_save_writes_ignored_local_restart_config(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -186,11 +415,205 @@ def test_provider_mode_settings_save_writes_ignored_local_restart_config(
     assert payload["pending_restart"] is (desired != current)
     assert payload["restart_command"]
     assert env_path.read_text(encoding="utf-8") == f"PROVIDER_MODE={desired}\n"
+    assert not list(tmp_path.glob("*.tmp"))
 
     stored = json.loads(store_path.read_text(encoding="utf-8"))
     assert stored["desired_mode"] == desired
     assert stored["operator_runtime_only"] is True
     assert "password" not in stored
+
+
+def test_provider_mode_settings_ignores_corrupt_store(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store_path = tmp_path / "provider-mode.json"
+    store_path.write_text("{not-json", encoding="utf-8")
+    monkeypatch.setenv("PROVIDER_MODE_SETTINGS_STORE", str(store_path))
+    monkeypatch.setenv("APP_MODE_ENV_FILE", str(tmp_path / "app-mode.env"))
+
+    response = client.get("/api/v1/settings/provider-mode")
+
+    assert response.status_code == 200
+    assert response.json()["desired_mode"] == "local-lab-readwrite"
+
+
+def test_provider_mode_settings_reads_quoted_env_fallback(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store_path = tmp_path / "missing-provider-mode.json"
+    env_path = tmp_path / "app-mode.env"
+    env_path.write_text(
+        "# PROVIDER_MODE=local-lab-readwrite\n"
+        "export PROVIDER_MODE=\"local-readonly\"\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROVIDER_MODE_SETTINGS_STORE", str(store_path))
+    monkeypatch.setenv("APP_MODE_ENV_FILE", str(env_path))
+
+    response = client.get("/api/v1/settings/provider-mode")
+
+    assert response.status_code == 200
+    assert response.json()["desired_mode"] == "local-readonly"
+
+
+def test_lab_safety_settings_exposes_global_runtime_flags(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_SAFETY_SETTINGS_STORE", str(tmp_path / "lab-safety.json"))
+
+    response = client.get("/api/v1/settings/lab-safety")
+
+    assert response.status_code == 200
+    payload = response.json()
+    names = {flag["name"] for flag in payload["flags"]}
+    assert {
+        "lab_environment",
+        "lab_acknowledge_real_hardware",
+        "lab_acknowledge_device_reconfiguration",
+        "lab_acknowledge_data_loss_risk",
+        "lab_acknowledge_lab_only",
+    }.issubset(names)
+    assert payload["confirmation_phrase"] == lab_safety_settings.CONFIRMATION_PHRASE
+    assert (
+        payload["device_reconfiguration_confirmation_phrase"]
+        == lab_safety_settings.DEVICE_RECONFIGURATION_CONFIRMATION_PHRASE
+    )
+    assert payload["store_path"].endswith("lab-safety.json")
+
+
+def test_lab_safety_settings_write_overrides_action_policy_without_restart(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store_path = tmp_path / "lab-safety.json"
+    monkeypatch.setenv("LAB_SAFETY_SETTINGS_STORE", str(store_path))
+
+    response = client.put(
+        "/api/v1/settings/lab-safety",
+        json={
+            "lab_environment": "isolated-real-lab",
+            "lab_acknowledge_real_hardware": True,
+            "lab_acknowledge_device_reconfiguration": True,
+            "lab_acknowledge_data_loss_risk": True,
+            "lab_acknowledge_lab_only": True,
+            "confirmation_phrase": lab_safety_settings.CONFIRMATION_PHRASE,
+            "device_reconfiguration_confirmation_phrase": (
+                lab_safety_settings.DEVICE_RECONFIGURATION_CONFIRMATION_PHRASE
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert all(flag["enabled"] for flag in payload["flags"])
+    assert not current_lab_action_policy("local-lab-readwrite").readonly_blockers()
+    stored = json.loads(store_path.read_text(encoding="utf-8"))
+    assert stored["lab_acknowledge_data_loss_risk"] is True
+    event = (
+        db_session.query(AuditEvent)
+        .filter(AuditEvent.event_type == "settings.lab_safety.updated")
+        .one()
+    )
+    assert event.actor == "local-operator"
+    assert "confirmation_phrase" not in event.data_json
+    assert "device_reconfiguration_confirmation_phrase" not in event.data_json
+    assert "lab_acknowledge_data_loss_risk" in event.data_json["changed_fields"]
+
+
+def test_local_user_header_sets_audit_actor(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store_path = tmp_path / "lab-safety.json"
+    monkeypatch.setenv("LAB_SAFETY_SETTINGS_STORE", str(store_path))
+
+    response = client.put(
+        "/api/v1/settings/lab-safety",
+        json={
+            "lab_environment": "isolated-real-lab",
+            "lab_acknowledge_real_hardware": True,
+            "lab_acknowledge_device_reconfiguration": True,
+            "lab_acknowledge_lab_only": True,
+            "device_reconfiguration_confirmation_phrase": (
+                lab_safety_settings.DEVICE_RECONFIGURATION_CONFIRMATION_PHRASE
+            ),
+        },
+        headers={"X-Local-User": "real-lab-operator"},
+    )
+
+    assert response.status_code == 200
+    event = (
+        db_session.query(AuditEvent)
+        .filter(AuditEvent.event_type == "settings.lab_safety.updated")
+        .one()
+    )
+    assert event.actor == "real-lab-operator"
+
+
+def test_lab_safety_settings_requires_confirmation_for_data_loss_ack(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_SAFETY_SETTINGS_STORE", str(tmp_path / "lab-safety.json"))
+
+    response = client.put(
+        "/api/v1/settings/lab-safety",
+        json={"lab_acknowledge_data_loss_risk": True, "confirmation_phrase": "wrong"},
+    )
+
+    assert response.status_code == 422
+    assert "confirmation phrase" in response.json()["detail"]
+
+
+def test_lab_safety_settings_requires_confirmation_for_device_reconfiguration_ack(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_SAFETY_SETTINGS_STORE", str(tmp_path / "lab-safety.json"))
+
+    response = client.put(
+        "/api/v1/settings/lab-safety",
+        json={
+            "lab_acknowledge_device_reconfiguration": True,
+            "device_reconfiguration_confirmation_phrase": "wrong",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Device reconfiguration" in response.json()["detail"]
+
+
+def test_provider_mode_settings_reads_values_with_equals_from_env_fallback(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store_path = tmp_path / "missing-provider-mode.json"
+    env_path = tmp_path / "app-mode.env"
+    env_path.write_text(
+        'APP_NOTE="operator=ready"\n'
+        'PROVIDER_MODE="local-lab-readwrite"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROVIDER_MODE_SETTINGS_STORE", str(store_path))
+    monkeypatch.setenv("APP_MODE_ENV_FILE", str(env_path))
+
+    response = client.get("/api/v1/settings/provider-mode")
+
+    assert response.status_code == 200
+    assert response.json()["desired_mode"] == "local-lab-readwrite"
 
 
 def test_firmware_file_selections_persist_in_ignored_local_store(
@@ -235,6 +658,29 @@ def test_firmware_file_selections_persist_in_ignored_local_store(
     reloaded = client.get("/api/v1/firmware/file-selections")
     assert reloaded.status_code == 200
     assert reloaded.json()["selected_files"] == payload["selected_files"]
+
+
+def test_firmware_file_selections_ignores_corrupt_store(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store_path = tmp_path / "firmware-file-selections.json"
+    store_path.write_text("{not-json", encoding="utf-8")
+    monkeypatch.setenv("FIRMWARE_FILE_SELECTION_STORE", str(store_path))
+
+    response = client.get("/api/v1/firmware/file-selections")
+
+    assert response.status_code == 200
+    assert response.json()["selected_files"] == {}
+    assert response.json()["status"] == "not_configured_yet"
+
+
+def test_firmware_file_selection_repo_store_label_uses_posix_separators(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    monkeypatch.delenv("FIRMWARE_FILE_SELECTION_STORE", raising=False)
+    monkeypatch.setattr(firmware_file_selections, "REPO_ROOT", tmp_path)
+
+    assert firmware_file_selections._path_label(tmp_path / ".local" / "firmware-file-selections.json") == ".local/firmware-file-selections.json"
 
 
 def test_firmware_file_selections_reject_paths_and_secret_like_values(client: TestClient) -> None:
@@ -318,6 +764,66 @@ def test_control_access_config_saves_original_dhcp_and_presence_only_credentials
     catalog_fields = {item["label"]: item for item in ilo["access_config"]["editable_fields"]}
     assert catalog_fields["Management IP"]["value"] == "192.0.2.56"
     assert catalog_fields["Management IP"]["source"] == "saved_override"
+
+
+def test_control_access_config_ignores_corrupt_store_and_writes_atomically(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store_path = tmp_path / "control-access.json"
+    store_path.write_text("{not json", encoding="utf-8")
+    monkeypatch.setenv("CONTROL_ACCESS_STORE", str(store_path))
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    catalog = client.get("/api/v1/control/actions")
+    assert catalog.status_code == 200
+    cisco = next(section for section in catalog.json()["sections"] if section["id"] == "cisco")
+    assert cisco["access_config"]["first_time_configuring"] is True
+
+    saved = client.put(
+        "/api/v1/control/access/cisco",
+        json={
+            "first_time_configuring": True,
+            "original_dhcp_ip": "192.0.2.10",
+            "password_configured": False,
+        },
+    )
+
+    assert saved.status_code == 200
+    assert json.loads(store_path.read_text(encoding="utf-8"))["cisco"]["original_dhcp_ip"] == "192.0.2.10"
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_control_access_config_self_heals_string_booleans(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store_path = tmp_path / "control-access.json"
+    store_path.write_text(
+        json.dumps(
+            {
+                "cisco": {
+                    "first_time_configuring": "false",
+                    "password_configured": "false",
+                    "editable_fields": {},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CONTROL_ACCESS_STORE", str(store_path))
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    catalog = client.get("/api/v1/control/actions")
+
+    assert catalog.status_code == 200
+    cisco = next(section for section in catalog.json()["sections"] if section["id"] == "cisco")
+    access_config = cisco["access_config"]
+    assert access_config["first_time_configuring"] is False
+    assert access_config["password_configured"] is False
+    assert access_config["blockers"] == []
 
 
 def test_control_access_config_rejects_secret_shaped_values(
@@ -404,6 +910,9 @@ def test_lab_profile_api_saves_selects_and_versions_profiles(
         json={
             "name": "Bench Lab A",
             "description": "Primary saved lab address plan.",
+            "devices": {
+                "server_model": "gen10plus",
+            },
             "address_plan": {
                 "subnet": "192.0.2.0/24",
                 "ilo": "192.0.2.10",
@@ -426,6 +935,7 @@ def test_lab_profile_api_saves_selects_and_versions_profiles(
     profile_id = created.json()["id"]
     assert created.json()["active"] is True
     assert created.json()["version"] == 1
+    assert created.json()["devices"]["server_model"] == "gen10plus"
     assert created.json()["address_plan"]["ilo"] == "192.0.2.10"
     assert created.json()["address_plan"]["ilo_initial"] == "10.0.0.55"
 
@@ -452,6 +962,11 @@ def test_lab_profile_api_saves_selects_and_versions_profiles(
         "198.51.100.21",
         "198.51.100.22",
     ]
+    # Regression: every screen reads resolved_address_plan in preference to
+    # address_plan, so a saved edit must show up in both or the UI keeps
+    # displaying the pre-edit IP forever even though the save "succeeded".
+    assert updated.json()["address_plan"]["ilo"] == "198.51.100.10"
+    assert updated.json()["resolved_address_plan"]["ilo"] == "198.51.100.10"
 
     runtime = client.post("/api/v1/lab/profiles/runtime/activate")
     assert runtime.status_code == 200
@@ -460,6 +975,272 @@ def test_lab_profile_api_saves_selects_and_versions_profiles(
     activated = client.post(f"/api/v1/lab/profiles/{profile_id}/activate")
     assert activated.status_code == 200
     assert activated.json()["active_profile"]["id"] == profile_id
+
+
+def test_lab_profile_api_dedupes_repeated_lif_addresses(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Repeated LIF Lab",
+            "dns": "192.0.2.53, 192.0.2.53,192.0.2.54",
+            "global_settings": {
+                "dns_servers": "192.0.2.53, 192.0.2.53, 192.0.2.54",
+                "ntp_servers": ["192.0.2.55", "192.0.2.55"],
+            },
+            "address_plan": {
+                "subnet": "192.0.2.0/24",
+                "netapp_iscsi_lifs": ",".join(["192.0.2.21"] * 20 + ["192.0.2.22"]),
+                "netapp_nfs_lifs": ["192.0.2.23", "192.0.2.23", "192.0.2.24"],
+            },
+        },
+    )
+
+    assert created.status_code == 201
+    payload = created.json()
+    assert payload["dns"] == ["192.0.2.53", "192.0.2.54"]
+    assert payload["global_settings"]["dns_servers"] == ["192.0.2.53", "192.0.2.54"]
+    assert payload["global_settings"]["ntp_servers"] == ["192.0.2.55"]
+    assert payload["address_plan"]["netapp_iscsi_lifs"] == ["192.0.2.21", "192.0.2.22"]
+    assert payload["address_plan"]["netapp_nfs_lifs"] == ["192.0.2.23", "192.0.2.24"]
+
+
+@pytest.mark.parametrize("snmp_version", ["v1", "v2c", "v3"])
+def test_lab_profile_api_round_trips_snmp_defaults(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    snmp_version: str,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "SNMP Default Lab",
+            "features": {"enable_snmp": True},
+            "global_settings": {
+                "gateway": "192.0.2.1",
+                "snmp_servers": "192.0.2.41, 192.0.2.42, 192.0.2.41",
+                "snmp_version": snmp_version,
+            },
+            "address_plan": {"subnet": "192.0.2.0/24"},
+        },
+    )
+
+    assert created.status_code == 201
+    profile_id = created.json()["id"]
+    assert created.json()["global_settings"]["snmp_servers"] == ["192.0.2.41", "192.0.2.42"]
+    assert created.json()["global_settings"]["snmp_version"] == snmp_version
+
+    listed = client.get("/api/v1/lab/profiles")
+    assert listed.status_code == 200
+    active = listed.json()["active_profile"]
+    assert active["id"] == profile_id
+    assert active["global_settings"]["snmp_servers"] == ["192.0.2.41", "192.0.2.42"]
+    assert active["global_settings"]["snmp_version"] == snmp_version
+
+
+def test_topology_design_draft_api_persists_without_hardware_effect(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("TOPOLOGY_DESIGN_DRAFT_STORE", str(tmp_path / "topology-design-drafts.json"))
+
+    default = client.get(
+        "/api/v1/lab/topology-design-draft",
+        params={
+            "profile_id": "lab-demo",
+            "scenario": "server_netapp_vcenter",
+            "subnet": "192.168.1.0/24",
+        },
+    )
+    assert default.status_code == 200
+    assert default.json()["source"] == "default"
+    assert default.json()["placements"]["virtual"] == "vcenter"
+    assert default.json()["device_settings"]["switch"]["mgmt_vlan"] == "100"
+    assert default.json()["lane_settings"]["storage"]["mtu"] == "9000"
+    assert default.json()["connection_settings"]["server-netapp"]["protocol"] == "datastore path"
+    assert default.json()["hardware_touched"] is False
+
+    saved = client.put(
+        "/api/v1/lab/topology-design-draft",
+        json={
+            "profile_id": "lab-demo",
+            "scenario": "server_netapp_vcenter",
+            "subnet": "192.168.1.0/24",
+            "placements": {
+                "u1": "switch",
+                "u2": "server-gen10plus",
+                "u3": "netapp",
+                "u4": "server-gen10",
+                "virtual": "vcenter",
+            },
+            "device_settings": {
+                "switch": {
+                    "mgmt_vlan": "200",
+                    "storage_vlan": "230",
+                    "ports": "Gi1/0/1 server, Gi1/0/2 NetApp A, Gi1/0/3 NetApp B",
+                },
+                "server-gen10plus": {
+                    "raid_boot": "RAID1",
+                    "raid_data": "RAID6 for local VM staging",
+                },
+            },
+            "lane_settings": {
+                "storage": {
+                    "mtu": "9100",
+                    "protocol": "NFS primary with iSCSI optional",
+                    "vlan": "230",
+                }
+            },
+            "connection_settings": {
+                "server-netapp": {
+                    "protocol": "NFS primary plus iSCSI standby",
+                    "status": "planned - needs live session",
+                    "vlan": "230",
+                }
+            },
+        },
+    )
+    assert saved.status_code == 200
+    payload = saved.json()
+    assert payload["source"] == "saved"
+    assert payload["draft_saved"] is True
+    assert payload["hardware_touched"] is False
+    assert payload["placements"]["u2"] == "server-gen10plus"
+    assert payload["device_settings"]["switch"]["storage_vlan"] == "230"
+    assert payload["device_settings"]["server-gen10plus"]["raid_data"] == "RAID6 for local VM staging"
+    assert payload["lane_settings"]["storage"]["mtu"] == "9100"
+    assert payload["lane_settings"]["storage"]["vlan"] == "230"
+    assert payload["connection_settings"]["server-netapp"]["protocol"] == "NFS primary plus iSCSI standby"
+    assert payload["connection_settings"]["server-netapp"]["status"] == "planned - needs live session"
+    assert payload["persistence_inventory"][0]["hardware_effect"] == "none"
+
+    reloaded = client.get(
+        "/api/v1/lab/topology-design-draft",
+        params={
+            "profile_id": "lab-demo",
+            "scenario": "server_netapp_vcenter",
+            "subnet": "192.168.1.0/24",
+        },
+    )
+    assert reloaded.status_code == 200
+    assert reloaded.json()["source"] == "saved"
+    assert reloaded.json()["placements"]["u2"] == "server-gen10plus"
+    assert reloaded.json()["device_settings"]["switch"]["mgmt_vlan"] == "200"
+    assert reloaded.json()["lane_settings"]["storage"]["mtu"] == "9100"
+    assert reloaded.json()["connection_settings"]["server-netapp"]["vlan"] == "230"
+
+
+def test_topology_design_draft_api_normalizes_invalid_single_server_parts(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("TOPOLOGY_DESIGN_DRAFT_STORE", str(tmp_path / "topology-design-drafts.json"))
+
+    saved = client.put(
+        "/api/v1/lab/topology-design-draft",
+        json={
+            "profile_id": "lab-demo",
+            "scenario": "single_server_local_storage",
+            "subnet": "192.168.50.0/24",
+            "placements": {
+                "u1": "switch",
+                "u2": "server-gen10",
+                "u3": "netapp",
+                "virtual": "server-gen10plus",
+            },
+        },
+    )
+
+    assert saved.status_code == 200
+    placements = saved.json()["placements"]
+    assert placements["u1"] == "switch"
+    assert placements["u2"] == "server-gen10"
+    assert placements["u3"] is None
+    assert placements["virtual"] is None
+
+
+def test_topology_design_draft_api_rejects_secret_shaped_payloads(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("TOPOLOGY_DESIGN_DRAFT_STORE", str(tmp_path / "topology-design-drafts.json"))
+
+    rejected = client.put(
+        "/api/v1/lab/topology-design-draft",
+        json={
+            "profile_id": "lab-demo",
+            "scenario": "server_netapp_direct",
+            "subnet": "192.168.1.0/24",
+            "placements": {
+                "u1": "switch",
+                "u2": "server-gen10",
+                "password": "not-a-real-secret",
+            },
+        },
+    )
+
+    assert rejected.status_code == 422
+    assert "unknown rack slot" in rejected.text.lower()
+
+    rejected_device_setting = client.put(
+        "/api/v1/lab/topology-design-draft",
+        json={
+            "profile_id": "lab-demo",
+            "scenario": "server_netapp_direct",
+            "subnet": "192.168.1.0/24",
+            "placements": {
+                "u1": "switch",
+                "u2": "server-gen10",
+            },
+            "device_settings": {
+                "switch": {
+                    "notes": "token=do-not-store-this",
+                },
+            },
+        },
+    )
+
+    assert rejected_device_setting.status_code == 422
+    assert "secret-looking values are not allowed" in rejected_device_setting.text.lower()
+
+
+def test_lab_profile_api_ignores_corrupt_store_and_writes_atomically(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store_path = tmp_path / "lab-profiles.json"
+    store_path.write_text("{not json", encoding="utf-8")
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(store_path))
+
+    empty = client.get("/api/v1/lab/profiles")
+    assert empty.status_code == 200
+    assert empty.json()["active_profile"]["id"] == "runtime"
+    assert empty.json()["profiles"] == []
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Recovered Lab",
+            "address_plan": {"subnet": "192.0.2.0/24"},
+        },
+    )
+
+    assert created.status_code == 201
+    saved = json.loads(store_path.read_text(encoding="utf-8"))
+    assert saved["profiles"][0]["name"] == "Recovered Lab"
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_lab_profile_api_keeps_saved_profile_active_and_reports_runtime_mismatch(
@@ -588,6 +1369,112 @@ def test_lab_profile_runtime_env_apply_updates_active_profile_ips(
     assert "PASSWORD" not in contents
     assert "TOKEN" not in contents
     assert "SECRET" not in contents
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_lab_profile_runtime_env_export_removes_explicit_empty_dns_ntp() -> None:
+    updates, removals = lab_profiles._runtime_env_changes_for_context(
+        {
+            "active_profile": {
+                "_field_presence": {"global_settings": ["dns_servers", "ntp_servers"], "top_level": []},
+                "dns": ["192.168.1.1"],
+                "global_settings": {"dns_servers": [], "ntp_servers": []},
+                "ntp": ["192.168.1.1"],
+                "profile_topology": "high_address_lab",
+            },
+            "enabled_features": {"netapp_enabled": False},
+            "resolved_address_plan": {},
+            "topology": "high_address_lab",
+        }
+    )
+
+    assert "LAB_DNS_SERVERS" not in updates
+    assert "LAB_NTP_SERVERS" not in updates
+    assert {"LAB_DNS_SERVERS", "LAB_NTP_SERVERS"} <= removals
+
+
+def test_lab_profile_runtime_env_export_inherits_absent_dns_ntp() -> None:
+    updates, removals = lab_profiles._runtime_env_changes_for_context(
+        {
+            "active_profile": {
+                "_field_presence": {"global_settings": [], "top_level": []},
+                "dns": [],
+                "global_settings": {
+                    "dns_servers": ["192.168.1.10", "192.168.1.11"],
+                    "ntp_servers": ["192.168.1.12"],
+                },
+                "ntp": [],
+                "profile_topology": "high_address_lab",
+            },
+            "enabled_features": {"netapp_enabled": False},
+            "resolved_address_plan": {},
+            "topology": "high_address_lab",
+        }
+    )
+
+    assert updates["LAB_DNS_SERVERS"] == "192.168.1.10,192.168.1.11"
+    assert updates["LAB_NTP_SERVERS"] == "192.168.1.12"
+    assert "LAB_DNS_SERVERS" not in removals
+    assert "LAB_NTP_SERVERS" not in removals
+
+
+def test_lab_profile_runtime_env_write_self_heals_unreadable_env_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    env_path = tmp_path / ".env.local.real-lab"
+    env_path.write_text("LAB_GATEWAY=192.168.1.1\n", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def flaky_read_text(path: Path, *args, **kwargs) -> str:
+        if path == env_path:
+            raise OSError("env file is temporarily unavailable")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+    monkeypatch.setattr(lab_profiles, "read_dotenv_values", lambda _path: (_ for _ in ()).throw(OSError("unreadable")))
+
+    updated, removed = lab_profiles._write_runtime_env(
+        env_path,
+        {"LAB_SUBNET_CIDR": "10.10.8.0/24"},
+        set(),
+    )
+
+    assert updated == ["LAB_SUBNET_CIDR"]
+    assert removed == []
+    assert original_read_text(env_path, encoding="utf-8") == "LAB_SUBNET_CIDR=10.10.8.0/24\n"
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_lab_profile_runtime_env_reader_handles_exports_and_comments(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    env_path = tmp_path / ".env.local.real-lab"
+    env_path.write_text(
+        "# LAB_SUBNET_CIDR=10.0.0.0/24\n"
+        "export LAB_SUBNET_CIDR=10.10.8.0/24\n"
+        "LAB_GATEWAY=10.10.8.1\n"
+        'LAB_DNS_SERVERS="10.10.8.1,10.10.8.2"\n'
+        "LAB_PROFILE_NETAPP_ENABLED=false\n"
+        "IGNORED_UNRELATED=value\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    monkeypatch.setenv("LAB_RUNTIME_ENV_FILE", str(env_path))
+    monkeypatch.delenv("LAB_SUBNET_CIDR", raising=False)
+    monkeypatch.delenv("LAB_GATEWAY", raising=False)
+    monkeypatch.delenv("LAB_DNS_SERVERS", raising=False)
+    monkeypatch.delenv("LAB_PROFILE_NETAPP_ENABLED", raising=False)
+
+    response = client.get("/api/v1/lab/profiles")
+
+    assert response.status_code == 200
+    runtime_profile = response.json()["runtime_profile"]
+    assert runtime_profile["address_plan"]["subnet"] == "10.10.8.0/24"
+    assert runtime_profile["global_settings"]["gateway"] == "10.10.8.1"
+    assert runtime_profile["global_settings"]["dns_servers"] == ["10.10.8.1", "10.10.8.2"]
 
 
 def test_lab_profile_api_returns_compact_topology_context(
@@ -738,6 +1625,7 @@ def test_hpe_ilo_baseline_preview_uses_active_profile_and_stays_preview_only(
     payload = response.json()
     assert payload["provider_id"] == "hpe-ilo"
     assert payload["source_provider_id"] == "ilo-redfish"
+
     assert payload["apply_enabled"] is False
     assert "Preview/readiness only" in payload["apply_reason"]
     assert payload["kit_profile"]["kit_id"] == "Kit_42"
@@ -790,6 +1678,32 @@ def test_hpe_ilo_baseline_preview_uses_active_profile_and_stays_preview_only(
     assert "dwan" not in encoded
     assert "password=" not in encoded
     assert "secret-ref:" in encoded
+
+
+def test_esxi_readonly_config_uses_active_lab_profile_target(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    monkeypatch.setenv("ESXI_TEST_HOST", "192.168.1.203")
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Server Configure Lab",
+            "address_plan": {
+                "subnet": "10.10.8.0/24",
+                "ilo": "10.10.8.88",
+                "esxi_management": "10.10.8.89",
+            },
+        },
+    )
+    assert created.status_code == 201
+
+    config = EsxiReadonlyConfig.from_settings()
+
+    assert config.host == "10.10.8.89"
 
 
 def test_hpe_ilo_baseline_readiness_is_read_only_and_redacted(client: TestClient) -> None:
@@ -1347,9 +2261,10 @@ def test_cisco_setup_readiness_endpoint_is_read_only_preview(client: TestClient)
     assert payload["backup_report"]["backup_enabled"] is True
     assert payload["backup_report"]["report_placeholder_enabled"] is False
     assert "Raw running-config is not persisted" in payload["backup_report"]["summary"]
-    assert payload["next_safe_action"] == (
-        "Select a console candidate and run prompt readiness check."
-    )
+    assert payload["next_safe_action"] in {
+        "Select a console candidate and run prompt readiness check.",
+        "Review setup wizard plan preview.",
+    }
     assert "real config apply" in payload["disabled_actions"]
 
     encoded = response.text
@@ -1357,17 +2272,131 @@ def test_cisco_setup_readiness_endpoint_is_read_only_preview(client: TestClient)
     assert "Configure Terminal" not in encoded
 
 
-def test_cisco_prompt_readiness_endpoint_blocks_in_mock_mode(client: TestClient) -> None:
-    response = client.post("/api/v1/providers/cisco-console/prompt-readiness")
+def test_cisco_setup_readiness_uses_active_lab_profile_network_defaults(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Network Configure Lab",
+            "global_settings": {
+                "gateway": "10.10.8.1",
+                "dns_servers": ["10.10.8.53"],
+                "vlan_id": "8",
+            },
+            "address_plan": {
+                "subnet": "10.10.8.0/24",
+                "cisco_management": "10.10.8.2",
+            },
+        },
+    )
+    assert created.status_code == 201
+
+    response = client.get("/api/v1/providers/cisco/setup-readiness")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["planned_management_ip"] == "10.10.8.2"
+    assert payload["state_boundaries"]["saved_kit_config_values"]["planned_management_ip"] == "10.10.8.2"
+    assert payload["state_boundaries"]["saved_kit_config_values"]["planned_prefix"] == "/24"
+    assert payload["ethernet_readiness"]["planned_management_ip"] == "10.10.8.2"
+    assert payload["ethernet_readiness"]["planned_prefix"] == "/24"
+    assert payload["ethernet_readiness"]["planned_gateway"] is True
+    assert payload["ethernet_readiness"]["management_vlan"] == "8"
+    assert payload["ethernet_readiness"]["dns_servers"] == ["10.10.8.53"]
+
+
+def test_cisco_setup_readiness_honors_empty_active_profile_dns(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "No DNS Lab",
+            "global_settings": {
+                "gateway": "10.10.8.1",
+                "dns_servers": [],
+            },
+            "address_plan": {
+                "subnet": "10.10.8.0/24",
+                "cisco_management": "10.10.8.2",
+            },
+        },
+    )
+    assert created.status_code == 201
+
+    response = client.get("/api/v1/providers/cisco/setup-readiness")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ethernet_readiness"]["dns_servers"] == []
+
+
+def test_cisco_setup_readiness_inherits_env_dns_when_profile_dns_absent(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    from app.services import cisco_setup_readiness
+
+    monkeypatch.setattr(
+        cisco_setup_readiness,
+        "settings",
+        replace(cisco_setup_readiness.settings, cisco_dns_servers=("192.0.2.53", "192.0.2.54")),
+    )
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "DNS Inherit Lab",
+            "global_settings": {
+                "gateway": "10.10.8.1",
+            },
+            "address_plan": {
+                "subnet": "10.10.8.0/24",
+                "cisco_management": "10.10.8.2",
+            },
+        },
+    )
+    assert created.status_code == 201
+
+    response = client.get("/api/v1/providers/cisco/setup-readiness")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ethernet_readiness"]["dns_servers"] == ["192.0.2.53", "192.0.2.54"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/providers/cisco-console/prompt-readiness",
+        "/api/v1/providers/cisco-console/probe",
+    ],
+)
+def test_legacy_cisco_console_probe_endpoints_require_explicit_identity_selection(
+    client: TestClient,
+    path: str,
+) -> None:
+    response = client.post(path)
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["provider_id"] == "cisco-console"
-    assert payload["action"] == "prompt-readiness"
+    assert payload["action"] == "identity-selection-required"
     assert payload["status"] == "blocked"
-    assert "local-readonly" in payload["message"]
-    assert "safe show commands" in payload["not_attempted"]
-    assert payload["prompt_ready"] is False
+    assert payload["legacy_auto_scan_disabled"] is True
+    assert payload["serial_ports_opened"] == 0
+    assert "exact physical cable and baud" in payload["message"]
 
 
 def test_cisco_setup_wizard_plan_endpoint_returns_safe_unknown_preview(
@@ -1412,6 +2441,119 @@ def test_cisco_bootstrap_requirements_endpoint_returns_preview_only(
     assert "erase/copy" in payload["disabled_actions"]
     assert "enable SSH/SCP" in payload["disabled_actions"]
     assert "real config apply" in payload["disabled_actions"]
+
+
+def test_cisco_bootstrap_requirements_use_active_lab_profile_defaults(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    monkeypatch.setattr(
+        "app.services.cisco_bootstrap_requirements.STATE_PATH",
+        tmp_path / "bootstrap-requirements.json",
+    )
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Network Configure Lab",
+            "global_settings": {
+                "gateway": "10.10.8.1",
+                "dns_servers": ["10.10.8.53"],
+                "vlan_id": "8",
+            },
+            "address_plan": {
+                "subnet": "10.10.8.0/24",
+                "cisco_management": "10.10.8.2",
+            },
+        },
+    )
+    assert created.status_code == 201
+
+    response = client.get("/api/v1/providers/cisco/bootstrap-requirements")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["requirements"]["planned_management_ip"]["value"] == "10.10.8.2"
+    assert payload["requirements"]["subnet_prefix"]["value"] == "/24"
+    assert payload["requirements"]["gateway"]["value"] == "10.10.8.1"
+    assert payload["requirements"]["management_vlan_interface_strategy"]["vlan"] == "8"
+    assert payload["requirements"]["domain_dns"]["dns_servers"] == ["10.10.8.53"]
+
+
+def test_cisco_bootstrap_requirements_honor_empty_active_profile_dns(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    monkeypatch.setattr(
+        "app.services.cisco_bootstrap_requirements.STATE_PATH",
+        tmp_path / "bootstrap-requirements.json",
+    )
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "No DNS Lab",
+            "global_settings": {
+                "gateway": "10.10.8.1",
+                "dns_servers": [],
+            },
+            "address_plan": {
+                "subnet": "10.10.8.0/24",
+                "cisco_management": "10.10.8.2",
+            },
+        },
+    )
+    assert created.status_code == 201
+
+    response = client.get("/api/v1/providers/cisco/bootstrap-requirements")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["requirements"]["domain_dns"]["dns_servers"] == []
+
+
+def test_cisco_bootstrap_requirements_inherit_env_dns_when_profile_dns_absent(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    monkeypatch.setattr(
+        "app.services.cisco_bootstrap_requirements.STATE_PATH",
+        tmp_path / "bootstrap-requirements.json",
+    )
+    from app.services import cisco_bootstrap_requirements
+
+    monkeypatch.setattr(
+        cisco_bootstrap_requirements,
+        "settings",
+        replace(cisco_bootstrap_requirements.settings, cisco_dns_servers=("192.0.2.53", "192.0.2.54")),
+    )
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "DNS Inherit Lab",
+            "global_settings": {
+                "gateway": "10.10.8.1",
+            },
+            "address_plan": {
+                "subnet": "10.10.8.0/24",
+                "cisco_management": "10.10.8.2",
+            },
+        },
+    )
+    assert created.status_code == 201
+
+    response = client.get("/api/v1/providers/cisco/bootstrap-requirements")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["requirements"]["domain_dns"]["dns_servers"] == ["192.0.2.53", "192.0.2.54"]
 
 
 def test_cisco_bootstrap_requirements_update_saves_preview_only(

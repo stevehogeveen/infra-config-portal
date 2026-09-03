@@ -51,6 +51,8 @@ def test_24_high_address_topology_derives_lab_builder_defaults() -> None:
         "192.168.1.242",
         "192.168.1.243",
     ]
+    assert profile["features"]["deployment_mode"] == "server_netapp_direct"
+    assert profile["features"]["deployment_supported"] is False
 
 
 def test_26_compact_topology_derives_offset_layout_and_disables_storage_scope() -> None:
@@ -74,6 +76,39 @@ def test_26_compact_topology_derives_offset_layout_and_disables_storage_scope() 
     assert profile["devices"]["vcenter"] is None
     assert "netapp" in profile["not_in_scope_stages"]
     assert "vcenter-netapp" in profile["not_in_scope_stages"]
+    assert profile["features"]["deployment_mode"] == "single_server_local_storage"
+    assert profile["features"]["deployment_supported"] is True
+    assert profile["features"]["storage_location"] == "server_local"
+
+
+def test_supported_world_scenario_server_netapp_vcenter_is_explicit() -> None:
+    profile = _derive(
+        subnet_cidr="192.168.1.0/24",
+        devices={"vcenter": "192.168.1.224"},
+        features={"netapp_enabled": True, "vcenter_enabled": True},
+    )
+
+    assert profile["features"]["deployment_mode"] == "server_netapp_vcenter"
+    assert profile["features"]["deployment_label"] == "Server + NetApp + vCenter"
+    assert profile["features"]["deployment_supported"] is True
+    assert profile["features"]["storage_location"] == "netapp_shared"
+    assert profile["devices"]["netapp"]["status"] == "in_scope"
+    assert profile["devices"]["vcenter"] == "192.168.1.224"
+
+
+def test_supported_world_scenario_single_server_local_storage_is_explicit() -> None:
+    profile = _derive(
+        subnet_cidr="192.168.1.0/24",
+        features={"netapp_enabled": False, "vcenter_enabled": False},
+    )
+
+    assert profile["features"]["deployment_mode"] == "single_server_local_storage"
+    assert profile["features"]["deployment_label"] == "Single server + local ESXi storage"
+    assert profile["features"]["deployment_supported"] is True
+    assert profile["features"]["storage_location"] == "server_local"
+    assert profile["features"]["storage_protocol"] == "local"
+    assert profile["devices"]["netapp"] is None
+    assert profile["devices"]["vcenter"] is None
 
 
 def test_custom_override_inside_subnet_passes_validation() -> None:
@@ -106,6 +141,97 @@ def test_out_of_subnet_override_fails_validation() -> None:
 def test_duplicate_ip_override_fails_validation() -> None:
     with pytest.raises(LabTopologyError, match="duplicates"):
         _derive(subnet_cidr="10.10.5.0/26", address_plan={"ilo": "10.10.5.10"})
+
+
+def test_repeated_list_ip_override_self_heals_to_unique_values() -> None:
+    profile = _derive(
+        subnet_cidr="192.168.1.0/24",
+        address_plan={
+            "netapp_nfs_lifs": [
+                "192.168.1.230",
+                " 192.168.1.230 ",
+                "192.168.1.231",
+            ],
+        },
+    )
+
+    assert profile["resolved_address_plan"]["netapp_nfs_lifs"] == [
+        "192.168.1.230",
+        "192.168.1.231",
+    ]
+
+
+def test_numeric_and_string_list_overrides_collapse_to_same_text_value() -> None:
+    profile = _derive(
+        subnet_cidr="10.10.5.0/24",
+        global_settings={
+            "dns_servers": [123, " 123 ", "8.8.8.8"],
+            "ntp_servers": ["time.example.test", " time.example.test "],
+        },
+    )
+
+    assert profile["dns"] == ["123", "8.8.8.8"]
+    assert profile["ntp"] == ["time.example.test"]
+
+
+def test_blank_and_missing_fields_self_heal_to_defaults() -> None:
+    profile = _derive(
+        subnet_cidr=" 10.10.5.0/26 ",
+        global_settings={
+            "gateway": "   ",
+            "dns_servers": " 1.1.1.1, ,8.8.8.8, ",
+            "ntp_servers": [" ", "time.example.test", None],
+            "mtu": "not-a-number",
+            "vlan_id": "\t",
+        },
+        address_plan={
+            "ilo": "",
+            "esxi_management": None,
+            "netapp_nfs_lifs": " , ",
+        },
+        devices={"switch_secondary": ""},
+    )
+
+    assert profile["gateway"] == "10.10.5.1"
+    assert profile["resolved_address_plan"]["ilo"] == "10.10.5.11"
+    assert profile["resolved_address_plan"]["esxi_management"] == "10.10.5.10"
+    assert profile["dns"] == ["1.1.1.1", "8.8.8.8"]
+    assert profile["ntp"] == ["time.example.test"]
+    assert profile["mtu"] is None
+    assert profile["vlan_id"] is None
+    assert profile["devices"]["switch_secondary"] == "10.10.5.3"
+
+
+def test_long_and_strange_metadata_strings_are_trimmed_without_validation_failure() -> None:
+    long_support_unit = f"  {'ops/team;drop-table?' * 40}  "
+    profile = _derive(
+        subnet_cidr="10.10.5.0/24",
+        global_settings={
+            "support_unit": long_support_unit,
+            "domain_name": " lab.example.test;$(whoami) ",
+            "timezone": " America/Toronto\n",
+        },
+        features={
+            "firmware_gate_enabled": " YES ",
+            "build_verification_enabled": " definitely ",
+            "storage_protocol": " iScSi ",
+        },
+    )
+
+    assert profile["global_settings"]["support_unit"] == long_support_unit.strip()
+    assert profile["global_settings"]["domain_name"] == "lab.example.test;$(whoami)"
+    assert profile["global_settings"]["timezone"] == "America/Toronto"
+    assert profile["features"]["firmware_gate_enabled"] is True
+    assert profile["features"]["build_verification_enabled"] is False
+    assert profile["features"]["storage_protocol"] == "iscsi"
+
+
+def test_invalid_storage_protocol_falls_back_to_real_scenario_default() -> None:
+    netapp_profile = _derive(features={"netapp_enabled": True, "storage_protocol": " iscsi;rm -rf "})
+    local_profile = _derive(features={"netapp_enabled": False, "storage_protocol": " nfs;rm -rf "})
+
+    assert netapp_profile["features"]["storage_protocol"] == "nfs"
+    assert local_profile["features"]["storage_protocol"] == "local"
 
 
 def test_compact_offset_rules_must_fit_subnet() -> None:

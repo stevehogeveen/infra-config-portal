@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -36,6 +37,8 @@ def test_golden_state_aggregates_known_good_rows(monkeypatch, tmp_path: Path) ->
     assert result["vcenter_readiness"]["vcsa_iso"] == "found"
     assert result["vcenter_readiness"]["esxi"] == "ready"
     assert result["vcenter_readiness"]["netapp_datastore"] == "ready"
+    assert result["warnings"].count("Manual firmware review remains.") == 1
+    assert rows["firmware"]["warnings"].count("Manual firmware review remains.") == 1
     assert result["artifacts"]["report"] == "artifacts/codex-runs/golden-state-productization-report.md"
     assert (tmp_path / result["artifacts"]["report"]).exists()
 
@@ -52,6 +55,50 @@ def test_golden_state_credentials_are_presence_only(monkeypatch, tmp_path: Path)
     assert "quoted_length" not in serialized
     assert "super-secret" not in serialized
     assert all({"configured", "tested", "status"}.issubset(row) for row in result["credentials"]["rows"])
+
+
+def test_golden_state_proof_links_dedupe_by_path_preserving_first_component() -> None:
+    links = golden_state._proof_links(
+        [
+            {
+                "id": "firmware",
+                "label": "Firmware",
+                "evidence_artifacts": ["artifacts/shared.md", "artifacts/firmware.md"],
+            },
+            {
+                "id": "cisco",
+                "label": "Cisco",
+                "evidence_artifacts": ["artifacts/shared.md", "artifacts/cisco.md"],
+            },
+        ]
+    )
+
+    assert links == [
+        {"component_id": "firmware", "component_label": "Firmware", "path": "artifacts/shared.md"},
+        {"component_id": "firmware", "component_label": "Firmware", "path": "artifacts/firmware.md"},
+        {"component_id": "cisco", "component_label": "Cisco", "path": "artifacts/cisco.md"},
+    ]
+
+
+def test_golden_state_ignores_corrupt_json_evidence_and_writes_summary_atomically(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _patch_paths(monkeypatch, tmp_path)
+    _write_golden_artifacts(tmp_path)
+    run_dir = tmp_path / "artifacts" / "codex-runs"
+    (run_dir / "provider-lab-live-status-redacted.json").write_text("{not json", encoding="utf-8")
+    (run_dir / "esxi-post-recovery-validation-redacted.json").write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(golden_state, "get_lab_build_verification", lambda: _build_verification())
+
+    result = golden_state.get_provider_lab_golden_state(write_report=True)
+
+    assert result["status"] in {"partial", "blocked"}
+    assert result["artifacts"]["summary_json"] == "artifacts/codex-runs/golden-state-summary-redacted.json"
+    saved = json.loads((tmp_path / result["artifacts"]["summary_json"]).read_text(encoding="utf-8"))
+    assert saved["provider_id"] == "provider-lab-golden-state"
+    assert golden_state.GOLDEN_REPORT.read_text(encoding="utf-8").strip()
+    assert list(run_dir.glob("*.tmp")) == []
 
 
 def test_golden_state_marks_vcenter_ready_only_after_post_attach_validation(monkeypatch, tmp_path: Path) -> None:
@@ -152,6 +199,65 @@ def test_golden_state_firmware_drift_lists_exact_components(monkeypatch, tmp_pat
     assert firmware["firmware_components"][0]["missing_evidence"] == ["target baseline", "approved HPE baseline"]
 
 
+def test_golden_state_last_checked_skips_disappearing_artifacts(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(golden_state, "REPO_ROOT", tmp_path)
+    existing = tmp_path / "artifacts" / "ready.md"
+    disappearing = tmp_path / "artifacts" / "gone.md"
+    existing.parent.mkdir(parents=True)
+    existing.write_text("ready\n", encoding="utf-8")
+    disappearing.write_text("gone\n", encoding="utf-8")
+    original_exists = Path.exists
+    original_stat = Path.stat
+
+    def fake_exists(self: Path) -> bool:
+        if self in {existing, disappearing}:
+            return True
+        return original_exists(self)
+
+    def fake_stat(self: Path, *args: object, **kwargs: object):  # noqa: ANN401
+        if self == disappearing:
+            raise FileNotFoundError("artifact disappeared")
+        return original_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", fake_exists)
+    monkeypatch.setattr(Path, "stat", fake_stat)
+
+    checked_at = golden_state._last_checked(["artifacts/ready.md", "artifacts/gone.md"])
+
+    assert checked_at == datetime.fromtimestamp(original_stat(existing).st_mtime, UTC).isoformat()
+
+
+def test_golden_state_existing_artifacts_skip_probe_errors(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(golden_state, "REPO_ROOT", tmp_path)
+    ready = tmp_path / "artifacts" / "ready.md"
+    blocked = tmp_path / "artifacts" / "blocked.md"
+    ready.parent.mkdir(parents=True)
+    ready.write_text("ready\n", encoding="utf-8")
+    blocked.write_text("blocked\n", encoding="utf-8")
+    original_exists = Path.exists
+
+    def fake_exists(self: Path) -> bool:
+        if self == blocked:
+            raise OSError("artifact path is unavailable")
+        return original_exists(self)
+
+    monkeypatch.setattr(Path, "exists", fake_exists)
+
+    assert golden_state._existing(["artifacts/ready.md", "artifacts/blocked.md"]) == ["artifacts/ready.md"]
+    metadata = golden_state._artifact_metadata("artifacts/blocked.md", "make provider-lab-golden-state")
+    assert metadata["source_type"] == "not_checked"
+    assert metadata["freshness"] == "not_checked"
+
+
+def test_golden_state_raid_validation_self_heals_bad_encoding(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(golden_state, "REPO_ROOT", tmp_path)
+    report = tmp_path / "artifacts" / "codex-runs" / "hpe-raid-after-reset-validation-report.md"
+    report.parent.mkdir(parents=True)
+    report.write_bytes(b"\xff\xfe\xfa")
+
+    assert golden_state._raid_validated() is False
+
+
 def test_golden_state_api_shape(client: TestClient) -> None:
     response = client.get("/api/v1/lab/golden-state")
 
@@ -181,7 +287,11 @@ def _write_golden_artifacts(root: Path) -> None:
                 {"stage": "ilo-reachability", "status": "completed", "warnings": []},
                 {"stage": "cisco-console-ethernet", "status": "ready", "warnings": []},
                 {"stage": "netapp-live-state", "status": "ready", "warnings": []},
-                {"stage": "firmware-compliance", "status": "warning", "warnings": ["Manual firmware review remains."]},
+                {
+                    "stage": "firmware-compliance",
+                    "status": "warning",
+                    "warnings": ["Manual firmware review remains.", "Manual firmware review remains."],
+                },
             ]
         },
     )

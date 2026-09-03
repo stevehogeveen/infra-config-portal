@@ -6,6 +6,8 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
+from app.services.path_utils import path_exists
+
 LAB_SUBNET_CIDR = "192.168.1.0/24"
 LAB_ILO_IP = "192.168.1.201"
 LAB_SERVER_EMBEDDED_NIC_IP = "192.168.1.202"
@@ -49,8 +51,11 @@ def _load_local_real_lab_env() -> None:
             candidates.append(env_file)
 
     for env_file in candidates:
-        if env_file.exists():
-            values = dotenv_values(env_file)
+        if path_exists(env_file):
+            try:
+                values = dotenv_values(env_file)
+            except (OSError, UnicodeDecodeError, ValueError):
+                continue
             authoritative_real_lab = values.get("LAB_ENVIRONMENT") == "isolated-real-lab"
             for key, value in values.items():
                 if key == "PROVIDER_MODE" or value is None:
@@ -69,7 +74,12 @@ def _load_local_real_lab_env() -> None:
 
 
 def _split_csv(value: str) -> list[str]:
-    return [item.strip() for item in value.split(",") if item.strip()]
+    values: list[str] = []
+    for item in value.split(","):
+        cleaned = item.strip().strip("\"'")
+        if cleaned and cleaned not in values:
+            values.append(cleaned)
+    return values
 
 
 def _optional_env(name: str) -> str | None:
@@ -118,7 +128,7 @@ def _bool_env(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
         return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _int_env(name: str, default: int) -> int:
@@ -174,6 +184,7 @@ class Settings:
     esxi_test_host: str | None = _optional_env("ESXI_TEST_HOST")
     esxi_test_username: str | None = _optional_env("ESXI_TEST_USERNAME")
     esxi_test_password: str | None = _optional_env("ESXI_TEST_PASSWORD")
+    esxi_license_key: str | None = _optional_env("ESXI_LICENSE_KEY")
     esxi_configured: bool = _bool_env("ESXI_CONFIGURED", False)
     esxi_test_verify_tls: bool = _bool_env("ESXI_TEST_VERIFY_TLS", True)
     esxi_test_timeout_seconds: float = _float_env("ESXI_TEST_TIMEOUT_SECONDS", 3.0)
@@ -258,6 +269,8 @@ class Settings:
     netapp_api_password: str | None = _optional_env("NETAPP_API_PASSWORD")
     netapp_api_verify_tls: bool = _bool_env("NETAPP_API_VERIFY_TLS", True)
     netapp_current_ontap_version: str | None = _optional_env("NETAPP_CURRENT_ONTAP_VERSION")
+    netapp_license_keys: tuple[str, ...] = tuple(_split_csv(os.getenv("NETAPP_LICENSE_KEYS", "")))
+    netapp_license_keys_file: str | None = _optional_env("NETAPP_LICENSE_KEYS_FILE")
     netapp_console_port: str | None = _optional_env("NETAPP_CONSOLE_PORT")
     netapp_console_baud: int = _int_env("NETAPP_CONSOLE_BAUD", 115200)
     netapp_console_timeout_seconds: float = _float_env("NETAPP_CONSOLE_TIMEOUT_SECONDS", 2.0)
@@ -294,6 +307,7 @@ class Settings:
     vcenter_host: str | None = _optional_env("VCENTER_HOST") or _optional_env("GOVC_URL")
     vcenter_username: str | None = _optional_env("VCENTER_USERNAME") or _optional_env("GOVC_USERNAME")
     vcenter_password: str | None = _optional_env("VCENTER_PASSWORD") or _optional_env("GOVC_PASSWORD")
+    vcenter_license_key: str | None = _optional_env("VCENTER_LICENSE_KEY")
     vcenter_verify_tls: bool = _bool_env("VCENTER_VERIFY_TLS", _bool_env("GOVC_TLS_VERIFY", True))
     vcenter_appliance_name: str | None = _optional_env("VCENTER_APPLIANCE_NAME")
     vcenter_management_ip: str | None = _optional_env("VCENTER_MANAGEMENT_IP")

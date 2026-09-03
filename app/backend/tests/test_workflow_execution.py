@@ -14,6 +14,7 @@ from app.services.lifecycle import (
     cancel_request,
     create_vm_deployment_request,
     execute_request,
+    get_request,
     plan_request,
     reject_request,
     submit_request,
@@ -37,6 +38,21 @@ class SpyVsphereAdapter:
                 {**step, "status": "completed"}
                 for step in plan.get("steps", [])
             ],
+        }
+
+
+class BadPlanVsphereAdapter:
+    def plan_vm_deployment(self, request: Request) -> dict:
+        return {
+            "dry_run": False,
+            "mock_only": False,
+            "provider": "vsphere.real",
+            "workflow": "vm_deploy_from_template",
+            "request_id": request.id,
+            "review_before_execute": {"required": False},
+            "steps": [],
+            "stage_events": [],
+            "admin_password": "should-never-persist",
         }
 
 
@@ -149,6 +165,25 @@ def test_plan_stores_request_intent_and_hash(
         },
     }
     assert run.plan_json["request_id"] == request.id
+
+
+def test_plan_request_rejects_provider_plan_contract_failures(
+    db_session: Session,
+    vm_payload: dict,
+) -> None:
+    request = _create_approved_request(db_session, vm_payload)
+
+    with pytest.raises(ExecutionPreflightError, match="Provider plan contract failed"):
+        plan_request(
+            db_session,
+            request.id,
+            actor="local-dev-user",
+            vsphere=BadPlanVsphereAdapter(),
+        )
+
+    refreshed = get_request(db_session, request.id)
+    assert refreshed.status == RequestStatus.APPROVED.value
+    assert refreshed.workflow_runs == []
 
 
 def test_draft_request_notes_can_be_edited(

@@ -79,6 +79,43 @@ make frontend-run
 The backend runs at `http://127.0.0.1:8001`. The Vite frontend runs at
 `http://127.0.0.1:5173` and proxies API requests to the backend.
 
+Windows PowerShell does not require Make or bash for the common local gate.
+From `app/`, run:
+
+```powershell
+.\scripts\start-lab-builder.ps1
+```
+
+This starts the backend and frontend, verifies both HTTP surfaces, and opens
+Operator Home. It honors an explicit mode, an existing `PROVIDER_MODE`, or the
+mode saved by the app in `.local\app-mode.env`; otherwise it starts safely in
+mock mode. Stop only the processes owned by that launch with
+`.\scripts\stop-lab-builder.ps1`.
+
+Run the Windows quality gate separately:
+
+```powershell
+.\scripts\windows-doctor.ps1
+.\scripts\check-windows.ps1
+```
+
+`check-windows.ps1` runs the Windows doctor, backend tests, portable path
+checks, frontend component tests, and frontend build with mocked providers.
+
+To include browser-based frontend coverage:
+
+```powershell
+.\scripts\ensure-playwright-browsers.ps1 -Install
+.\scripts\check-windows.ps1 -E2E
+```
+
+If npm is configured with a proxy that times out while fetching package
+tarballs, use the script-level bypass for dependency repair:
+
+```powershell
+.\scripts\check-windows.ps1 -Install -NoProxy
+```
+
 ### Operational Mode
 
 The Settings page includes an Operational Mode panel. Runtime options are
@@ -101,10 +138,17 @@ cd /home/administrator/infra-config-portal/app
 docker compose up --build
 ```
 
-Compose starts local PostgreSQL, the FastAPI backend, and the Vite frontend.
-Provider adapters start in real-lab runtime mode by default. Without configured
-live state, operator surfaces show `Not checked yet` or `Run live check` rather
-than substituting test fixture data.
+Compose starts local PostgreSQL, the FastAPI backend, and the Vite frontend in
+`PROVIDER_MODE=mock`. This lane is for safe local UI/API development only: it
+does not read `.env.local.real-lab`, does not call real provider APIs, and does
+not enable real-lab apply paths. The container keeps the repository path shape
+expected by shared config and scripts, persists repo-root `.local` and
+`artifacts`, and proxies browser API calls through the frontend so LAN clients
+do not accidentally call their own loopback address. The frontend waits for the
+backend health check before starting.
+
+Use the `runit`/Make workflow above, not Docker Compose, when intentionally
+working in `local-readonly` or `local-lab-readwrite` runtime mode.
 
 ## Saved Lab Profiles
 
@@ -454,7 +498,18 @@ make lint
 
 `make test` runs backend pytest and the frontend TypeScript/build check.
 `make lint` runs backend Ruff only when it is installed in `app/backend/.venv`,
-then runs the frontend build/type check.
+checks for Windows/Linux-portable repository paths, then runs the frontend
+build/type check.
+
+CI runs the same Linux Make gate on Ubuntu and the PowerShell gate on Windows
+through `.github/workflows/ci.yml`.
+
+On Windows without Make/bash, run the equivalent PowerShell gate from `app/`:
+
+```powershell
+.\scripts\check-windows.ps1
+.\scripts\check-windows.ps1 -E2E
+```
 
 The backend pytest suite includes a mock-only VM lifecycle smoke test. To run
 that smoke coverage directly:

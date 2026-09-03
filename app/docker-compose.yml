@@ -17,31 +17,53 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: ..
+      dockerfile: app/backend/Dockerfile
     environment:
       APP_NAME: infra-config-portal
       ENVIRONMENT: local
       PROVIDER_MODE: mock
-      DATABASE_URL: postgresql+psycopg://infra_config_portal:infra_config_portal_local_only@postgres:5432/infra_config_portal
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-infra_config_portal}:${POSTGRES_PASSWORD:-infra_config_portal_local_only}@postgres:5432/${POSTGRES_DB:-infra_config_portal}
       CORS_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
     ports:
-      - "8001:8000"
+      - "${BACKEND_PORT:-8001}:8000"
+    volumes:
+      - ../.local:/workspace/.local
+      - ../artifacts:/workspace/artifacts
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   frontend:
     image: node:24-alpine
-    working_dir: /app
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    working_dir: /workspace/app/frontend
+    command: sh -c "npm ci && npm run dev"
     environment:
-      VITE_API_BASE_URL: http://127.0.0.1:8001
+      APP_PROXY_TARGET: http://backend:8000
+      FRONTEND_HOST: 0.0.0.0
+      FRONTEND_PORT: 5173
+      VITE_API_BASE_URL: ""
     ports:
-      - "5173:5173"
+      - "${FRONTEND_PORT:-5173}:5173"
     volumes:
-      - ./frontend:/app
+      - ./frontend:/workspace/app/frontend
+      - frontend-node-modules:/workspace/app/frontend/node_modules
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:5173/overview"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   postgres-data:
+  frontend-node-modules:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,12 +10,16 @@ from app.providers.action_policy import LOCAL_LAB_READWRITE_MODE, current_lab_ac
 from app.providers.base import ProviderAction
 from app.providers.redaction import redact_sensitive
 from app.schemas import MediaInventoryItemRead
+from app.services.env_utils import env_flag as _env_flag
 from app.services.lab_profiles import active_lab_profile_context
+from app.services.json_file_store import read_json_object, write_json_object, write_text_value
+from app.services.list_utils import unique_preserving_order, unique_strings
 from app.services.media_inventory import get_media_inventory
 from app.services.netapp_disabled_actions import disabled_netapp_actions
 from app.services.netapp_real_lab import latest_console_ontap_version
 from app.services.netapp_setup_intent import get_netapp_setup_intent
 from app.services.netapp_state import get_netapp_runtime_state
+from app.services.path_utils import path_exists as _path_exists, repo_relative_path
 
 PROVIDER_ID = "netapp-ontap"
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -44,7 +47,7 @@ def build_netapp_upgrade_inventory(*, write_report: bool = True) -> dict[str, An
         )
         if write_report:
             _write_json(UPGRADE_INVENTORY_JSON, payload)
-            UPGRADE_INVENTORY_REPORT.write_text(_inventory_markdown(payload), encoding="utf-8")
+            write_text_value(UPGRADE_INVENTORY_REPORT, _inventory_markdown(payload))
         return payload
     checked_at = _now()
     runtime_state = get_netapp_runtime_state()
@@ -134,7 +137,7 @@ def build_netapp_upgrade_inventory(*, write_report: bool = True) -> dict[str, An
     sanitized = _sanitize(payload)
     if write_report:
         _write_json(UPGRADE_INVENTORY_JSON, sanitized)
-        UPGRADE_INVENTORY_REPORT.write_text(_inventory_markdown(sanitized), encoding="utf-8")
+        write_text_value(UPGRADE_INVENTORY_REPORT, _inventory_markdown(sanitized))
     return sanitized
 
 
@@ -147,17 +150,18 @@ def build_netapp_upgrade_plan(*, write_report: bool = True) -> dict[str, Any]:
         )
         if write_report:
             _write_json(UPGRADE_PLAN_JSON, payload)
-            UPGRADE_PLAN_REPORT.write_text(_plan_markdown(payload), encoding="utf-8")
+            write_text_value(UPGRADE_PLAN_REPORT, _plan_markdown(payload))
         return payload
     inventory = build_netapp_upgrade_inventory(write_report=False)
+    local_packages = _dict_list(inventory.get("local_image_packages"))
     target_version = settings.netapp_target_ontap_version or _recommended_target(
         inventory.get("current_ontap_version"),
-        list(inventory.get("local_image_packages") or []),
+        local_packages,
     )
-    selected_package = _selected_package(list(inventory.get("local_image_packages") or []), target_version)
+    selected_package = _selected_package(local_packages, target_version)
     validation = _latest_validation()
     no_upgrade_required = _no_upgrade_required(inventory, target_version)
-    blockers = list(inventory.get("blockers") or [])
+    blockers = _string_list(inventory.get("blockers"))
     if not target_version:
         blockers.append("No target ONTAP version is selected.")
     if selected_package is None and not no_upgrade_required:
@@ -212,7 +216,7 @@ def build_netapp_upgrade_plan(*, write_report: bool = True) -> dict[str, Any]:
     sanitized = _sanitize(payload)
     if write_report:
         _write_json(UPGRADE_PLAN_JSON, sanitized)
-        UPGRADE_PLAN_REPORT.write_text(_plan_markdown(sanitized), encoding="utf-8")
+        write_text_value(UPGRADE_PLAN_REPORT, _plan_markdown(sanitized))
     return sanitized
 
 
@@ -225,17 +229,18 @@ def validate_netapp_upgrade(*, write_report: bool = True) -> dict[str, Any]:
         )
         if write_report:
             _write_json(UPGRADE_VALIDATION_JSON, payload)
-            UPGRADE_VALIDATION_REPORT.write_text(_validation_markdown(payload), encoding="utf-8")
+            write_text_value(UPGRADE_VALIDATION_REPORT, _validation_markdown(payload))
         return payload
     inventory = build_netapp_upgrade_inventory(write_report=False)
+    local_packages = _dict_list(inventory.get("local_image_packages"))
     target_version = settings.netapp_target_ontap_version or _recommended_target(
         inventory.get("current_ontap_version"),
-        list(inventory.get("local_image_packages") or []),
+        local_packages,
     )
-    selected_package = _selected_package(list(inventory.get("local_image_packages") or []), target_version)
+    selected_package = _selected_package(local_packages, target_version)
     setup_intent = get_netapp_setup_intent()
     no_upgrade_required = _no_upgrade_required(inventory, target_version)
-    blockers = list(inventory.get("blockers") or [])
+    blockers = _string_list(inventory.get("blockers"))
     if setup_intent["missing_fields"]:
         blockers.append("NetApp setup intent is incomplete.")
     if not target_version:
@@ -298,7 +303,7 @@ def validate_netapp_upgrade(*, write_report: bool = True) -> dict[str, Any]:
     sanitized = _sanitize(payload)
     if write_report:
         _write_json(UPGRADE_VALIDATION_JSON, sanitized)
-        UPGRADE_VALIDATION_REPORT.write_text(_validation_markdown(sanitized), encoding="utf-8")
+        write_text_value(UPGRADE_VALIDATION_REPORT, _validation_markdown(sanitized))
     return sanitized
 
 
@@ -311,7 +316,7 @@ def apply_netapp_upgrade(*, write_report: bool = True) -> dict[str, Any]:
         )
         if write_report:
             _write_json(UPGRADE_APPLY_JSON, payload)
-            UPGRADE_APPLY_REPORT.write_text(_apply_markdown(payload), encoding="utf-8")
+            write_text_value(UPGRADE_APPLY_REPORT, _apply_markdown(payload))
         return payload
     plan = build_netapp_upgrade_plan(write_report=False)
     if plan.get("status") == "current":
@@ -326,7 +331,7 @@ def apply_netapp_upgrade(*, write_report: bool = True) -> dict[str, Any]:
             "flag_state": {
                 "provider_mode": settings.provider_mode,
                 "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
-                "netapp_ontap_upgrade_apply": os.getenv("NETAPP_ONTAP_UPGRADE_APPLY") == "true",
+                "netapp_ontap_upgrade_apply": _env_flag("NETAPP_ONTAP_UPGRADE_APPLY"),
                 "netapp_ontap_upgrade_confirm": os.getenv("NETAPP_ONTAP_UPGRADE_CONFIRM") == UPGRADE_CONFIRM_PHRASE,
                 "validation_passed": True,
                 "validation_waiver": False,
@@ -350,14 +355,14 @@ def apply_netapp_upgrade(*, write_report: bool = True) -> dict[str, Any]:
         sanitized = _sanitize(payload)
         if write_report:
             _write_json(UPGRADE_APPLY_JSON, sanitized)
-            UPGRADE_APPLY_REPORT.write_text(_apply_markdown(sanitized), encoding="utf-8")
+            write_text_value(UPGRADE_APPLY_REPORT, _apply_markdown(sanitized))
         return sanitized
     validation = _latest_validation()
     waiver = _upgrade_validation_waiver()
     flag_state = {
         "provider_mode": settings.provider_mode,
         "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
-        "netapp_ontap_upgrade_apply": os.getenv("NETAPP_ONTAP_UPGRADE_APPLY") == "true",
+        "netapp_ontap_upgrade_apply": _env_flag("NETAPP_ONTAP_UPGRADE_APPLY"),
         "netapp_ontap_upgrade_confirm": os.getenv("NETAPP_ONTAP_UPGRADE_CONFIRM") == UPGRADE_CONFIRM_PHRASE,
         "validation_passed": validation.get("validation_passed") is True,
         "validation_waiver": waiver["active"],
@@ -398,7 +403,7 @@ def apply_netapp_upgrade(*, write_report: bool = True) -> dict[str, Any]:
     sanitized = _sanitize(payload)
     if write_report:
         _write_json(UPGRADE_APPLY_JSON, sanitized)
-        UPGRADE_APPLY_REPORT.write_text(_apply_markdown(sanitized), encoding="utf-8")
+        write_text_value(UPGRADE_APPLY_REPORT, _apply_markdown(sanitized))
     return sanitized
 
 
@@ -406,7 +411,7 @@ def get_legacy_upgrade_readiness() -> dict[str, Any]:
     inventory = build_netapp_upgrade_inventory(write_report=False)
     plan = build_netapp_upgrade_plan(write_report=False)
     current_version = inventory.get("current_ontap_version")
-    candidates = [_legacy_candidate(candidate, current_version) for candidate in inventory.get("local_image_packages") or []]
+    candidates = [_legacy_candidate(candidate, current_version) for candidate in _dict_list(inventory.get("local_image_packages"))]
     recommended = _recommended_target(current_version, candidates)
     upgrade_chain = [candidate for candidate in candidates if candidate.get("version") == recommended]
     readonly_ack = settings.lab_readonly_ack == "YES"
@@ -424,7 +429,7 @@ def get_legacy_upgrade_readiness() -> dict[str, Any]:
         else "LAB_READONLY_ACK=YES is present.",
         "ONTAP upgrade actions are disabled; preview only.",
     ]
-    removable_warnings = list(inventory.get("media_warnings") or [])
+    removable_warnings = _string_list(inventory.get("media_warnings"))
     if not candidates:
         removable_warnings.append("Add ONTAP image media to the configured media inventory directory.")
     if inventory.get("media_inventory_mode") == "sample":
@@ -603,7 +608,7 @@ def _check(check_id: str, passed: bool, description: str) -> dict[str, Any]:
 
 
 def _latest_validation() -> dict[str, Any]:
-    if not UPGRADE_VALIDATION_JSON.exists():
+    if not _path_exists(UPGRADE_VALIDATION_JSON):
         return {
             "status": "not_run",
             "validation_passed": False,
@@ -611,9 +616,8 @@ def _latest_validation() -> dict[str, Any]:
             "source_type": "not_checked",
             "recheck_command": "make provider-lab-netapp-ontap-upgrade-validate",
         }
-    try:
-        data = json.loads(UPGRADE_VALIDATION_JSON.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    data = read_json_object(UPGRADE_VALIDATION_JSON)
+    if not data:
         return {
             "status": "unreadable",
             "validation_passed": False,
@@ -632,7 +636,7 @@ def _latest_validation() -> dict[str, Any]:
 
 def _upgrade_validation_waiver() -> dict[str, Any]:
     active = (
-        os.getenv("NETAPP_ONTAP_UPGRADE_VALIDATION_WAIVER") == "true"
+        _env_flag("NETAPP_ONTAP_UPGRADE_VALIDATION_WAIVER")
         and os.getenv("NETAPP_ONTAP_UPGRADE_WAIVER_CONFIRM") == UPGRADE_WAIVER_CONFIRM_PHRASE
     )
     return {
@@ -654,10 +658,10 @@ def _upgrade_apply_blockers(
     policy = current_lab_action_policy(settings.provider_mode)
     blockers = [
         blocker
-        for blocker in list(plan.get("blockers") or [])
+        for blocker in _string_list(plan.get("blockers"))
         if not (waiver["active"] and "Pre-upgrade validation has not passed" in str(blocker))
     ]
-    blockers.extend(policy.action_blockers("netapp.ontap-upgrade", "firmware_update"))
+    blockers.extend(unique_strings(policy.action_blockers("netapp.ontap-upgrade", "firmware_update")))
     if not flag_state["netapp_ontap_upgrade_apply"]:
         blockers.append("NETAPP_ONTAP_UPGRADE_APPLY=true is required.")
     if not flag_state["netapp_ontap_upgrade_confirm"]:
@@ -774,8 +778,7 @@ def _not_in_scope_payload(
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    write_json_object(path, payload)
 
 
 def _inventory_markdown(payload: dict[str, Any]) -> str:
@@ -864,7 +867,7 @@ def _redaction_values() -> list[str]:
 
 
 def _rel(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
+    return repo_relative_path(path, REPO_ROOT)
 
 
 def _now() -> str:
@@ -872,4 +875,14 @@ def _now() -> str:
 
 
 def _unique(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))
+    return unique_preserving_order(values)
+
+
+def _string_list(value: Any) -> list[str]:
+    return unique_strings(value)
+
+
+def _dict_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, (list, tuple, set)):
+        return []
+    return [item for item in value if isinstance(item, dict)]

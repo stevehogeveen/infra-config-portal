@@ -13,7 +13,11 @@ from app.providers.redaction import redact_sensitive
 from app.services.media_inventory import get_media_inventory
 from app.services.netapp_real_lab import latest_console_ontap_version
 from app.services.netapp_state import get_netapp_runtime_state
+from app.services.json_file_store import read_json_object, write_json_object, write_text_value
+from app.services.list_utils import unique_preserving_order, unique_strings
+from app.services.path_utils import path_exists, path_mtime, repo_relative_path, safe_read_text
 from app.services.status_source import attach_status_source
+from app.services.temp_file_utils import remove_file_best_effort
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 BASELINE_PATH = REPO_ROOT / "config" / "firmware-baselines" / "real-lab.yml"
@@ -227,12 +231,15 @@ def get_firmware_inventory(*, refresh_live: bool = False) -> dict[str, Any]:
         ansible_checked_at=cisco_checked_at,
         console_checked_at=cisco_console_checked_at,
     )
+    inventory_checked_at = _latest_probe_time([ilo_checked_at, cisco_checked_at, cisco_console_checked_at, netapp_checked_at])
+    generated_at = datetime.now(UTC).isoformat()
     inventory = {
         "provider_id": "firmware-compliance",
         "status": "completed",
         "message": "Firmware inventory collected from cached/live provider evidence and local media metadata.",
         "provider_mode": settings.provider_mode,
-        "checked_at": datetime.now(UTC).isoformat(),
+        "checked_at": inventory_checked_at,
+        "generated_at": generated_at,
         "live_inventory": {
             "ilo": _ilo_versions(ilo_probe if isinstance(ilo_probe, dict) else {}),
             "cisco": cisco_versions,
@@ -260,16 +267,27 @@ def get_firmware_inventory(*, refresh_live: bool = False) -> dict[str, Any]:
     netapp_runtime_state = get_netapp_runtime_state()
     if not netapp_runtime_state.get("configured"):
         inventory["warnings"].append("NetApp firmware inventory is waiting for live setup validation.")
-    source_type = "live_cached" if any(inventory["last_probe_times"].values()) else "not_checked"
+    source_type = "live_cached" if inventory_checked_at else "not_checked"
     return _sanitize(
         attach_status_source(
             inventory,
             source_type=source_type,
-            checked_at=inventory["checked_at"] if source_type == "live_cached" else None,
+            checked_at=inventory_checked_at if source_type == "live_cached" else None,
             recheck_command="make provider-lab-firmware-inventory",
-            evidence_artifacts=[str(INVENTORY_REPORT.relative_to(REPO_ROOT))],
+            evidence_artifacts=[_rel(INVENTORY_REPORT)],
         )
     )
+
+
+def _latest_probe_time(values: list[str | None]) -> str | None:
+    parsed_values: list[tuple[datetime, str]] = []
+    for value in values:
+        parsed = _parse_datetime(value)
+        if parsed and value:
+            parsed_values.append((parsed, value))
+    if not parsed_values:
+        return None
+    return max(parsed_values, key=lambda item: item[0])[1]
 
 
 def get_firmware_media_inventory() -> dict[str, Any]:
@@ -296,7 +314,7 @@ def get_firmware_compliance(*, refresh_live: bool = False, scope: str = "full") 
     baseline = load_firmware_baseline()
     inventory = get_firmware_inventory(refresh_live=refresh_live)
     waiver = load_firmware_waiver()
-    checked_at = datetime.now(UTC).isoformat()
+    checked_at = inventory.get("checked_at") or datetime.now(UTC).isoformat()
     components = [
         _classify_component(component, inventory, waiver)
         for component in baseline.get("components", [])
@@ -336,7 +354,7 @@ def get_firmware_compliance(*, refresh_live: bool = False, scope: str = "full") 
         "scope": normalized_scope,
         "baseline": {
             "baseline_id": baseline.get("baseline_id", "real-lab"),
-            "path": str(BASELINE_PATH.relative_to(REPO_ROOT)),
+            "path": _rel(BASELINE_PATH),
         },
         "waiver": waiver,
         "inventory": inventory,
@@ -350,10 +368,10 @@ def get_firmware_compliance(*, refresh_live: bool = False, scope: str = "full") 
         "apply_enabled": overall_status in {"passed", "waived", "warning"},
         "upgrade_apply_enabled": any(path.get("apply_enabled") for path in upgrade_paths),
         "reports": {
-            "inventory": str(INVENTORY_REPORT.relative_to(REPO_ROOT)),
-            "compliance": str(COMPLIANCE_REPORT.relative_to(REPO_ROOT)),
-            "summary": str(COMPLIANCE_SUMMARY.relative_to(REPO_ROOT)),
-            "waiver": str(WAIVER_REPORT.relative_to(REPO_ROOT)) if waiver.get("active") else None,
+            "inventory": _rel(INVENTORY_REPORT),
+            "compliance": _rel(COMPLIANCE_REPORT),
+            "summary": _rel(COMPLIANCE_SUMMARY),
+            "waiver": _rel(WAIVER_REPORT) if waiver.get("active") else None,
         },
     }
     source_type = "live_cached" if inventory.get("source_type") == "live_cached" else "not_checked"
@@ -361,12 +379,12 @@ def get_firmware_compliance(*, refresh_live: bool = False, scope: str = "full") 
         attach_status_source(
             result,
             source_type=source_type,
-            checked_at=result["checked_at"] if source_type == "live_cached" else None,
+            checked_at=inventory.get("checked_at") if source_type == "live_cached" else None,
             recheck_command="make provider-lab-firmware-compliance",
             evidence_artifacts=[
-                str(INVENTORY_REPORT.relative_to(REPO_ROOT)),
-                str(COMPLIANCE_REPORT.relative_to(REPO_ROOT)),
-                str(COMPLIANCE_SUMMARY.relative_to(REPO_ROOT)),
+                _rel(INVENTORY_REPORT),
+                _rel(COMPLIANCE_REPORT),
+                _rel(COMPLIANCE_SUMMARY),
             ],
         )
     )
@@ -410,13 +428,13 @@ def write_firmware_reports(*, refresh_live: bool = False, scope: str = "full") -
     inventory = get_firmware_inventory(refresh_live=refresh_live)
     compliance = get_firmware_compliance(refresh_live=False, scope=scope)
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    INVENTORY_REPORT.write_text(_inventory_markdown(inventory), encoding="utf-8")
-    COMPLIANCE_REPORT.write_text(_compliance_markdown(compliance), encoding="utf-8")
-    COMPLIANCE_SUMMARY.write_text(json.dumps(_summary(compliance), indent=2) + "\n", encoding="utf-8")
+    write_text_value(INVENTORY_REPORT, _inventory_markdown(inventory))
+    write_text_value(COMPLIANCE_REPORT, _compliance_markdown(compliance))
+    write_json_object(COMPLIANCE_SUMMARY, _summary(compliance))
     if compliance.get("waiver", {}).get("active"):
-        WAIVER_REPORT.write_text(_waiver_markdown(compliance["waiver"], compliance), encoding="utf-8")
-    elif WAIVER_REPORT.exists():
-        WAIVER_REPORT.unlink()
+        write_text_value(WAIVER_REPORT, _waiver_markdown(compliance["waiver"], compliance))
+    elif path_exists(WAIVER_REPORT):
+        remove_file_best_effort(WAIVER_REPORT)
     return compliance
 
 
@@ -424,14 +442,24 @@ def write_waiver_report() -> dict[str, Any]:
     compliance = get_firmware_compliance(refresh_live=False)
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
     if compliance.get("waiver", {}).get("configured"):
-        WAIVER_REPORT.write_text(_waiver_markdown(compliance["waiver"], compliance), encoding="utf-8")
+        write_text_value(WAIVER_REPORT, _waiver_markdown(compliance["waiver"], compliance))
     return compliance
 
 
 def load_firmware_baseline() -> dict[str, Any]:
-    if not BASELINE_PATH.exists():
-        return {"baseline_id": "missing", "components": []}
-    return _parse_baseline(BASELINE_PATH.read_text(encoding="utf-8"))
+    text = _read_text(BASELINE_PATH)
+    if not text.strip():
+        return _missing_firmware_baseline()
+    baseline = _parse_baseline(text)
+    components = baseline.get("components")
+    if not baseline.get("baseline_id") and not components:
+        return _missing_firmware_baseline()
+    baseline["components"] = _records(components)
+    return baseline
+
+
+def _missing_firmware_baseline() -> dict[str, Any]:
+    return {"baseline_id": "missing", "components": []}
 
 
 def load_firmware_waiver() -> dict[str, Any]:
@@ -466,7 +494,7 @@ def load_firmware_waiver() -> dict[str, Any]:
         "reason": waiver.get("reason") or None,
         "expires": waiver.get("expires") or None,
         "errors": errors,
-        "report": str(WAIVER_REPORT.relative_to(REPO_ROOT)) if configured else None,
+        "report": _rel(WAIVER_REPORT) if configured else None,
     }
 
 
@@ -474,14 +502,11 @@ def _refresh_live_inventory() -> None:
     if settings.provider_mode != "local-lab-readwrite":
         return
     from app.providers.cisco_ansible import CiscoAnsibleAdapter
-    from app.providers.cisco_console import CiscoConsoleAdapter
     from app.providers.ilo_redfish import IloRedfishAdapter
 
     IloRedfishAdapter(provider_mode="local-lab-readwrite").probe()
     if settings.cisco_mgmt_configured:
         CiscoAnsibleAdapter(provider_mode="local-lab-readwrite").probe()
-    else:
-        CiscoConsoleAdapter(provider_mode="local-lab-readwrite").firmware_inventory()
 
 
 def _classify_component(
@@ -632,6 +657,17 @@ def _merged_cisco_versions(
             "checked_at": report.get("checked_at"),
             "historical_evidence": historical,
         }
+    if console_probe and (ansible.get("ios_xe_version") or ansible.get("bootloader_rommon")) and (
+        settings.cisco_mgmt_configured or not _console_inventory_failure_blocks_report(console_probe)
+    ):
+        return {
+            "status": ansible.get("status"),
+            "ios_xe_version": ansible.get("ios_xe_version"),
+            "bootloader_rommon": ansible.get("bootloader_rommon"),
+            "source": ansible.get("source"),
+            "checked_at": ansible_checked_at,
+            "historical_evidence": None,
+        }
     if console_probe:
         return {
             "status": console.get("status"),
@@ -663,28 +699,21 @@ def _optional_status(value: Any) -> str | None:
 
 
 def _cisco_firmware_report_versions() -> dict[str, Any]:
-    if not CISCO_FIRMWARE_INVENTORY_REPORT.exists():
+    text = _read_text(CISCO_FIRMWARE_INVENTORY_REPORT)
+    if not text:
         return {}
-    try:
-        text = CISCO_FIRMWARE_INVENTORY_REPORT.read_text(encoding="utf-8")
-    except OSError:
-        return {}
-    checked_at = datetime.fromtimestamp(CISCO_FIRMWARE_INVENTORY_REPORT.stat().st_mtime, UTC).isoformat()
     return {
         "status": _report_field(text, "Status"),
         "source": _report_field(text, "Source") or "cisco-firmware-inventory-report",
         "ios_xe_version": _report_field(text, "IOS XE version"),
         "bootloader_rommon": _report_field(text, "Bootloader/ROMMON"),
-        "checked_at": checked_at,
+        "checked_at": _path_mtime(CISCO_FIRMWARE_INVENTORY_REPORT),
     }
 
 
 def _firmware_inventory_report_versions() -> dict[str, Any]:
-    if not INVENTORY_REPORT.exists():
-        return {}
-    try:
-        text = INVENTORY_REPORT.read_text(encoding="utf-8")
-    except OSError:
+    text = _read_text(INVENTORY_REPORT)
+    if not text:
         return {}
     return {
         "checked_at": _report_scalar(text, "Checked") or _path_mtime(INVENTORY_REPORT),
@@ -812,7 +841,7 @@ def _records(value: Any) -> list[dict[str, Any]]:
 
 
 def _string_list(value: Any) -> list[str]:
-    return [str(item) for item in value if item] if isinstance(value, list) else []
+    return unique_strings(value)
 
 
 def _first(records: list[dict[str, Any]], keys: tuple[str, ...]) -> str | None:
@@ -851,23 +880,20 @@ def _regex_version(text: str, pattern: str) -> str | None:
 
 
 def _show_command_hint(probe: dict[str, Any], command: str, key: str) -> str | None:
-    commands = probe.get("safe_show_commands")
-    if not isinstance(commands, list):
-        commands = probe.get("command_results")
-        if isinstance(commands, dict):
-            commands = [
-                {"command": command_name, **payload}
-                for command_name, payload in commands.items()
-                if isinstance(payload, dict)
-            ]
-    if not isinstance(commands, list):
-        return None
-    for item in commands:
-        if not isinstance(item, dict) or item.get("command") != command:
-            continue
-        value = item.get(key)
-        if value:
-            return str(value)
+    candidates: list[dict[str, Any]] = []
+    safe_show_commands = probe.get("safe_show_commands")
+    if isinstance(safe_show_commands, list):
+        candidates.extend(item for item in safe_show_commands if isinstance(item, dict))
+    command_results = probe.get("command_results")
+    if isinstance(command_results, dict):
+        candidates.extend(
+            {"command": command_name, **payload}
+            for command_name, payload in command_results.items()
+            if isinstance(payload, dict)
+        )
+    for item in candidates:
+        if item.get("command") == command and item.get(key):
+            return str(item[key])
     return None
 
 
@@ -1328,7 +1354,7 @@ def _path_target(
             return {
                 "target_version": upgrade["target_version"],
                 "baseline_source": _rel(NETAPP_ONTAP_UPGRADE_VALIDATION_JSON)
-                if NETAPP_ONTAP_UPGRADE_VALIDATION_JSON.exists()
+                if path_exists(NETAPP_ONTAP_UPGRADE_VALIDATION_JSON)
                 else _rel(NETAPP_ONTAP_UPGRADE_PLAN_JSON),
                 "target_kind": "exact",
             }
@@ -1464,7 +1490,7 @@ def _missing_path_evidence(
             missing.append("component firmware inventory")
         if not target_version:
             missing.append("component firmware baseline")
-    return list(dict.fromkeys(missing))
+    return unique_preserving_order(missing)
 
 
 def _version_satisfies_target(current_version: str, target_version: str, target_kind: str | None) -> bool:
@@ -1643,11 +1669,19 @@ def _path_source_info(
 ) -> dict[str, str | None]:
     report_versions = _firmware_inventory_report_versions()
     if component_id in {"hpe_ilo_firmware", "hpe_bios_version", "hpe_smart_array_firmware"} and report_versions.get("checked_at"):
+        device_id = "raid" if component_id == "hpe_smart_array_firmware" else "ilo"
+        live = _component_source_info(device_id, inventory)
+        if live["freshness"] == "live":
+            return {"source_type": live["source_type"], "freshness": live["freshness"], "last_checked": live["last_scanned"]}
         return {
             "source_type": "historical_evidence",
             "freshness": _freshness("historical_evidence", report_versions.get("checked_at")),
             "last_checked": report_versions.get("checked_at"),
         }
+    if component_id in {"hpe_ilo_firmware", "hpe_bios_version", "hpe_smart_array_firmware"}:
+        device_id = "raid" if component_id == "hpe_smart_array_firmware" else "ilo"
+        live = _component_source_info(device_id, inventory)
+        return {"source_type": live["source_type"], "freshness": live["freshness"], "last_checked": live["last_scanned"]}
     if component_id == "cisco_ios_xe_version" or component_id == "cisco_bootloader_rommon":
         cisco = _component_source_info("cisco", inventory)
         return {"source_type": cisco["source_type"], "freshness": cisco["freshness"], "last_checked": cisco["last_scanned"]}
@@ -1702,7 +1736,7 @@ def _path_evidence_artifacts(component_id: str) -> list[str]:
     return [
         path
         for path in (*mapping.get(component_id, ()), *extra)
-        if (REPO_ROOT / path).exists()
+        if path_exists(REPO_ROOT / path)
     ]
 
 
@@ -1747,19 +1781,15 @@ def _summary_path_rollup(paths: list[dict[str, Any]]) -> dict[str, Any]:
         ) or None,
         "package_available": any(path.get("package_available") for path in paths),
         "package_name": package.get("package_name") if package else None,
-        "required_intermediate_versions": list(
-            dict.fromkeys(
-                version
-                for path in paths
-                for version in path.get("required_intermediate_versions") or []
-            )
+        "required_intermediate_versions": unique_preserving_order(
+            version
+            for path in paths
+            for version in path.get("required_intermediate_versions") or []
         ),
-        "prechecks_required": list(
-            dict.fromkeys(
-                check
-                for path in paths
-                for check in path.get("prechecks_required") or []
-            )
+        "prechecks_required": unique_preserving_order(
+            check
+            for path in paths
+            for check in path.get("prechecks_required") or []
         ),
         "reboot_required": any(path.get("reboot_required") for path in paths),
         "estimated_impact": next((path.get("estimated_impact") for path in paths if path.get("path_status") != "current"), None)
@@ -1825,7 +1855,7 @@ def _sanitize_path(path: dict[str, Any]) -> dict[str, Any]:
 
 
 def _rel(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
+    return repo_relative_path(path, REPO_ROOT)
 
 
 def _esxi_probe_versions(probe: dict[str, Any]) -> list[dict[str, str | None]]:
@@ -1860,11 +1890,11 @@ def _esxi_report_versions() -> list[dict[str, str | None]]:
 
 
 def _existing_summary_artifacts(device_id: str) -> list[str]:
-    return [
-        path
-        for path in SUMMARY_EVIDENCE_ARTIFACTS.get(device_id, ())
-        if (REPO_ROOT / path).exists()
-    ]
+    existing: list[str] = []
+    for path in SUMMARY_EVIDENCE_ARTIFACTS.get(device_id, ()):
+        if path_exists(REPO_ROOT / path):
+            existing.append(path)
+    return existing
 
 
 def _freshness(source_type: str, checked_at: str | None) -> str:
@@ -1908,28 +1938,20 @@ def _report_scalar(text: str, label: str) -> str | None:
 
 
 def _path_mtime(path: Path) -> str | None:
-    if not path.exists():
+    modified_at = path_mtime(path) if path_exists(path) else None
+    if modified_at is None:
         return None
-    return datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat()
+    return datetime.fromtimestamp(modified_at, UTC).isoformat()
 
 
 def _read_text(path: Path) -> str:
-    if not path.exists():
+    if not path_exists(path):
         return ""
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError:
-        return ""
+    return safe_read_text(path, errors="strict")
 
 
 def _read_json_artifact(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
+    return read_json_object(path)
 
 
 def _string_or_none(value: Any) -> str | None:
@@ -2012,12 +2034,9 @@ def _expired(value: str) -> bool:
 
 
 def _load_local_waiver() -> dict[str, Any] | None:
-    if not LOCAL_WAIVER_PATH.exists():
+    if not path_exists(LOCAL_WAIVER_PATH):
         return None
-    try:
-        payload = json.loads(LOCAL_WAIVER_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {"source": "artifact", "confirm": "", "reason": "", "expires": "", "scope": ""}
+    payload = read_json_object(LOCAL_WAIVER_PATH)
     return {
         "source": "artifact",
         "confirm": str(payload.get("confirm") or payload.get("FIRMWARE_WAIVER_CONFIRM") or ""),

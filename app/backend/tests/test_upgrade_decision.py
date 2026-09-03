@@ -1,11 +1,36 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
 from fastapi.testclient import TestClient
 
-from app.models import IloSetupIntent
-from app.providers.probe_cache import clear_probe_results, record_probe_result
-from app.schemas import UpgradeCandidateRead, UpgradeRuleRead, UpgradeSubjectRead
+from app.providers.base import ProviderStatus
+from app.models import DeviceInventory, IloSetupIntent
+from app.providers.ilo_redfish import ilo_target_fingerprint
+from app.providers.probe_cache import (
+    clear_probe_results,
+    record_probe_result as _record_probe_result,
+)
+from app.schemas import (
+    IloUpgradeReadinessRead,
+    UpgradeCandidateRead,
+    UpgradeDecisionRead,
+    UpgradeRuleRead,
+    UpgradeSubjectRead,
+)
+from app.services import ilo_readiness
 from app.services.upgrade_decision import decide_upgrade
+
+
+def record_probe_result(provider_id: str, payload: dict[str, Any]) -> None:
+    if provider_id == "ilo-redfish":
+        payload = {
+            "target_fingerprint": ilo_target_fingerprint("192.168.1.201"),
+            **payload,
+        }
+    _record_probe_result(provider_id, payload)
 
 
 def _subject(
@@ -232,6 +257,49 @@ def test_ilo_readiness_summary_normalizes_readonly_state(client: TestClient) -> 
     assert payload["disabled_dangerous_actions"]
     assert all(not action["enabled"] for action in payload["disabled_dangerous_actions"])
     clear_probe_results()
+
+
+def test_ilo_readiness_summary_keeps_scalar_missing_fields_whole(monkeypatch) -> None:
+    class FakeIloRedfishAdapter:
+        def health(self) -> ProviderStatus:
+            return ProviderStatus(
+                name="HPE iLO",
+                kind="oob-management",
+                mode="local-readonly",
+                status="missing-config",
+                capabilities=[],
+                message="Missing config.",
+                configuration={
+                    "host_configured": False,
+                    "username_configured": True,
+                    "password_configured": True,
+                    "tls_verify": True,
+                    "timeout_seconds": 1.0,
+                    "missing_fields": " ILO_TEST_HOST ",
+                },
+            )
+
+    monkeypatch.setattr(ilo_readiness, "IloRedfishAdapter", FakeIloRedfishAdapter)
+    monkeypatch.setattr(ilo_readiness, "get_media_inventory", lambda: SimpleNamespace(mode="sample"))
+    monkeypatch.setattr(
+        ilo_readiness,
+        "get_ilo_upgrade_readiness",
+        lambda: IloUpgradeReadinessRead(
+            provider_id="ilo-redfish",
+            subject=_subject(current_version=None, generation=None),
+            candidates=[],
+            decision=UpgradeDecisionRead(
+                status="discovery_incomplete",
+                next_safe_action="Run read-only discovery.",
+            ),
+        ),
+    )
+    clear_probe_results()
+
+    summary = ilo_readiness.get_ilo_readiness_summary()
+
+    assert summary.connection.missing_fields == ["ILO_TEST_HOST"]
+    assert "I" not in summary.connection.missing_fields
 
 
 def test_ilo_readiness_summary_reports_inventory_collection_auth_failure(
@@ -487,7 +555,9 @@ def test_ilo_setup_plan_preview_is_plan_only(client: TestClient) -> None:
     assert {
         "network",
         "users",
+        "license",
         "snmp",
+        "ipv6",
         "time",
         "dns_domain",
         "firmware_readiness",
@@ -586,21 +656,51 @@ def test_ilo_setup_intent_can_be_saved_and_feeds_preview(client: TestClient) -> 
         "/api/v1/providers/ilo-redfish/setup-intent",
         json={
             "network": {
+                "dhcp_enabled": False,
                 "hostname": "ilo-lab-target",
                 "management_ip": "planned-management-ip",
                 "subnet_mask_or_prefix": "planned-prefix",
                 "gateway": "planned-gateway",
                 "vlan": "planned-vlan",
             },
-            "users": [{"username_label": "breakglass-admin", "role": "administrator"}],
+            "users": [
+                {
+                    "password_ref_label": "breakglass-password-ref",
+                    "role": "administrator",
+                    "username_label": "breakglass-admin",
+                }
+            ],
+            "license": {
+                "advanced_license_key_ref": "ilo-advanced-license-ref",
+                "expected_status": "iLO Advanced OK",
+            },
             "snmp": {
                 "enabled": True,
+                "version": "v3",
+                "system_location": "X666",
+                "system_contact": "Operations",
+                "system_role": "iLO Admin Server",
                 "destinations": ["monitoring-placeholder"],
                 "community_or_user_ref_labels": ["snmp-reference-label"],
+                "snmpv3_security_name": "monitor",
+                "snmpv3_auth_protocol": "MD5",
+                "snmpv3_auth_passphrase_ref": "snmp-auth-ref",
+                "snmpv3_privacy_protocol": "DES",
+                "snmpv3_privacy_passphrase_ref": "snmp-privacy-ref",
+            },
+            "ipv6": {
+                "disable_all": True,
+                "disable_dhcpv6_dns_server": True,
+                "disable_dhcpv6_domain_name": True,
+                "disable_dhcpv6_sntp_settings": True,
+                "disable_dhcpv6_stateful_mode": True,
+                "disable_dhcpv6_stateless_mode": True,
             },
             "time": {
+                "use_dhcp_supplied_time_settings": False,
                 "timezone": "UTC",
                 "ntp_servers": ["ntp-placeholder"],
+                "interface_type": "iLO Dedicated Network Port",
             },
             "dns_domain": {
                 "domain_name": "lab.example",
@@ -614,7 +714,13 @@ def test_ilo_setup_intent_can_be_saved_and_feeds_preview(client: TestClient) -> 
     intent = response.json()
     assert intent["provider_id"] == "ilo-redfish"
     assert intent["apply_enabled"] is False
+    assert intent["network"]["dhcp_enabled"] is False
     assert intent["users"][0]["username_label"] == "breakglass-admin"
+    assert intent["license"]["advanced_license_key_ref"] == "ilo-advanced-license-ref"
+    assert intent["snmp"]["system_location"] == "X666"
+    assert intent["snmp"]["snmpv3_security_name"] == "monitor"
+    assert intent["ipv6"]["disable_all"] is True
+    assert intent["time"]["use_dhcp_supplied_time_settings"] is False
 
     read_response = client.get("/api/v1/providers/ilo-redfish/setup-intent")
     assert read_response.status_code == 200
@@ -625,7 +731,9 @@ def test_ilo_setup_intent_can_be_saved_and_feeds_preview(client: TestClient) -> 
     sections = {section["id"]: section for section in preview_response.json()["sections"]}
     assert sections["network"]["status"] in {"planned", "warning"}
     assert sections["users"]["status"] == "planned"
+    assert sections["license"]["status"] == "planned"
     assert sections["snmp"]["status"] == "planned"
+    assert sections["ipv6"]["status"] == "planned"
     assert sections["time"]["status"] == "planned"
     assert sections["dns_domain"]["status"] == "planned"
     assert all(not section["apply_enabled"] for section in sections.values())
@@ -763,6 +871,76 @@ def test_hpe_raid_intent_feeds_plan_preview(client: TestClient) -> None:
     assert any("RAID" in action for action in preview["disabled_actions"])
 
 
+def test_hpe_local_storage_recommends_simple_two_drive_layout(client: TestClient) -> None:
+    clear_probe_results()
+    record_probe_result("ilo-redfish", _storage_probe_with_drives(2))
+
+    response = client.get("/api/v1/providers/ilo-redfish/hpe-raid-plan-preview")
+
+    assert response.status_code == 200
+    readiness = response.json()["local_storage_readiness"]
+    assert readiness["status"] == "recommendation"
+    assert readiness["facts"]["usable_drive_count"] == 2
+    assert readiness["candidate_volumes"] == [
+        {
+            "name": "ESXi-local",
+            "purpose": "ESXi boot and local datastore",
+            "raid_level": "RAID1",
+            "drive_bays": ["1", "2"],
+            "spare_bays": [],
+            "size_policy": "max",
+            "bootable": True,
+        }
+    ]
+
+
+def test_hpe_local_storage_recommends_os_and_datastore_for_larger_servers(client: TestClient) -> None:
+    clear_probe_results()
+    record_probe_result("ilo-redfish", _storage_probe_with_drives(8))
+
+    response = client.get("/api/v1/providers/ilo-redfish/hpe-raid-plan-preview")
+
+    assert response.status_code == 200
+    readiness = response.json()["local_storage_readiness"]
+    assert readiness["status"] == "recommendation"
+    assert readiness["facts"]["usable_drive_count"] == 8
+    assert readiness["candidate_volumes"][0]["raid_level"] == "RAID1"
+    assert readiness["candidate_volumes"][0]["drive_bays"] == ["1", "2"]
+    assert readiness["candidate_volumes"][1]["raid_level"] == "RAID6"
+    assert readiness["candidate_volumes"][1]["drive_bays"] == ["3", "4", "5", "6", "7", "8"]
+
+
+def test_hpe_local_storage_warns_and_uses_largest_matching_drive_group(client: TestClient) -> None:
+    clear_probe_results()
+    probe = _storage_probe_with_drives(6)
+    probe["storage"]["physical_drives"][4]["CapacityBytes"] = 600 * 1000 * 1000 * 1000
+    probe["storage"]["physical_drives"][5]["MediaType"] = "SSD"
+    record_probe_result("ilo-redfish", probe)
+
+    response = client.get("/api/v1/providers/ilo-redfish/hpe-raid-plan-preview")
+
+    assert response.status_code == 200
+    readiness = response.json()["local_storage_readiness"]
+    assert readiness["status"] == "recommendation"
+    assert readiness["facts"]["usable_drive_count"] == 4
+    assert readiness["candidate_layout"]["selected_drive_bays"] == ["1", "2", "3", "4"]
+    assert any("Mixed drive media or capacity" in warning for warning in readiness["warnings"])
+
+
+def test_hpe_local_storage_blocks_failed_drives(client: TestClient) -> None:
+    clear_probe_results()
+    probe = _storage_probe_with_drives(4)
+    probe["storage"]["physical_drives"][2]["Status"] = {"Health": "Critical"}
+    record_probe_result("ilo-redfish", probe)
+
+    response = client.get("/api/v1/providers/ilo-redfish/hpe-raid-plan-preview")
+
+    assert response.status_code == 200
+    readiness = response.json()["local_storage_readiness"]
+    assert readiness["status"] == "blocked"
+    assert any("Drive health needs review" in blocker for blocker in readiness["blockers"])
+
+
 def test_hpe_raid_apply_plan_is_gated(client: TestClient) -> None:
     response = client.get("/api/v1/providers/ilo-redfish/hpe-raid-apply-plan")
 
@@ -792,6 +970,47 @@ def test_hpe_raid_intent_rejects_secret_like_values(client: TestClient) -> None:
     )
 
     assert response.status_code == 422
+
+
+def _storage_probe_with_drives(count: int) -> dict[str, Any]:
+    return {
+        "provider_id": "ilo-redfish",
+        "status": "ok",
+        "systems": [
+            {
+                "Model": "Generic rack server",
+                "PowerState": "On",
+                "Status": {"Health": "OK"},
+                "serial_number_present": True,
+            }
+        ],
+        "storage": {
+            "status": "ok",
+            "controllers": [
+                {
+                    "Id": "controller-1",
+                    "Name": "Generic RAID Controller",
+                    "Status": {"Health": "OK"},
+                }
+            ],
+            "physical_drives": [
+                {
+                    "Id": f"drive-{bay}",
+                    "Name": f"Drive {bay}",
+                    "Bay": bay,
+                    "CapacityBytes": 1200 * 1000 * 1000 * 1000,
+                    "MediaType": "HDD",
+                    "InterfaceType": "SAS",
+                    "Status": {"Health": "OK"},
+                }
+                for bay in range(1, count + 1)
+            ],
+            "logical_drives": [],
+            "warnings": [],
+        },
+        "warnings": [],
+        "blockers": [],
+    }
 
 
 def test_ilo_setup_compare_empty_intent_reports_missing_and_unknown(
@@ -901,6 +1120,440 @@ def test_ilo_setup_compare_unknown_discovery_is_not_mismatch(client: TestClient)
     assert "discovered_unknown" in statuses
 
 
+def test_ilo_setup_compare_network_identity_reports_match_and_mismatch(
+    client: TestClient,
+) -> None:
+    clear_probe_results()
+    client.put(
+        "/api/v1/providers/ilo-redfish/setup-intent",
+        json={
+            "network": {
+                "dhcp_enabled": False,
+                "hostname": "ilo-lab-target",
+                "management_ip": "192.168.1.201",
+                "subnet_mask_or_prefix": "255.255.255.0",
+                "gateway": "192.168.1.1",
+                "vlan": "10",
+            },
+        },
+    )
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "network_identity": {
+                "status": "ok",
+                "dns_name": "ilo-lab-target",
+                "ip_address": "192.168.1.11",
+                "subnet_mask": "255.255.255.0",
+                "gateway": "192.168.1.1",
+                "dhcp_enabled": False,
+                "vlan_enabled": True,
+                "vlan_id": 20,
+            },
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/setup-compare")
+
+    assert response.status_code == 200
+    network = {section["id"]: section for section in response.json()["sections"]}["network"]
+    rows = {row["field"]: row for row in network["rows"]}
+
+    assert rows["dhcp_enabled"]["status"] == "match"
+    assert rows["dhcp_enabled"]["discovered"] == "disabled"
+
+    assert rows["hostname"]["status"] == "match"
+    assert rows["hostname"]["desired"] == "configured"
+    assert rows["hostname"]["discovered"] == "matches saved intent"
+
+    assert rows["management_ip"]["status"] == "mismatch"
+    assert rows["management_ip"]["desired"] == "configured"
+    assert rows["management_ip"]["discovered"] == "differs from saved intent"
+    assert "192.168.1.11" not in response.text
+    assert "192.168.1.201" not in response.text
+
+    assert rows["subnet_mask_or_prefix"]["status"] == "match"
+    assert rows["gateway"]["status"] == "match"
+
+    assert rows["vlan"]["status"] == "mismatch"
+    assert rows["vlan"]["discovered"] == "20"
+
+    assert network["status"] == "mismatch"
+    clear_probe_results()
+
+
+def test_ilo_setup_compare_license_status_reports_match(client: TestClient) -> None:
+    clear_probe_results()
+    client.put(
+        "/api/v1/providers/ilo-redfish/setup-intent",
+        json={"license": {"expected_status": "Enabled"}},
+    )
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "licenses": [
+                {"name": "iLO Advanced", "product_type": "Perpetual", "status_state": "Enabled"}
+            ],
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/setup-compare")
+
+    assert response.status_code == 200
+    license_section = {
+        section["id"]: section for section in response.json()["sections"]
+    }["license"]
+    status_row = next(
+        row for row in license_section["rows"] if row["field"] == "expected_status"
+    )
+    assert status_row["status"] == "match"
+    assert status_row["discovered"] == "Enabled"
+    clear_probe_results()
+
+
+def test_ilo_setup_compare_time_and_dns_reports_match_and_mismatch(
+    client: TestClient,
+) -> None:
+    clear_probe_results()
+    client.put(
+        "/api/v1/providers/ilo-redfish/setup-intent",
+        json={
+            "time": {"timezone": "UTC", "ntp_servers": ["ntp1.lab.example", "ntp2.lab.example"]},
+            "dns_domain": {
+                "domain_name": "lab.example",
+                "dns_servers": ["10.0.0.53"],
+            },
+        },
+    )
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "time_and_dns": {
+                "status": "ok",
+                "timezone": "UTC",
+                "ntp_servers": ["ntp2.lab.example", "ntp1.lab.example"],
+                "ntp_protocol_enabled": True,
+                "domain_name": "example.com",
+                "dns_servers": ["10.0.0.53"],
+            },
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/setup-compare")
+
+    assert response.status_code == 200
+    sections = {section["id"]: section for section in response.json()["sections"]}
+    time_section = sections["time"]
+    dns_section = sections["dns_domain"]
+    time_rows = {row["field"]: row for row in time_section["rows"]}
+    dns_rows = {row["field"]: row for row in dns_section["rows"]}
+
+    assert time_rows["timezone"]["status"] == "match"
+    assert time_rows["timezone"]["discovered"] == "UTC"
+
+    assert time_rows["ntp_servers"]["status"] == "match"
+    assert time_rows["ntp_servers"]["desired"] == "configured"
+    assert time_rows["ntp_servers"]["discovered"] == "matches saved intent"
+
+    assert dns_rows["domain_name"]["status"] == "mismatch"
+    assert dns_rows["domain_name"]["discovered"] == "differs from saved intent"
+    assert "example.com" not in response.text
+    assert "lab.example" not in response.text
+
+    assert dns_rows["dns_servers"]["status"] == "match"
+    clear_probe_results()
+
+
+def test_ilo_setup_compare_snmp_enabled_reports_match_and_mismatch(
+    client: TestClient,
+) -> None:
+    clear_probe_results()
+    client.put(
+        "/api/v1/providers/ilo-redfish/setup-intent",
+        json={"snmp": {"enabled": True}},
+    )
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "time_and_dns": {
+                "status": "ok",
+                "timezone": None,
+                "ntp_servers": [],
+                "ntp_protocol_enabled": None,
+                "domain_name": None,
+                "dns_servers": [],
+                "snmp_protocol_enabled": False,
+            },
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/setup-compare")
+
+    assert response.status_code == 200
+    snmp_section = {section["id"]: section for section in response.json()["sections"]}["snmp"]
+    enabled_row = next(row for row in snmp_section["rows"] if row["field"] == "enabled")
+    assert enabled_row["status"] == "mismatch"
+    assert enabled_row["desired"] == "enabled"
+    assert enabled_row["discovered"] == "disabled"
+    clear_probe_results()
+
+
+def test_ilo_setup_compare_local_usernames_reports_match_and_mismatch(
+    client: TestClient,
+) -> None:
+    clear_probe_results()
+    client.put(
+        "/api/v1/providers/ilo-redfish/setup-intent",
+        json={
+            "users": [
+                {"username_label": "operator-one", "role": "readonly"},
+                {"username_label": "operator-two", "role": "admin"},
+            ]
+        },
+    )
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "local_users": [
+                {"username": "operator-one", "role": "ReadOnly", "enabled": True},
+                {"username": "operator-three", "role": "Administrator", "enabled": True},
+            ],
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/setup-compare")
+
+    assert response.status_code == 200
+    users_section = {section["id"]: section for section in response.json()["sections"]}["users"]
+    row = next(
+        row for row in users_section["rows"] if row["field"] == "desired_local_usernames"
+    )
+    assert row["status"] == "mismatch"
+    assert row["desired"] == "configured"
+    assert row["discovered"] == "differs from saved intent"
+    assert "operator-one" not in response.text
+    assert "operator-three" not in response.text
+    clear_probe_results()
+
+
+def test_ilo_discovered_settings_empty_without_cached_probe(client: TestClient) -> None:
+    clear_probe_results()
+
+    response = client.get("/api/v1/providers/ilo-redfish/discovered-settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is False
+    assert payload["probe_time"] is None
+    assert payload["network"]["management_ip"] is None
+    assert payload["network"]["dhcp_enabled"] is None
+    assert payload["time"]["ntp_servers"] == []
+    assert payload["dns_domain"]["dns_servers"] == []
+    assert payload["license"]["status"] is None
+    assert payload["snmp"]["enabled"] is None
+    assert payload["users"] == []
+
+
+def test_ilo_discovered_settings_returns_raw_cached_values(client: TestClient) -> None:
+    clear_probe_results()
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "network_identity": {
+                "status": "ok",
+                "dns_name": "ilo-lab-target",
+                "dhcp_enabled": False,
+                "ip_address": "192.168.1.201",
+                "subnet_mask": "255.255.255.0",
+                "gateway": "192.168.1.1",
+                "vlan_enabled": True,
+                "vlan_id": 20,
+                "name_servers": ["8.8.8.8"],
+            },
+            "time_and_dns": {
+                "status": "ok",
+                "timezone": "UTC",
+                "ntp_servers": ["ntp1.lab.example"],
+                "ntp_protocol_enabled": True,
+                "domain_name": "lab.example",
+                "dns_servers": [],
+                "snmp_protocol_enabled": True,
+            },
+            "licenses": [
+                {"name": "iLO Advanced", "product_type": "Perpetual", "status_state": "Enabled"}
+            ],
+            "local_users": [
+                {"username": "operator-one", "role": "Administrator", "enabled": True},
+            ],
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/discovered-settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["probe_time"] is not None
+    assert payload["network"]["hostname"] == "ilo-lab-target"
+    assert payload["network"]["dhcp_enabled"] is False
+    assert payload["network"]["management_ip"] == "192.168.1.201"
+    assert payload["network"]["subnet_mask_or_prefix"] == "255.255.255.0"
+    assert payload["network"]["gateway"] == "192.168.1.1"
+    assert payload["network"]["vlan"] == "20"
+    assert payload["time"]["timezone"] == "UTC"
+    assert payload["time"]["ntp_servers"] == ["ntp1.lab.example"]
+    assert payload["dns_domain"]["domain_name"] == "lab.example"
+    # NetworkProtocol OEM DNS list is empty, so the EthernetInterface
+    # NameServers fallback should fill in.
+    assert payload["dns_domain"]["dns_servers"] == ["8.8.8.8"]
+    assert payload["license"]["status"] == "Enabled"
+    assert payload["snmp"]["enabled"] is True
+    assert payload["users"] == [
+        {"username": "operator-one", "role": "Administrator", "enabled": True}
+    ]
+    clear_probe_results()
+
+
+def test_ilo_discovered_settings_partial_probe_and_redacted_values(
+    client: TestClient,
+) -> None:
+    clear_probe_results()
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "network_identity": {
+                "status": "ok",
+                "dns_name": "REDACTED",
+                "dhcp_enabled": None,
+                "ip_address": "REDACTED",
+                "subnet_mask": "255.255.255.0",
+                "gateway": None,
+                "vlan_enabled": False,
+                "vlan_id": None,
+            },
+            "time_and_dns": {"status": "unavailable", "message": "read failed"},
+            "licenses": [],
+            "local_users": [],
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/discovered-settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    # Redacted hostname has no substitute -> null, never the literal REDACTED.
+    assert payload["network"]["hostname"] is None
+    assert payload["network"]["subnet_mask_or_prefix"] == "255.255.255.0"
+    assert payload["network"]["gateway"] is None
+    assert payload["network"]["vlan"] is None
+    # time_and_dns read failed -> its whole section stays null/empty.
+    assert payload["time"]["timezone"] is None
+    assert payload["dns_domain"]["domain_name"] is None
+    assert payload["snmp"]["enabled"] is None
+    assert "REDACTED" not in response.text
+    clear_probe_results()
+
+
+def test_ilo_discovered_settings_stays_empty_when_target_changed_after_probe(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.providers.ilo_redfish import ilo_target_fingerprint
+
+    clear_probe_results()
+    monkeypatch.setenv("ILO_TEST_HOST", "192.168.1.201")
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "target_fingerprint": ilo_target_fingerprint("192.168.1.11"),
+            "network_identity": {
+                "status": "ok",
+                "dns_name": "old-target-name",
+                "ip_address": "REDACTED",
+                "subnet_mask": "255.255.255.0",
+            },
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/discovered-settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["target_matches_current_access"] is False
+    assert payload["available"] is False
+    assert payload["network"]["hostname"] is None
+    assert payload["network"]["management_ip"] is None
+    assert "old-target-name" not in response.text
+    clear_probe_results()
+
+
+def test_ilo_discovered_settings_substitutes_redacted_only_on_target_match(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.providers.ilo_redfish import ilo_target_fingerprint
+
+    clear_probe_results()
+    monkeypatch.setenv("ILO_TEST_HOST", "192.168.1.201")
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "target_fingerprint": ilo_target_fingerprint("192.168.1.201"),
+            "network_identity": {
+                "status": "ok",
+                "dns_name": "current-target-name",
+                "ip_address": "REDACTED",
+                "subnet_mask": "255.255.255.0",
+            },
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/discovered-settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["target_matches_current_access"] is True
+    assert payload["available"] is True
+    assert payload["network"]["management_ip"] == "192.168.1.201"
+    assert payload["network"]["hostname"] == "current-target-name"
+    clear_probe_results()
+
+
 def test_ilo_report_preview_empty_intent(client: TestClient) -> None:
     clear_probe_results()
 
@@ -930,11 +1583,28 @@ def test_ilo_report_preview_saved_intent_is_redacted(client: TestClient) -> None
                 "gateway": "planned-gateway",
                 "vlan": "planned-vlan",
             },
-            "users": [{"username_label": "operator-label", "role": "administrator"}],
+            "users": [
+                {
+                    "password_ref_label": "operator-password-ref",
+                    "role": "administrator",
+                    "username_label": "operator-label",
+                }
+            ],
+            "license": {
+                "advanced_license_key_ref": "ilo-advanced-license-ref",
+                "expected_status": "iLO Advanced OK",
+            },
             "snmp": {
                 "enabled": True,
+                "version": "v3",
+                "system_location": "X666",
+                "system_contact": "Operations",
+                "system_role": "iLO Admin Server",
                 "destinations": ["monitoring-placeholder"],
                 "community_or_user_ref_labels": ["snmp-ref"],
+                "snmpv3_security_name": "monitor",
+                "snmpv3_auth_passphrase_ref": "snmp-auth-ref",
+                "snmpv3_privacy_passphrase_ref": "snmp-privacy-ref",
             },
             "time": {"timezone": "UTC", "ntp_servers": ["ntp-placeholder"]},
             "dns_domain": {
@@ -952,11 +1622,18 @@ def test_ilo_report_preview_saved_intent_is_redacted(client: TestClient) -> None
     assert "planned-management-ip" not in encoded
     assert "planned-gateway" not in encoded
     assert "operator-label" not in encoded
+    assert "operator-password-ref" not in encoded
+    assert "ilo-advanced-license-ref" not in encoded
     assert "snmp-ref" not in encoded
+    assert "snmp-auth-ref" not in encoded
+    assert "snmp-privacy-ref" not in encoded
     payload = response.json()
     assert payload["desired_setup_intent"]["network"]["management_ip"] == "configured"
     assert payload["desired_setup_intent"]["users"]["desired_local_username_labels"] == "configured:1"
+    assert payload["desired_setup_intent"]["users"]["password_reference_labels"] == "configured:1"
+    assert payload["desired_setup_intent"]["license"]["advanced_license_key_ref"] == "configured"
     assert payload["desired_setup_intent"]["snmp"]["community_or_user_ref_labels"] == "configured:1"
+    assert payload["desired_setup_intent"]["snmp"]["snmpv3_auth_passphrase_ref"] == "configured"
 
 
 def test_ilo_report_preview_cached_discovery(client: TestClient) -> None:
@@ -1005,8 +1682,16 @@ def test_ilo_report_preview_redacts_secret_like_persisted_values(
     client: TestClient,
     db_session,
 ) -> None:
+    device = DeviceInventory(
+        device_type="ilo",
+        display_name="Mock report iLO",
+        host="192.0.2.55",
+    )
+    db_session.add(device)
+    db_session.flush()
     db_session.add(
         IloSetupIntent(
+            device_id=device.id,
             provider_id="ilo-redfish",
             intent_json={
                 "network": {"management_ip": "secret=do-not-print"},
@@ -1024,7 +1709,10 @@ def test_ilo_report_preview_redacts_secret_like_persisted_values(
     )
     db_session.commit()
 
-    response = client.get("/api/v1/providers/ilo-redfish/report-preview")
+    response = client.get(
+        "/api/v1/providers/ilo-redfish/report-preview",
+        params={"device_id": device.id},
+    )
 
     assert response.status_code == 200
     encoded = response.text.lower()

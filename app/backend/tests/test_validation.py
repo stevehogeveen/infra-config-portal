@@ -5,7 +5,7 @@ from datetime import date, timedelta
 import pytest
 from pydantic import ValidationError
 
-from app.schemas import VMDeploymentCreate
+from app.schemas import LabProfileWrite, VMDeploymentCreate
 
 
 def test_vm_request_accepts_required_mvp_fields(vm_payload: dict) -> None:
@@ -51,3 +51,28 @@ def test_vm_request_requires_future_expiry(vm_payload: dict) -> None:
         VMDeploymentCreate.model_validate(vm_payload)
 
     assert "expiry_date must be in the future" in str(exc.value)
+
+
+def test_lab_profile_devices_accept_server_model_schema_home() -> None:
+    payload = LabProfileWrite.model_validate(
+        {
+            "name": "Visual Lab",
+            "devices": {"server_model": "gen10plus"},
+            "address_plan": {"subnet": "192.168.200.0/24"},
+        }
+    )
+
+    assert payload.devices.server_model == "gen10plus"
+
+
+def test_lab_profile_devices_reject_unknown_server_model() -> None:
+    with pytest.raises(ValidationError) as exc:
+        LabProfileWrite.model_validate(
+            {
+                "name": "Visual Lab",
+                "devices": {"server_model": "gen11-ish"},
+                "address_plan": {"subnet": "192.168.200.0/24"},
+            }
+        )
+
+    assert "server_model" in str(exc.value)

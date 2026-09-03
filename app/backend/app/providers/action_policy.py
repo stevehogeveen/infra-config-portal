@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from app.core.config import settings
+from app.services.lab_safety_settings import read_lab_safety_overrides
 
 LOCAL_READONLY_MODE = "local-readonly"
 LOCAL_LAB_READWRITE_MODE = "local-lab-readwrite"
@@ -54,6 +55,7 @@ ALLOWLISTED_WORKFLOW_ACTIONS = frozenset(
         "ilo-redfish.inventory",
         "ilo-redfish.readiness",
         "ilo-redfish.hpe-raid-apply",
+        "ilo-redfish.hpe-raid-factory-reset",
         "ilo-redfish.hpe-raid-reset",
         "ilo-redfish.hpe-raid-validate-after-reset",
         "cisco-console.bootstrap",
@@ -65,12 +67,14 @@ ALLOWLISTED_WORKFLOW_ACTIONS = frozenset(
         "esxi.install-config",
         "esxi.datastore-vswitch-vmkernel",
         "vm.deploy-ovf",
+        "vm.teardown",
         "vcenter.vcsa-deploy",
         "vcenter.attach-esxi",
         "netapp.initial-setup",
         "netapp.address-remediation",
         "netapp.factory-reset",
         "netapp.nfs-setup",
+        "netapp.iscsi-setup",
         "netapp.svm-lif-iscsi",
         "netapp.ontap-upgrade",
         "netapp.component-firmware",
@@ -272,13 +276,16 @@ class LabActionPolicy:
 
 
 def current_lab_action_policy(provider_mode: str | None = None) -> LabActionPolicy:
+    overrides = read_lab_safety_overrides()
     return LabActionPolicy(
         provider_mode=provider_mode or settings.provider_mode,
-        lab_environment=settings.lab_environment,
-        acknowledge_real_hardware=settings.lab_acknowledge_real_hardware,
-        acknowledge_device_reconfiguration=settings.lab_acknowledge_device_reconfiguration,
-        acknowledge_data_loss_risk=settings.lab_acknowledge_data_loss_risk,
-        acknowledge_lab_only=settings.lab_acknowledge_lab_only,
+        lab_environment=overrides.get("lab_environment", settings.lab_environment),
+        acknowledge_real_hardware=bool(overrides.get("lab_acknowledge_real_hardware", settings.lab_acknowledge_real_hardware)),
+        acknowledge_device_reconfiguration=bool(
+            overrides.get("lab_acknowledge_device_reconfiguration", settings.lab_acknowledge_device_reconfiguration)
+        ),
+        acknowledge_data_loss_risk=bool(overrides.get("lab_acknowledge_data_loss_risk", settings.lab_acknowledge_data_loss_risk)),
+        acknowledge_lab_only=bool(overrides.get("lab_acknowledge_lab_only", settings.lab_acknowledge_lab_only)),
         allow_power_actions=settings.lab_allow_power_actions,
         allow_firmware_updates=settings.lab_allow_firmware_updates,
         allow_factory_reset=settings.lab_allow_factory_reset,

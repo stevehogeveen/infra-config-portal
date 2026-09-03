@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from datetime import UTC, datetime
 from ipaddress import ip_address
@@ -8,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from app.providers.redaction import redact_sensitive
+from app.services.env_utils import bool_value
+from app.services.json_file_store import read_json_object, write_json_object
 from app.services.lab_profiles import active_lab_profile_for_report
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -81,10 +82,10 @@ def update_control_access_config(section_id: str, payload: dict[str, Any]) -> di
         else _saved_editable_fields(previous.get("editable_fields"))
     )
     store[section_id] = {
-        "first_time_configuring": bool(payload.get("first_time_configuring", True)),
+        "first_time_configuring": bool_value(payload.get("first_time_configuring", True), True),
         "original_dhcp_ip": _clean_string(payload.get("original_dhcp_ip")),
         "username_reference": _clean_string(payload.get("username_reference")),
-        "password_configured": bool(payload.get("password_configured", False)),
+        "password_configured": bool_value(payload.get("password_configured", False), False),
         "password_reference_label": None,
         "editable_fields": editable_fields,
         "updated_at": _now(),
@@ -103,8 +104,8 @@ def _read_config(
     address_plan = lab_profile.get("address_plan") or {}
     original_dhcp_ip = _clean_string(saved.get("original_dhcp_ip"))
     username_reference = _clean_string(saved.get("username_reference"))
-    password_configured = bool(saved.get("password_configured", False))
-    first_time_configuring = bool(saved.get("first_time_configuring", True))
+    password_configured = bool_value(saved.get("password_configured", False), False)
+    first_time_configuring = bool_value(saved.get("first_time_configuring", True), True)
     saved_fields = _saved_editable_fields(saved.get("editable_fields"))
     blockers = []
     if first_time_configuring and not original_dhcp_ip:
@@ -215,11 +216,13 @@ def _editable_field_overrides(section_id: str, fields: Any) -> dict[str, str]:
 def _saved_editable_fields(fields: Any) -> dict[str, str]:
     if not isinstance(fields, dict):
         return {}
-    return {
-        str(label): str(value)
-        for label, value in fields.items()
-        if _clean_string(label) and _clean_string(value)
-    }
+    normalized: dict[str, str] = {}
+    for label, value in fields.items():
+        clean_label = _clean_string(label)
+        clean_value = _clean_string(value)
+        if clean_label and clean_value:
+            normalized[clean_label] = clean_value
+    return normalized
 
 
 def _validate_editable_field(section_id: str, label: str, value: str) -> None:
@@ -253,20 +256,11 @@ def _store_path() -> Path:
 
 
 def _read_store() -> dict[str, Any]:
-    path = _store_path()
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
+    return read_json_object(_store_path())
 
 
 def _write_store(store: dict[str, Any]) -> None:
-    path = _store_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(redact_sensitive(store), indent=2, sort_keys=True), encoding="utf-8")
+    write_json_object(_store_path(), redact_sensitive(store))
 
 
 def _validate_ip(value: Any) -> None:

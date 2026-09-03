@@ -26,6 +26,14 @@ from app.providers.probe_cache import record_probe_result
 from app.providers.redaction import redact_sensitive
 from app.schemas import IloSetupApplyCreate
 from app.services.ilo_readiness import get_ilo_setup_intent
+from app.services.ilo_write_target import (
+    compact_ilo_write_target,
+    exact_ilo_write_config,
+    refresh_ilo_write_target_context,
+    requested_ilo_write_host,
+    resolve_ilo_write_target_context,
+)
+from app.services.list_utils import unique_preserving_order, unique_strings
 
 APPLY_PROVIDER_ID = "ilo-redfish-setup-apply"
 CONFIRMATION_PHRASE = "APPLY ILO HOSTNAME SETUP"
@@ -47,8 +55,12 @@ BLOCKED_ACTIONS = [
 ]
 
 
-def build_ilo_setup_apply_plan(session: Session) -> dict[str, Any]:
-    config = IloRedfishConfig.from_settings()
+def build_ilo_setup_apply_plan(
+    session: Session,
+    *,
+    config: IloRedfishConfig | None = None,
+) -> dict[str, Any]:
+    config = config or IloRedfishConfig.from_settings()
     intent = get_ilo_setup_intent(session)
     hostname = intent.network.hostname
     blockers: list[str] = []
@@ -122,7 +134,7 @@ def build_ilo_setup_apply_plan(session: Session) -> dict[str, Any]:
             "The action must be represented as an explicit workflow step.",
             "This lane only changes iLO HostName; IP, gateway, VLAN, user, firmware, power, and reset remain blocked here.",
         ],
-        "blockers": list(dict.fromkeys([*blockers, *gate_blockers])),
+        "blockers": unique_preserving_order([*blockers, *gate_blockers]),
         "warnings": warnings,
         "confirmation_phrase": CONFIRMATION_PHRASE,
         "next_safe_action": (
@@ -133,28 +145,46 @@ def build_ilo_setup_apply_plan(session: Session) -> dict[str, Any]:
 
 
 def apply_ilo_setup(session: Session, payload: IloSetupApplyCreate) -> dict[str, Any]:
-    config = IloRedfishConfig.from_settings()
-    plan = build_ilo_setup_apply_plan(session)
-    blockers = list(plan["blockers"])
-    blockers.extend(_environment_gate_blockers(config, confirmation_phrase=payload.confirmation_phrase))
+    requested_host = requested_ilo_write_host(payload.ilo_host)
+    write_target, target_blockers = resolve_ilo_write_target_context(requested_host)
+    config = exact_ilo_write_config(write_target) if write_target is not None else None
+    planning_config = config or IloRedfishConfig.from_settings()
+    plan = build_ilo_setup_apply_plan(session, config=planning_config)
+    blockers = [*target_blockers, *plan["blockers"]]
+    blockers.extend(
+        _environment_gate_blockers(
+            planning_config,
+            confirmation_phrase=payload.confirmation_phrase,
+        )
+    )
     if payload.destructive_action_requested or _requests_blocked_action(payload.requested_actions):
         blockers.append("Requested action includes a blocked or destructive iLO operation.")
+    if not blockers and write_target is not None:
+        refreshed_target, refreshed_config, refresh_blockers = (
+            refresh_ilo_write_target_context(write_target)
+        )
+        blockers.extend(refresh_blockers)
+        if refreshed_target is not None and refreshed_config is not None:
+            write_target = refreshed_target
+            config = refreshed_config
 
     if blockers:
         return _record_result(
-            config,
+            planning_config,
             {
                 "provider_id": APPLY_PROVIDER_ID,
                 "status": "blocked",
                 "message": "iLO setup apply was blocked; no Redfish PATCH was sent.",
                 "patch_attempted": False,
                 "patch_count": 0,
-                "blockers": list(dict.fromkeys(blockers)),
+                "blockers": unique_preserving_order(blockers),
                 "warnings": plan["warnings"],
+                "write_target": compact_ilo_write_target(write_target),
                 "checked_at": datetime.now(UTC).isoformat(),
             },
         )
 
+    assert config is not None
     intent = get_ilo_setup_intent(session)
     desired_hostname = intent.network.hostname
     assert desired_hostname is not None
@@ -247,6 +277,7 @@ def apply_ilo_setup(session: Session, payload: IloSetupApplyCreate) -> dict[str,
             "requests": requests,
             "blockers": blockers,
             "warnings": plan["warnings"],
+            "write_target": compact_ilo_write_target(write_target),
             "checked_at": datetime.now(UTC).isoformat(),
         },
         extra_redactions=[desired_hostname],
@@ -269,9 +300,11 @@ def _environment_gate_blockers(
     if settings.provider_mode == LOCAL_LAB_MODE:
         policy = current_lab_action_policy(settings.provider_mode)
         blockers.extend(
-            policy.action_blockers(
-                "ilo-redfish.manager-network-protocol-hostname",
-                ActionCategory.NETWORK_CONFIG,
+            unique_strings(
+                policy.action_blockers(
+                    "ilo-redfish.manager-network-protocol-hostname",
+                    ActionCategory.NETWORK_CONFIG,
+                )
             )
         )
     if settings.provider_mode not in {LOCAL_READONLY_MODE, LOCAL_LAB_MODE}:
@@ -287,7 +320,7 @@ def _environment_gate_blockers(
         blockers.append("LAB_TARGET_ACK must match the configured ILO_TEST_HOST value.")
     if confirmation_phrase != CONFIRMATION_PHRASE:
         blockers.append(f"Exact confirmation phrase is required: {CONFIRMATION_PHRASE}")
-    return list(dict.fromkeys(blockers))
+    return unique_preserving_order(blockers)
 
 
 def _manager_path(client: httpx.Client, base_url: str, requests: list[dict[str, Any]]) -> str:

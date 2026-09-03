@@ -1,10 +1,12 @@
 alembic==1.16.1
 fastapi==0.115.12
 httpx==0.28.1
-psycopg[binary]==3.2.9
+paramiko==5.0.0
+psycopg[binary]==3.2.13
 pydantic==2.11.5
 pytest==8.3.5
 python-dotenv==1.1.0
 pyserial==3.5
+ruff==0.15.21
 SQLAlchemy==2.0.41
 uvicorn[standard]==0.34.3

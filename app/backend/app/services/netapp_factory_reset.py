@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -9,6 +7,8 @@ from typing import Any
 from app.core.config import settings
 from app.providers.action_policy import ActionCategory, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
+from app.services.env_utils import env_flag as _env_flag
+from app.services.guarded_action_context import GuardedActionContext, guarded_confirmation, guarded_flag
 from app.services.netapp_address_plan import (
     ADDRESS_VALIDATION_REPORT,
     CODEX_RUN_DIR,
@@ -16,6 +16,9 @@ from app.services.netapp_address_plan import (
     REPO_ROOT,
     build_netapp_address_remediation_plan,
 )
+from app.services.json_file_store import write_json_object, write_text_value
+from app.services.list_utils import unique_preserving_order, unique_strings
+from app.services.path_utils import repo_relative_path
 
 FACTORY_RESET_PLAN_REPORT = CODEX_RUN_DIR / "netapp-factory-reset-plan-report.md"
 FACTORY_RESET_PLAN_JSON = CODEX_RUN_DIR / "netapp-factory-reset-plan-redacted.json"
@@ -79,9 +82,11 @@ def build_netapp_factory_reset_preview(*, write_report: bool = True) -> dict[str
     return sanitized
 
 
-def apply_netapp_factory_reset(*, write_report: bool = True) -> dict[str, Any]:
+def apply_netapp_factory_reset(
+    *, write_report: bool = True, guarded_context: GuardedActionContext | None = None
+) -> dict[str, Any]:
     preview = build_netapp_factory_reset_preview(write_report=True)
-    gates = _apply_gates()
+    gates = _apply_gates(guarded_context=guarded_context)
     blocked = bool(gates["blockers"])
     status = "blocked" if blocked else "not_implemented"
     payload = {
@@ -143,17 +148,22 @@ def validate_netapp_factory_reset(*, write_report: bool = True) -> dict[str, Any
     return sanitized
 
 
-def _apply_gates() -> dict[str, Any]:
+def _apply_gates(*, guarded_context: GuardedActionContext | None = None) -> dict[str, Any]:
     policy = current_lab_action_policy(settings.provider_mode)
     flag_state = {
         "provider_mode": settings.provider_mode,
         "lab_allow_factory_reset": policy.allow_factory_reset,
-        "netapp_factory_reset_apply": os.getenv("NETAPP_FACTORY_RESET_APPLY") == "true",
-        "netapp_factory_reset_confirm": os.getenv("NETAPP_FACTORY_RESET_CONFIRM") == FACTORY_RESET_CONFIRM_PHRASE,
-        "netapp_factory_reset_executor_enabled": os.getenv("NETAPP_FACTORY_RESET_EXECUTOR_ENABLED") == "true",
+        "netapp_factory_reset_apply": guarded_flag(
+            "NETAPP_FACTORY_RESET_APPLY", action_id="netapp.factory-reset-apply", context=guarded_context
+        ),
+        "netapp_factory_reset_confirm": guarded_confirmation(
+            "NETAPP_FACTORY_RESET_CONFIRM", action_id="netapp.factory-reset-apply", context=guarded_context
+        )
+        == FACTORY_RESET_CONFIRM_PHRASE,
+        "netapp_factory_reset_executor_enabled": _env_flag("NETAPP_FACTORY_RESET_EXECUTOR_ENABLED"),
     }
     blockers = []
-    blockers.extend(policy.action_blockers("netapp.factory-reset", ActionCategory.FACTORY_RESET))
+    blockers.extend(unique_strings(policy.action_blockers("netapp.factory-reset", ActionCategory.FACTORY_RESET)))
     if not flag_state["netapp_factory_reset_apply"]:
         blockers.append("NETAPP_FACTORY_RESET_APPLY=true is required.")
     if not flag_state["netapp_factory_reset_confirm"]:
@@ -204,8 +214,8 @@ def _markdown(title: str, payload: dict[str, Any]) -> str:
 
 def _write_payload(json_path: Path, report_path: Path, payload: dict[str, Any], markdown_builder: Any) -> None:
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    report_path.write_text(markdown_builder(payload), encoding="utf-8")
+    write_json_object(json_path, payload)
+    write_text_value(report_path, markdown_builder(payload))
 
 
 def _sanitize(payload: dict[str, Any]) -> dict[str, Any]:
@@ -213,7 +223,7 @@ def _sanitize(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _rel(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
+    return repo_relative_path(path, REPO_ROOT)
 
 
 def _now() -> str:
@@ -221,4 +231,4 @@ def _now() -> str:
 
 
 def _unique(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(item for item in values if item))
+    return unique_preserving_order(values, skip_falsey=True)

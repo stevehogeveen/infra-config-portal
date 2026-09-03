@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import os
+import socket
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -11,8 +11,13 @@ import httpx
 from app.core.config import settings
 from app.providers.action_policy import ActionCategory, LOCAL_LAB_READWRITE_MODE, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
+from app.services.guarded_action_context import GuardedActionContext, guarded_confirmation, guarded_flag
+from app.services.json_file_store import write_json_object, write_text_value
+from app.services.lab_profiles import active_lab_profile_context
+from app.services.list_utils import unique_preserving_order, unique_strings
 from app.services.netapp_real_lab import get_netapp_nfs_vcenter_readiness
 from app.services.netapp_state import get_netapp_runtime_state
+from app.services.path_utils import repo_relative_path
 
 PROVIDER_ID = "netapp-ontap"
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -72,11 +77,13 @@ def build_netapp_nfs_setup_preview(*, write_report: bool = True) -> dict[str, An
     return sanitized
 
 
-def apply_netapp_nfs_setup(*, write_report: bool = True) -> dict[str, Any]:
+def apply_netapp_nfs_setup(
+    *, write_report: bool = True, guarded_context: GuardedActionContext | None = None
+) -> dict[str, Any]:
     checked_at = _now()
     runtime_state = get_netapp_runtime_state()
     plan = _nfs_plan()
-    gates = _apply_gates(runtime_state, plan)
+    gates = _apply_gates(runtime_state, plan, guarded_context=guarded_context)
     blocked = bool(gates["blockers"])
     rest_apply = _rest_apply_not_attempted("Apply gates blocked before ONTAP REST session started.")
     if not blocked:
@@ -108,15 +115,15 @@ def apply_netapp_nfs_setup(*, write_report: bool = True) -> dict[str, Any]:
             "ontap_writes_attempted": bool(rest_apply.get("ontap_writes_attempted")),
             "esxi_writes_attempted": False,
             "vcenter_writes_attempted": False,
-            "transcript_summary": list(rest_apply.get("transcript_summary") or []),
+            "transcript_summary": _string_list(rest_apply.get("transcript_summary")),
             "rest_result": rest_apply,
         },
-        "blockers": gates["blockers"] + list(rest_apply.get("blockers") or []),
+        "blockers": _unique([*gates["blockers"], *_string_list(rest_apply.get("blockers"))]),
         "warnings": [
             "No secrets are printed or written to the apply report.",
             "Run NFS validation after a guarded NFS setup session completes.",
         ],
-        "not_attempted": _not_attempted(),
+        "not_attempted": _not_attempted(bool(rest_apply.get("ontap_writes_attempted"))),
         "artifacts": {
             "report": _rel(NFS_APPLY_REPORT),
             "json": _rel(NFS_APPLY_JSON),
@@ -135,7 +142,9 @@ def apply_netapp_nfs_setup(*, write_report: bool = True) -> dict[str, Any]:
 
 def validate_netapp_nfs_setup(*, write_report: bool = True) -> dict[str, Any]:
     readiness = get_netapp_nfs_vcenter_readiness(check_ports=True, write_report=True)
-    blockers = list(readiness.get("blockers") or [])
+    plan = _nfs_plan()
+    live_nfs = _live_nfs_validation(plan)
+    blockers = _unique([*_string_list(readiness.get("blockers")), *_string_list(live_nfs.get("blockers"))])
     payload = {
         "provider_id": PROVIDER_ID,
         "action": "nfs-setup-validation",
@@ -147,8 +156,9 @@ def validate_netapp_nfs_setup(*, write_report: bool = True) -> dict[str, Any]:
         "freshness": "current",
         "apply_enabled": False,
         "readiness": readiness,
+        "live_nfs": live_nfs,
         "blockers": blockers,
-        "warnings": list(readiness.get("warnings") or []),
+        "warnings": _nfs_validation_warnings(readiness, live_nfs),
         "not_attempted": _not_attempted(),
         "artifacts": {
             "report": _rel(NFS_VALIDATION_REPORT),
@@ -165,6 +175,22 @@ def validate_netapp_nfs_setup(*, write_report: bool = True) -> dict[str, Any]:
     if write_report:
         _write_payload(NFS_VALIDATION_JSON, NFS_VALIDATION_REPORT, sanitized, _validation_markdown)
     return sanitized
+
+
+def _nfs_validation_warnings(readiness: dict[str, Any], live_nfs: dict[str, Any]) -> list[str]:
+    warnings = _unique([*_string_list(readiness.get("warnings")), *_string_list(live_nfs.get("warnings"))])
+    try:
+        features = active_lab_profile_context().get("enabled_features") or {}
+    except Exception:
+        features = {}
+    direct_netapp = features.get("netapp_enabled") is True and features.get("vcenter_enabled") is False
+    if not direct_netapp:
+        return warnings
+    return [
+        warning
+        for warning in warnings
+        if "NetApp or vCenter is disabled by the active lab profile" not in warning
+    ]
 
 
 def _nfs_plan() -> dict[str, Any]:
@@ -212,17 +238,29 @@ def _preview_blockers(runtime_state: dict[str, Any], plan: dict[str, Any]) -> li
     return _unique(blockers)
 
 
-def _apply_gates(runtime_state: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+def _apply_gates(
+    runtime_state: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    guarded_context: GuardedActionContext | None = None,
+) -> dict[str, Any]:
     policy = current_lab_action_policy(settings.provider_mode)
     flag_state = {
         "provider_mode": settings.provider_mode,
         "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
-        "netapp_nfs_setup_apply": os.getenv("NETAPP_NFS_SETUP_APPLY") == "true",
-        "netapp_nfs_setup_confirm": os.getenv("NETAPP_NFS_SETUP_CONFIRM") == NFS_SETUP_CONFIRM_PHRASE,
-        "netapp_nfs_setup_allow_storage_create": os.getenv("NETAPP_NFS_SETUP_ALLOW_STORAGE_CREATE") == "true",
+        "netapp_nfs_setup_apply": guarded_flag(
+            "NETAPP_NFS_SETUP_APPLY", action_id="netapp.nfs-setup-apply", context=guarded_context
+        ),
+        "netapp_nfs_setup_confirm": guarded_confirmation(
+            "NETAPP_NFS_SETUP_CONFIRM", action_id="netapp.nfs-setup-apply", context=guarded_context
+        )
+        == NFS_SETUP_CONFIRM_PHRASE,
+        "netapp_nfs_setup_allow_storage_create": guarded_flag(
+            "NETAPP_NFS_SETUP_ALLOW_STORAGE_CREATE", action_id="netapp.nfs-setup-apply", context=guarded_context
+        ),
     }
     blockers = []
-    blockers.extend(policy.action_blockers("netapp.nfs-setup", ActionCategory.STORAGE_CONFIG))
+    blockers.extend(_string_list(policy.action_blockers("netapp.nfs-setup", ActionCategory.STORAGE_CONFIG)))
     blockers.extend(_preview_blockers(runtime_state, plan))
     if not flag_state["netapp_nfs_setup_apply"]:
         blockers.append("NETAPP_NFS_SETUP_APPLY=true is required.")
@@ -308,6 +346,63 @@ def _ensure_nfs_export_rule(plan: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _live_nfs_validation(plan: dict[str, Any]) -> dict[str, Any]:
+    if not (settings.netapp_cluster_mgmt_ip and settings.netapp_api_username and settings.netapp_api_password):
+        return {
+            "status": "not_probed",
+            "blockers": [],
+            "warnings": [],
+            "checks": {},
+        }
+    blockers: list[str] = []
+    warnings: list[str] = []
+    checks: dict[str, Any] = {}
+    svm_name = str(plan.get("svm_name") or "")
+    try:
+        response = _ontap_request(
+            "GET",
+            f"/api/protocols/nfs/services?svm.name={svm_name}&fields=svm.name,enabled,protocol.v3_enabled",
+        )
+        checks["nfs_service_http_status"] = response.status_code
+        if response.status_code == 200:
+            records = (response.json() or {}).get("records") or []
+            checks["nfs_service_records"] = len(records)
+            if not records:
+                blockers.append(f"NetApp NFS service is not enabled for SVM `{svm_name}`.")
+        else:
+            blockers.append(f"NetApp NFS service check returned HTTP {response.status_code}.")
+    except (httpx.HTTPError, OSError, ValueError) as exc:
+        blockers.append(f"NetApp NFS service check failed: {exc.__class__.__name__}.")
+
+    lif_checks = []
+    for lif in plan.get("nfs_lifs") or []:
+        check = _tcp_probe(str(lif), 2049)
+        lif_checks.append(check)
+        if check.get("reachable") is False:
+            blockers.append(f"NFS LIF `{lif}` is not accepting TCP/2049.")
+    checks["planned_nfs_lifs_2049"] = lif_checks
+    return {
+        "status": "blocked" if blockers else "ready",
+        "blockers": _unique(blockers),
+        "warnings": _unique(warnings),
+        "checks": checks,
+    }
+
+
+def _tcp_probe(host: str, port: int) -> dict[str, Any]:
+    try:
+        with socket.create_connection((host, port), timeout=2.5):
+            return {"host": host, "port": port, "reachable": True, "status": "ready"}
+    except OSError as exc:
+        return {
+            "host": host,
+            "port": port,
+            "reachable": False,
+            "status": "blocked",
+            "reason": f"{exc.__class__.__name__}: {str(exc)[:140]}",
+        }
+
+
 def _get_export_policy(policy_name: str) -> dict[str, Any] | None:
     response = _ontap_request(
         "GET",
@@ -315,9 +410,14 @@ def _get_export_policy(policy_name: str) -> dict[str, Any] | None:
     )
     if response.status_code != 200:
         raise ValueError(f"HTTP {response.status_code}")
-    payload = response.json()
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise ValueError("Invalid JSON response from NetApp export policy lookup") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Unexpected JSON response from NetApp export policy lookup")
     for record in payload.get("records") or []:
-        if record.get("name") == policy_name:
+        if isinstance(record, dict) and record.get("name") == policy_name:
             return record
     return None
 
@@ -381,8 +481,8 @@ def _required_flags() -> list[str]:
     ]
 
 
-def _not_attempted() -> list[str]:
-    return [
+def _not_attempted(ontap_writes_attempted: bool = False) -> list[str]:
+    not_attempted = [
         "ONTAP REST write",
         "SVM, LIF, NFS service, volume, export policy, or export rule creation",
         "iSCSI configuration",
@@ -390,6 +490,10 @@ def _not_attempted() -> list[str]:
         "vCenter datastore mount",
         "controller reboot, wipe, takeover/giveback, or ONTAP upgrade",
     ]
+    if ontap_writes_attempted:
+        not_attempted.remove("ONTAP REST write")
+        not_attempted.remove("SVM, LIF, NFS service, volume, export policy, or export rule creation")
+    return not_attempted
 
 
 def _preview_markdown(payload: dict[str, Any]) -> str:
@@ -438,8 +542,8 @@ def _common_markdown(title: str, payload: dict[str, Any]) -> str:
 
 def _write_payload(json_path: Path, report_path: Path, payload: dict[str, Any], markdown_builder: Any) -> None:
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    report_path.write_text(markdown_builder(payload), encoding="utf-8")
+    write_json_object(json_path, payload)
+    write_text_value(report_path, markdown_builder(payload))
 
 
 def _sanitize(payload: dict[str, Any]) -> dict[str, Any]:
@@ -455,7 +559,7 @@ def _redaction_values() -> list[str]:
 
 
 def _rel(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
+    return repo_relative_path(path, REPO_ROOT)
 
 
 def _now() -> str:
@@ -463,4 +567,8 @@ def _now() -> str:
 
 
 def _unique(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))
+    return unique_preserving_order(values)
+
+
+def _string_list(value: Any) -> list[str]:
+    return unique_strings(value)

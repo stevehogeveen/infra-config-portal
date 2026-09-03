@@ -15,6 +15,9 @@ from app.providers.base import ProviderAction, ProviderStatus
 from app.providers.lab_safety import current_lab_safety
 from app.providers.probe_cache import get_probe_result, record_probe_result
 from app.providers.redaction import redact_sensitive
+from app.services.json_file_store import write_text_value
+from app.services.list_utils import unique_preserving_order
+from app.services.path_utils import path_exists
 from app.services.serial_console_discovery import (
     SerialConsoleDiscoveryPaths as SharedSerialConsoleDiscoveryPaths,
     discover_serial_console_candidates,
@@ -1054,6 +1057,9 @@ class CiscoConsoleAdapter:
         prompt_state: str = "unknown",
         **extra: Any,
     ) -> dict[str, Any]:
+        selected_path = extra.get("selected_path")
+        if selected_path and not extra.get("selected_port"):
+            extra["selected_port"] = selected_path
         result = {
             "provider_id": PROVIDER_ID,
             "action": "prompt-readiness",
@@ -1282,7 +1288,7 @@ def _env_override(
         (candidate for candidate in candidates if candidate.path == configured_path),
         None,
     )
-    exists = os.path.exists(configured_path)
+    exists = path_exists(Path(configured_path))
     readable = os.access(configured_path, os.R_OK) if exists else None
     writable = os.access(configured_path, os.W_OK) if exists else None
     return {
@@ -1371,7 +1377,7 @@ def _candidate_count(discovery: dict[str, Any]) -> int:
 
 
 def _baud_scan_order(configured_baud: int, *, max_bauds: int | None = None) -> list[int]:
-    bauds = list(dict.fromkeys([configured_baud, *COMMON_CISCO_CONSOLE_BAUDS]))
+    bauds = unique_preserving_order([configured_baud, *COMMON_CISCO_CONSOLE_BAUDS])
     if max_bauds is not None:
         return bauds[: max(max_bauds, 0)]
     return bauds
@@ -1598,7 +1604,7 @@ def _write_console_discovery_report(result: dict[str, Any]) -> None:
     if not attempts:
         lines.append("- No serial prompt attempts were run.")
     lines.append("")
-    CISCO_CONSOLE_DISCOVERY_REPORT.write_text("\n".join(lines), encoding="utf-8")
+    write_text_value(CISCO_CONSOLE_DISCOVERY_REPORT, "\n".join(lines))
 
 
 def _dangerous_actions() -> list[ProviderAction]:
@@ -2006,7 +2012,7 @@ def _write_cisco_firmware_inventory_report(result: dict[str, Any]) -> None:
             "",
         ]
     )
-    CISCO_FIRMWARE_INVENTORY_REPORT.write_text("\n".join(lines), encoding="utf-8")
+    write_text_value(CISCO_FIRMWARE_INVENTORY_REPORT, "\n".join(lines))
 
 
 def _operator_message(status: str, recommended_path: str | None) -> str:

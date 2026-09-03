@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from app.services import media_inventory as mi
@@ -20,6 +22,20 @@ def test_media_inventory_api_returns_sample_metadata_when_not_configured(
     assert all(item["actual_name_redacted"] is True for item in payload["items"])
 
 
+def test_real_lab_media_inventory_without_configured_dirs_returns_no_sample_metadata(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(mi, "settings", SimpleNamespace(provider_mode="local-lab-readwrite", media_inventory_dirs=()))
+
+    inventory = mi.get_media_inventory()
+
+    assert inventory.mode == "unavailable"
+    assert inventory.items == []
+    assert inventory.warnings == [
+        "MEDIA_INVENTORY_DIRS is not configured; no real media inventory was returned."
+    ]
+
+
 def test_media_inventory_scans_configured_directory_metadata_only(tmp_path) -> None:
     (tmp_path / "customer-host-install.iso").write_bytes(b"iso")
     (tmp_path / "template-build.OVA").write_bytes(b"ova")
@@ -29,6 +45,7 @@ def test_media_inventory_scans_configured_directory_metadata_only(tmp_path) -> N
 
     assert inventory.mode == "local"
     assert inventory.configured_directories == ["configured-directory-1"]
+    assert inventory.configured_directory_paths == [str(tmp_path)]
     assert [item.extension for item in inventory.items] == [".iso", ".bin", ".ova"]
     assert [item.category for item in inventory.items] == ["iso", "firmware", "ova"]
     assert [item.size_bytes for item in inventory.items] == [3, 8, 3]
@@ -40,6 +57,154 @@ def test_media_inventory_scans_configured_directory_metadata_only(tmp_path) -> N
     ]
     assert all(item.actual_name_redacted is True for item in inventory.items)
     assert "customer-host-install" not in repr(inventory)
+
+
+def test_media_inventory_redacts_strange_and_long_file_names(tmp_path) -> None:
+    strange_name = "customer [secret]; $(whoami) ilo-5_v0319 snowman-\u2603.bin"
+    long_name = f"{'private-product-name-' * 5}VMware-VCSA-all-8.0.3.iso"
+    (tmp_path / strange_name).write_bytes(b"firmware")
+    (tmp_path / long_name).write_bytes(b"vcsa")
+
+    inventory = get_media_inventory((str(tmp_path),))
+
+    assert [item.placeholder_name for item in inventory.items] == [
+        "firmware-1.bin",
+        "iso-2.iso",
+    ]
+    assert [item.product_hints for item in inventory.items] == [
+        ["hpe-ilo"],
+        ["vmware-vcenter"],
+    ]
+    assert [item.version_hint for item in inventory.items] == ["3.19", "8.0.3"]
+    assert all(item.actual_name_redacted is True for item in inventory.items)
+    rendered = repr(inventory)
+    assert "customer [secret]" not in rendered
+    assert "private-product-name" not in rendered
+    assert "snowman" not in rendered
+
+
+def test_media_inventory_dedupes_duplicate_configured_directories(tmp_path) -> None:
+    (tmp_path / "installer.iso").write_bytes(b"iso")
+
+    inventory = get_media_inventory((str(tmp_path), str(tmp_path)))
+
+    assert inventory.mode == "local"
+    assert inventory.configured_directories == ["configured-directory-1"]
+    assert [item.source for item in inventory.items] == ["configured-directory-1"]
+    assert [item.placeholder_name for item in inventory.items] == [
+        "iso-1.iso",
+    ]
+    assert inventory.warnings == ["1 duplicate configured media directory was ignored."]
+    assert all(item.actual_name_redacted is True for item in inventory.items)
+
+
+def test_media_inventory_dedupes_equivalent_path_spellings(tmp_path) -> None:
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+    (media_root / "installer.iso").write_bytes(b"iso")
+
+    inventory = get_media_inventory((str(media_root), str(media_root / ".")))
+
+    assert inventory.mode == "local"
+    assert inventory.configured_directories == ["configured-directory-1"]
+    assert [item.placeholder_name for item in inventory.items] == ["iso-1.iso"]
+    assert inventory.warnings == ["1 duplicate configured media directory was ignored."]
+
+
+def test_media_inventory_skips_files_that_disappear_during_scan(monkeypatch, tmp_path) -> None:
+    stable = tmp_path / "installer.iso"
+    vanished = tmp_path / "vanished.ova"
+    stable.write_bytes(b"iso")
+    vanished.write_bytes(b"ova")
+    original_inventory_item = mi._inventory_item
+
+    def flaky_inventory_item(path, index, source_label):  # noqa: ANN001, ANN202
+        if path.name == "vanished.ova":
+            return None
+        return original_inventory_item(path, index, source_label)
+
+    monkeypatch.setattr(mi, "_inventory_item", flaky_inventory_item)
+
+    inventory = get_media_inventory((str(tmp_path),))
+
+    assert [item.placeholder_name for item in inventory.items] == ["iso-1.iso"]
+    assert inventory.warnings == ["configured-directory-1 contained a file that could not be read."]
+    assert "vanished" not in repr(inventory)
+
+
+def test_media_inventory_skips_files_that_disappear_during_size_probe(monkeypatch, tmp_path) -> None:
+    stable = tmp_path / "installer.iso"
+    vanished = tmp_path / "vanished.ova"
+    stable.write_bytes(b"iso")
+    vanished.write_bytes(b"ova")
+    original_file_size = mi.file_size
+
+    def disappearing_file_size(path):  # noqa: ANN001, ANN202
+        if path == vanished:
+            return None
+        return original_file_size(path)
+
+    monkeypatch.setattr(mi, "file_size", disappearing_file_size)
+
+    inventory = get_media_inventory((str(tmp_path),))
+
+    assert inventory.mode == "local"
+    assert [item.placeholder_name for item in inventory.items] == ["iso-1.iso"]
+    assert inventory.warnings == ["configured-directory-1 contained a file that could not be read."]
+    assert "vanished" not in repr(inventory)
+
+
+def test_media_inventory_keeps_readable_files_when_one_file_probe_fails(monkeypatch, tmp_path) -> None:
+    stable = tmp_path / "installer.iso"
+    locked = tmp_path / "locked.ova"
+    stable.write_bytes(b"iso")
+    locked.write_bytes(b"ova")
+    original_is_file = type(tmp_path).is_file
+
+    def locked_is_file(path):  # noqa: ANN001, ANN202
+        if path == locked:
+            raise OSError("locked")
+        return original_is_file(path)
+
+    monkeypatch.setattr(type(tmp_path), "is_file", locked_is_file)
+
+    inventory = get_media_inventory((str(tmp_path),))
+
+    assert inventory.mode == "local"
+    assert [item.placeholder_name for item in inventory.items] == ["iso-1.iso"]
+    assert inventory.warnings == ["configured-directory-1 contained 1 file that could not be read."]
+    assert "locked" not in repr(inventory)
+
+
+def test_media_inventory_keeps_readable_files_when_symlink_probe_fails(monkeypatch, tmp_path) -> None:
+    stable = tmp_path / "installer.iso"
+    locked = tmp_path / "locked.ova"
+    stable.write_bytes(b"iso")
+    locked.write_bytes(b"ova")
+    original_is_symlink = type(tmp_path).is_symlink
+
+    def locked_is_symlink(path):  # noqa: ANN001, ANN202
+        if path == locked:
+            raise OSError("locked")
+        return original_is_symlink(path)
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", locked_is_symlink)
+
+    inventory = get_media_inventory((str(tmp_path),))
+
+    assert inventory.mode == "local"
+    assert [item.placeholder_name for item in inventory.items] == ["iso-1.iso"]
+    assert inventory.warnings == ["configured-directory-1 contained 1 file that could not be read."]
+    assert "locked" not in repr(inventory)
+
+
+def test_media_inventory_empty_directory_returns_local_mode_with_no_items(tmp_path) -> None:
+    inventory = get_media_inventory((str(tmp_path),))
+
+    assert inventory.mode == "local"
+    assert inventory.configured_directories == ["configured-directory-1"]
+    assert inventory.items == []
+    assert inventory.warnings == []
 
 
 def test_media_inventory_exposes_exact_names_only_for_repo_media_root(monkeypatch, tmp_path) -> None:
@@ -92,6 +257,60 @@ def test_media_inventory_missing_directory_warning_is_redacted(tmp_path) -> None
     assert inventory.items == []
     assert inventory.warnings == ["configured-directory-1 does not exist."]
     assert "customer-media-private" not in repr(inventory)
+
+
+def test_media_inventory_self_heals_directory_exists_errors(monkeypatch, tmp_path) -> None:
+    original_exists = type(tmp_path).exists
+
+    def locked_exists(path):  # noqa: ANN001, ANN202
+        if path == tmp_path:
+            raise OSError("locked")
+        return original_exists(path)
+
+    monkeypatch.setattr(type(tmp_path), "exists", locked_exists)
+
+    inventory = get_media_inventory((str(tmp_path),))
+
+    assert inventory.mode == "unavailable"
+    assert inventory.items == []
+    assert inventory.warnings == ["configured-directory-1 could not be read."]
+    assert str(tmp_path) not in repr(inventory)
+
+
+def test_media_inventory_self_heals_directory_type_errors(monkeypatch, tmp_path) -> None:
+    original_is_dir = type(tmp_path).is_dir
+
+    def locked_is_dir(path):  # noqa: ANN001, ANN202
+        if path == tmp_path:
+            raise OSError("locked")
+        return original_is_dir(path)
+
+    monkeypatch.setattr(type(tmp_path), "is_dir", locked_is_dir)
+
+    inventory = get_media_inventory((str(tmp_path),))
+
+    assert inventory.mode == "unavailable"
+    assert inventory.items == []
+    assert inventory.warnings == ["configured-directory-1 could not be read."]
+    assert str(tmp_path) not in repr(inventory)
+
+
+def test_media_inventory_self_heals_recursive_scan_errors(monkeypatch, tmp_path) -> None:
+    original_rglob = type(tmp_path).rglob
+
+    def locked_rglob(path, pattern):  # noqa: ANN001, ANN202
+        if path == tmp_path:
+            raise OSError("recursive scan failed")
+        return original_rglob(path, pattern)
+
+    monkeypatch.setattr(type(tmp_path), "rglob", locked_rglob)
+
+    inventory = get_media_inventory((str(tmp_path),))
+
+    assert inventory.mode == "unavailable"
+    assert inventory.items == []
+    assert inventory.warnings == ["configured-directory-1 could not be read."]
+    assert str(tmp_path) not in repr(inventory)
 
 
 def test_media_inventory_exposes_redacted_firmware_hints_only(tmp_path) -> None:

@@ -1,0 +1,512 @@
+<title>Blending Strata with Lab Builder — Three Options</title>
+<style>
+  :root{
+    --paper:#EEF3F4; --panel:#FFFFFF; --sunk:#E7EDEE;
+    --ink:#16262C; --dim:#5F7278; --faint:#8B9BA1;
+    --line:#DCE5E7; --line2:#C9D5D8;
+    --acc:#0E8A97; --acc-br:#17B3C2; --acc-wash:#E6F4F5;
+    --proof:#1E9E5A; --proof-wash:#E6F5EC;
+    --amber:#B4801F; --amber-wash:#FBF2E0;
+    --plan:#7A5CC4; --plan-wash:#F0EBFA;
+    --boot:#2F4858;
+    --shadow:0 1px 2px rgba(22,38,44,.06), 0 8px 20px -12px rgba(22,38,44,.18);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#1B2429; --panel:#222D33; --sunk:#1A2328;
+      --ink:#E8EFF1; --dim:#A0B1B7; --faint:#7B8D94;
+      --line:#33424A; --line2:#3F515A;
+      --acc:#2FC0D0; --acc-br:#4AD4E2; --acc-wash:#17323A;
+      --proof:#3FCB7C; --proof-wash:#16332A;
+      --amber:#DFA84D; --amber-wash:#33291A;
+      --plan:#AC93EE; --plan-wash:#2B2440;
+      --boot:#9FB6C4;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 20px -12px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#1B2429; --panel:#222D33; --sunk:#1A2328;
+    --ink:#E8EFF1; --dim:#A0B1B7; --faint:#7B8D94;
+    --line:#33424A; --line2:#3F515A;
+    --acc:#2FC0D0; --acc-br:#4AD4E2; --acc-wash:#17323A;
+    --proof:#3FCB7C; --proof-wash:#16332A;
+    --amber:#DFA84D; --amber-wash:#33291A;
+    --plan:#AC93EE; --plan-wash:#2B2440;
+    --boot:#9FB6C4;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 20px -12px rgba(0,0,0,.5);
+  }
+  :root[data-theme="light"]{
+    --paper:#EEF3F4; --panel:#FFFFFF; --sunk:#E7EDEE;
+    --ink:#16262C; --dim:#5F7278; --faint:#8B9BA1;
+    --line:#DCE5E7; --line2:#C9D5D8;
+    --acc:#0E8A97; --acc-br:#17B3C2; --acc-wash:#E6F4F5;
+    --proof:#1E9E5A; --proof-wash:#E6F5EC;
+    --amber:#B4801F; --amber-wash:#FBF2E0;
+    --plan:#7A5CC4; --plan-wash:#F0EBFA;
+    --boot:#2F4858;
+    --shadow:0 1px 2px rgba(22,38,44,.06), 0 8px 20px -12px rgba(22,38,44,.18);
+  }
+
+  *{box-sizing:border-box; margin:0}
+  html,body{background:var(--paper)}
+  body{color:var(--ink); font-size:15px; line-height:1.55;
+    font-family:"Segoe UI Variable Display","Segoe UI","Avenir Next",system-ui,sans-serif;
+    padding:0 20px 90px}
+  .mono{font-family:"Cascadia Code",Consolas,ui-monospace,monospace; font-variant-numeric:tabular-nums}
+  main{max-width:1320px; margin:0 auto}
+  .prose{max-width:74ch}
+  header.mast{padding:60px 0 20px; border-bottom:2px solid var(--ink); margin-bottom:28px}
+  .eyebrow{font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--acc); font-weight:700; margin-bottom:10px}
+  h1{font-size:clamp(28px,4vw,42px); line-height:1.08; letter-spacing:-.02em; font-weight:650; margin-bottom:14px; text-wrap:balance}
+  .stand{font-size:17px; color:var(--dim); max-width:66ch}
+  h2{font-size:23px; font-weight:650; letter-spacing:-.015em; margin-bottom:4px}
+  p{margin-bottom:14px}
+  section{margin:52px 0}
+  hr.rule{border:0; border-top:1px solid var(--line); margin:44px 0}
+
+  .finding{background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--amber);
+    border-radius:12px; padding:18px 22px; margin:22px 0; box-shadow:var(--shadow)}
+  .finding h3{font-size:14px; font-weight:650; margin-bottom:6px}
+  .finding p{font-size:14px; margin:0; color:var(--dim)}
+  .finding code{font-size:12.5px; background:var(--sunk); padding:1px 6px; border-radius:4px; color:var(--ink)}
+
+  .opt-head{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:2px}
+  .tag{font-size:11px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:var(--acc)}
+  .tag .rec{color:var(--proof)}
+  .thesis{font-size:16px; color:var(--dim); font-style:italic; margin-bottom:18px; max-width:70ch}
+
+  /* ===== mini screen ===== */
+  .screen{background:var(--panel); border:1px solid var(--line2); border-radius:14px; overflow:hidden;
+    box-shadow:var(--shadow); margin-bottom:18px}
+  .scroll{overflow-x:auto}
+  .inner{min-width:1180px}
+  .sbar{display:flex; align-items:center; gap:12px; padding:11px 16px; border-bottom:1px solid var(--line); font-size:12px}
+  .logo{width:20px;height:20px;border-radius:6px; background:linear-gradient(135deg,var(--acc-br),var(--acc)); flex:none}
+  .sbar b{font-weight:700; letter-spacing:.04em}
+  .sp{flex:1}
+  .mini-pill{font-size:10px; font-weight:650; padding:3px 9px; border-radius:99px; border:1px solid var(--line2); white-space:nowrap}
+  .mini-pill.ok{color:var(--proof); background:var(--proof-wash); border-color:rgba(30,158,90,.3)}
+  .mini-pill.warn{color:var(--amber); background:var(--amber-wash); border-color:rgba(180,128,31,.35)}
+  .mini-pill.plan{color:var(--plan); background:var(--plan-wash); border-color:rgba(122,92,196,.35)}
+  .cta{font-size:10.5px; font-weight:650; padding:5px 12px; border-radius:7px; color:#fff;
+    background:linear-gradient(135deg,var(--acc-br),var(--acc))}
+  .modes{display:inline-flex; border:1px solid var(--line2); border-radius:8px; overflow:hidden}
+  .modes span{font-size:10.5px; font-weight:650; padding:5px 13px; color:var(--faint)}
+  .modes span.on{background:var(--acc-wash); color:var(--acc)}
+  .modes span.onplan{background:var(--plan-wash); color:var(--plan)}
+
+  .metrics{display:flex; gap:0; border-bottom:1px solid var(--line); background:var(--sunk)}
+  .metrics div{padding:9px 16px; border-right:1px solid var(--line)}
+  .metrics dt{font-size:8.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); font-weight:700}
+  .metrics dd{font-size:13px; font-weight:650; margin-top:1px}
+  .metrics dd.pl{color:var(--plan)} .metrics dd.pr{color:var(--proof)} .metrics dd.am{color:var(--amber)}
+
+  .body3{display:grid; grid-template-columns:212px 1fr 268px}
+  .body3 > *{padding:13px 15px}
+  .body3 > * + *{border-left:1px solid var(--line)}
+  .lbl{font-size:8.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--faint); font-weight:700; margin-bottom:9px}
+
+  /* rack mini */
+  .rk{background:var(--sunk); border:1px solid var(--line2); border-radius:8px; padding:7px 6px}
+  .ru{display:flex; gap:5px; align-items:center; margin:4px 2px}
+  .run{width:12px; font-size:7px; color:var(--faint); text-align:center; flex:none}
+  .rf{flex:1; border-radius:4px; padding:5px 6px; background:linear-gradient(180deg,#fff,var(--sunk));
+    border:1px solid var(--line2); display:flex; align-items:center; gap:5px}
+  :root[data-theme="dark"] .rf{background:linear-gradient(180deg,#2E3B42,#232E34)}
+  .rf .nm{font-size:9px; font-weight:650}
+  .rf .dot{width:6px;height:6px;border-radius:50%; margin-left:auto; flex:none}
+  .rf .dot.ok{background:var(--proof)} .rf .dot.no{background:#B6C3C7}
+  .rf.free{background:transparent; border-style:dashed; justify-content:center}
+  .rf.free span{font-size:7.5px; color:var(--faint); letter-spacing:.1em}
+  .rbays{display:flex; gap:2px; margin-left:4px}
+  .rbays i{width:5px; height:9px; border-radius:1.5px; background:var(--panel); border:1px solid var(--line2)}
+  .rbays i.lit{background:var(--acc); border-color:var(--acc)}
+  .rbays i.bt{background:var(--boot); border-color:var(--boot)}
+  .rknote{font-size:8.5px; color:var(--faint); text-align:center; margin-top:7px}
+
+  /* node detail */
+  .ndhead{display:flex; align-items:baseline; gap:9px; margin-bottom:9px}
+  .ndhead .h{font-size:16px; font-weight:650; letter-spacing:-.01em}
+  .ndhead .s{font-size:9.5px; color:var(--faint)}
+  .tabs{display:flex; gap:14px; border-bottom:1px solid var(--line); margin-bottom:11px; padding-bottom:6px}
+  .tabs span{font-size:9.5px; font-weight:650; letter-spacing:.08em; text-transform:uppercase; color:var(--faint)}
+  .tabs span.on{color:var(--acc); box-shadow:0 6px 0 -4px var(--acc)}
+  .tabs span.dead{opacity:.42}
+  .facts{display:flex; gap:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-bottom:11px}
+  .facts div{flex:1; padding:7px 10px; border-right:1px solid var(--line)}
+  .facts div:last-child{border-right:0}
+  .facts dt{font-size:8px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); font-weight:700}
+  .facts dd{font-size:11px; font-weight:600; margin-top:1px}
+  .facts dd.pr{color:var(--proof)} .facts dd.fa{color:var(--faint); font-weight:400}
+
+  .subs{display:grid; grid-template-columns:repeat(3,1fr); gap:9px}
+  .sub{border:1px solid var(--line); border-radius:9px; padding:9px 11px; background:var(--panel)}
+  .sub .st{display:flex; align-items:center; gap:6px; margin-bottom:4px}
+  .sub .st b{font-size:10.5px; font-weight:650}
+  .sub .v{font-size:12px; font-weight:650; letter-spacing:-.01em}
+  .sub .d{font-size:9px; color:var(--faint); margin-top:2px}
+  .sub .act{font-size:9.5px; font-weight:650; color:var(--acc); margin-top:7px}
+  .sub.empty{background:var(--sunk); border-style:dashed}
+  .sub.empty .v{color:var(--faint); font-weight:400}
+  .sub.empty .act{color:var(--faint)}
+  .tiny{font-size:8.5px; font-weight:650; padding:2px 7px; border-radius:99px; margin-left:auto}
+  .tiny.ok{color:var(--proof); background:var(--proof-wash)}
+  .tiny.no{color:var(--faint); background:var(--sunk)}
+  .tiny.pl{color:var(--plan); background:var(--plan-wash)}
+  .tiny.am{color:var(--amber); background:var(--amber-wash)}
+
+  /* right rail */
+  .oitem{display:flex; gap:9px; padding:9px 0; border-top:1px solid var(--line)}
+  .oitem:first-of-type{border-top:0; padding-top:0}
+  .onum{font-size:8.5px; color:var(--faint); font-weight:700; width:14px; flex:none}
+  .oitem .ot{font-size:8.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); font-weight:700}
+  .oitem .ov{font-size:12px; font-weight:650; margin-top:1px; letter-spacing:-.01em}
+  .oitem .od{font-size:9px; color:var(--faint); margin-top:1px}
+  .oitem .chk{margin-left:auto; color:var(--proof); font-size:11px}
+  .oitem .chk.no{color:var(--faint)}
+  .attn{border:1px solid rgba(180,128,31,.4); background:var(--amber-wash); border-radius:9px;
+    padding:9px 11px; margin-top:11px}
+  .attn b{font-size:10px; font-weight:700; color:var(--amber); letter-spacing:.08em; text-transform:uppercase; display:block; margin-bottom:3px}
+  .attn p{font-size:10.5px; margin:0; color:var(--ink)}
+  .attn small{font-size:9.5px; color:var(--dim); display:block; margin-top:3px}
+  .drift{border:1px solid rgba(122,92,196,.4); background:var(--plan-wash); border-radius:9px; padding:9px 11px; margin-top:11px}
+  .drift b{font-size:10px; font-weight:700; color:var(--plan); letter-spacing:.08em; text-transform:uppercase; display:block; margin-bottom:5px}
+  .drow{display:flex; gap:8px; font-size:10px; padding:3px 0; align-items:baseline}
+  .drow .k{color:var(--dim); flex:1}
+  .drow .p{color:var(--plan); font-weight:650}
+  .drow .a{color:var(--proof); font-weight:650}
+  .drow .a.bad{color:var(--amber)}
+  .ready{margin-top:11px; border-top:1px solid var(--line); padding-top:9px}
+  .ready .rr{display:flex; font-size:9.5px; padding:3px 0; color:var(--dim)}
+  .ready .rr b{margin-left:auto; font-weight:600}
+  .ready .rr b.ok{color:var(--proof)} .ready .rr b.no{color:var(--faint)} .ready .rr b.am{color:var(--amber)}
+
+  .capsule{border:1.5px dashed rgba(14,138,151,.45); border-radius:11px; padding:10px 12px;
+    background:linear-gradient(180deg,var(--acc-wash),transparent)}
+  .capsule.on{border-style:solid}
+  .capsule h5{font-size:12px; font-weight:650; margin-bottom:2px}
+  .capsule .cs{font-size:9px; color:var(--faint)}
+  .mem{display:flex; align-items:center; gap:7px; font-size:10px; padding:5px 0; border-top:1px solid var(--line); margin-top:6px}
+  .mem .sk{width:11px;height:11px;border-radius:50%; border:1.5px solid rgba(14,138,151,.5); flex:none}
+  .mem .sk.on{background:var(--acc)}
+  .mem .c{margin-left:auto; color:var(--acc); font-weight:650}
+  .mem .c.no{color:var(--faint); font-weight:400}
+  .dsl{display:flex; gap:8px; align-items:center; font-size:10px; padding:6px 0; border-top:1px solid var(--line)}
+  .dsi{width:18px;height:18px;border-radius:5px; flex:none; color:#fff; font-size:9px; font-weight:700;
+    display:flex; align-items:center; justify-content:center}
+  .dsi.v{background:var(--acc)} .dsi.n{background:#5C63C4} .dsi.l{background:#8B9AA2}
+  .dsl small{color:var(--faint); font-size:8.5px; display:block}
+
+  figcaption{font-size:13px; color:var(--dim); margin-bottom:16px; max-width:76ch}
+  .cols2{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:6px}
+  .box{background:var(--panel); border:1px solid var(--line); border-radius:11px; padding:14px 17px}
+  .box h4{font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; font-weight:700; margin-bottom:7px}
+  .box.good h4{color:var(--proof)} .box.cost h4{color:var(--amber)}
+  .box ul{margin:0; padding-left:17px; font-size:13.5px}
+  .box li{margin-bottom:5px}
+  .box li:last-child{margin:0}
+
+  .verdict{background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--proof);
+    border-radius:12px; padding:20px 24px; box-shadow:var(--shadow)}
+  .verdict p:last-child{margin:0}
+  code{font-family:"Cascadia Code",Consolas,ui-monospace,monospace; font-size:13px;
+    background:var(--sunk); padding:1px 6px; border-radius:4px}
+</style>
+
+<main>
+<header class="mast">
+  <p class="eyebrow">Lab Builder &middot; branch <span class="mono">rack-workspace-visual-redesign</span></p>
+  <h1>Strata is a beautiful shell with invented hardware. Lab Builder is plain chrome over proven truth.</h1>
+  <p class="stand">Three ways to marry them &mdash; drawn with your real lab, so you can see exactly what survives contact with the data you actually have.</p>
+</header>
+
+<section class="prose">
+  <div class="finding">
+    <h3>What the prototype at :3000 actually is</h3>
+    <p>One self-contained component &mdash; <code>app/StrataDesigner.tsx</code>, 640 lines, plus <code>globals.css</code>. Every value is hardcoded: <code>hostDrives: [6,6,6,6]</code>, Xeon Gold 6448Y, 1.0&nbsp;TB DDR5, U.3 NVMe, dual-path 25GbE. No API calls; state persists to <code>localStorage</code>. It is plain React, so porting it into your Vite frontend is a copy, not a rewrite &mdash; but <strong>every number in it would have to be replaced</strong>, and your Gen10 lab with SAS behind a P408i-a doesn&rsquo;t have most of those facts.</p>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ============ OPTION A ============ -->
+<section>
+  <div class="opt-head"><span class="tag">Option A</span><h2>Reskin &mdash; Strata&rsquo;s shell, your lab&rsquo;s truth</h2></div>
+  <p class="thesis">Keep the chrome exactly. Swap every invented number for a probed one, and let the subsystems you can&rsquo;t read say so out loud.</p>
+
+  <figure class="screen"><div class="scroll"><div class="inner">
+    <div class="sbar">
+      <span class="logo"></span><b>STRATA</b><span style="color:var(--faint)">LAB BUILDER</span>
+      <span style="color:var(--faint); margin-left:10px">vSAN Lab &middot; <span class="mono">10.238.207.0/24</span></span>
+      <span class="sp"></span>
+      <span class="mini-pill ok">&#10003; 3 iLOs proven 13:08</span>
+      <span class="mini-pill warn">1 blocker</span>
+      <span class="cta">Install ESXi on DL360 B &rarr;</span>
+    </div>
+    <dl class="metrics">
+      <div><dt>Hosts</dt><dd class="pr">3 proven</dd></div>
+      <div><dt>ESXi installed</dt><dd class="am">0 of 3</dd></div>
+      <div><dt>Drives readable</dt><dd>32 across 3</dd></div>
+      <div><dt>vSAN eligible</dt><dd class="am">8 &middot; one host</dd></div>
+      <div><dt>Mode</dt><dd style="color:var(--amber)">Live &middot; guarded</dd></div>
+    </dl>
+    <div class="body3">
+      <aside>
+        <div class="lbl">Physical context</div>
+        <div class="rk">
+          <div class="ru"><span class="run mono">06</span><span class="rf"><span class="nm">DL360 A</span><span class="rbays"><i class="bt"></i><i class="bt"></i><i></i><i></i><i></i><i></i></span><span class="dot ok"></span></span></div>
+          <div class="ru"><span class="run mono">05</span><span class="rf free"><span>1U FREE</span></span></div>
+          <div class="ru"><span class="run mono">04</span><span class="rf"><span class="nm">NetApp</span><span class="dot no"></span></span></div>
+          <div class="ru"><span class="run mono">03</span><span class="rf"><span class="nm">Catalyst</span><span class="dot no"></span></span></div>
+          <div class="ru"><span class="run mono">02</span><span class="rf" style="border-color:var(--acc)"><span class="nm">DL360 B</span><span class="rbays"><i class="bt"></i><i class="bt"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i></span><span class="dot ok"></span></span></div>
+          <div class="ru"><span class="run mono">01</span><span class="rf"><span class="nm">DL380A</span><span class="rbays"><i class="bt"></i><i class="bt"></i><i></i><i></i><i></i><i></i></span><span class="dot ok"></span></span></div>
+        </div>
+        <p class="rknote">Your rack, unchanged &mdash; now the nav</p>
+      </aside>
+
+      <div>
+        <div class="ndhead"><span class="h">DL360 B</span><span class="s">HPE ProLiant DL360 Gen10 &middot; 1U &middot; unit 02</span><span class="sp"></span><span class="mini-pill ok">Current cached proof 13:08</span></div>
+        <div class="tabs"><span>Chassis</span><span class="dead">Compute</span><span class="dead">Memory</span><span class="on">Storage</span><span class="dead">Network</span><span class="dead">Power</span></div>
+        <div class="facts">
+          <div><dt>iLO</dt><dd class="mono" style="font-size:10px">10.238.207.43</dd></div>
+          <div><dt>Controller</dt><dd>P408i-a &middot; Mixed</dd></div>
+          <div><dt>Bays</dt><dd>8</dd></div>
+          <div><dt>Health</dt><dd class="pr">Reachable</dd></div>
+        </div>
+        <div class="subs">
+          <div class="sub"><div class="st"><b>Storage</b><span class="tiny ok">read 13:08</span></div><div class="v">8 &times; SAS behind P408i-a</div><div class="d">2 boot mirror &middot; 6 passthrough</div><div class="act">Configure storage &rarr;</div></div>
+          <div class="sub"><div class="st"><b>Hypervisor</b><span class="tiny no">absent</span></div><div class="v">No ESXi</div><div class="d">media staged &middot; boots via virtual media</div><div class="act">Install ESXi &rarr;</div></div>
+          <div class="sub empty"><div class="st"><b>Compute</b><span class="tiny no">not read</span></div><div class="v">&mdash;</div><div class="d">CPU model needs a Redfish system read</div><div class="act">Read compute</div></div>
+          <div class="sub empty"><div class="st"><b>Memory</b><span class="tiny no">not read</span></div><div class="v">&mdash;</div><div class="d">DIMM inventory not collected</div><div class="act">Read memory</div></div>
+          <div class="sub empty"><div class="st"><b>Network</b><span class="tiny no">not read</span></div><div class="v">&mdash;</div><div class="d">no adapter inventory yet</div><div class="act">Read network</div></div>
+          <div class="sub empty"><div class="st"><b>Power</b><span class="tiny no">no source</span></div><div class="v">&mdash;</div><div class="d">draw is not probed today</div><div class="act">&mdash;</div></div>
+        </div>
+      </div>
+
+      <aside>
+        <div class="lbl">Cluster outcome</div>
+        <div class="oitem"><span class="onum mono">01</span><div><div class="ot">Architecture</div><div class="ov">3 Gen10 hosts</div><div class="od">2 &times; DL360 &middot; 1 &times; DL380</div></div><span class="chk">&#10003;</span></div>
+        <div class="oitem"><span class="onum mono">02</span><div><div class="ot">Hypervisor</div><div class="ov">0 of 3 installed</div><div class="od">vSAN needs all three</div></div><span class="chk no">&#9675;</span></div>
+        <div class="oitem"><span class="onum mono">03</span><div><div class="ot">Storage pool</div><div class="ov">8 drives eligible</div><div class="od">DL360 B only &middot; others in RAID</div></div><span class="chk no">&#9675;</span></div>
+        <div class="oitem"><span class="onum mono">04</span><div><div class="ot">Policy</div><div class="ov">FTT=1 planned</div><div class="od">unavailable until 3 members</div></div><span class="chk no">&#9675;</span></div>
+        <div class="attn"><b>Needs attention</b><p>Two hosts have no passthrough drives</p><small>DL360 A and DL380A keep all bays in RAID volumes &mdash; rework required before they can join.</small></div>
+        <div class="ready">
+          <div class="rr">iLO reachability <b class="ok">3 of 3</b></div>
+          <div class="rr">Storage read <b class="ok">3 of 3</b></div>
+          <div class="rr">ESXi responding <b class="no">0 of 3</b></div>
+          <div class="rr">Drive eligibility <b class="am">1 of 3</b></div>
+        </div>
+      </aside>
+    </div>
+  </div></div></figure>
+  <figcaption>Same three-column chrome, same subsystem tabs &mdash; but four of the six tabs are honestly dark, because your lab has no inventory behind them yet. The right rail keeps Strata&rsquo;s numbered outcome format and fills it with what the probes actually prove.</figcaption>
+
+  <div class="cols2">
+    <div class="box good"><h4>What you gain</h4><ul>
+      <li>The look you liked, immediately &mdash; it&rsquo;s a port, not a redesign</li>
+      <li>Your rack survives as the left rail navigator</li>
+      <li>Strata&rsquo;s outcome rail is a genuinely better home for vSAN readiness than a sidebar card</li>
+    </ul></div>
+    <div class="box cost"><h4>What it costs</h4><ul>
+      <li>Four of six subsystem tabs are empty on day one &mdash; a gorgeous shell mostly saying &ldquo;not read&rdquo;</li>
+      <li>Loses Strata&rsquo;s actual purpose: profiles, what-if, Compare, undo/redo have nothing to act on</li>
+      <li>Tempting to fake the missing numbers, which is the one thing this product must never do</li>
+    </ul></div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ============ OPTION B ============ -->
+<section>
+  <div class="opt-head"><span class="tag"><span class="rec">Option B &middot; Recommended</span></span><h2>Two modes &mdash; Design what you want, Build what you have</h2></div>
+  <p class="thesis">Strata becomes the planning mode; the rack workspace stays the proving mode. One toggle between them, and the gap between the two becomes the most useful screen in the app.</p>
+
+  <figure class="screen"><div class="scroll"><div class="inner">
+    <div class="sbar">
+      <span class="logo"></span><b>STRATA</b><span style="color:var(--faint)">LAB BUILDER</span>
+      <span class="modes" style="margin-left:12px"><span class="onplan">Design</span><span class="on">Build</span></span>
+      <span style="color:var(--faint); margin-left:6px">vSAN Lab</span>
+      <span class="sp"></span>
+      <span class="mini-pill plan">Target: 3-node vSAN</span>
+      <span class="mini-pill warn">3 drifts</span>
+      <span class="cta">Install ESXi on DL360 B &rarr;</span>
+    </div>
+    <dl class="metrics">
+      <div><dt>Planned hosts</dt><dd class="pl">3</dd></div>
+      <div><dt>Proven hosts</dt><dd class="pr">3</dd></div>
+      <div><dt>Planned vSAN drives</dt><dd class="pl">18</dd></div>
+      <div><dt>Actually eligible</dt><dd class="am">8</dd></div>
+      <div><dt>Planned backing</dt><dd class="pl">vSAN</dd></div>
+      <div><dt>Live backing</dt><dd class="am">none yet</dd></div>
+    </dl>
+    <div class="body3">
+      <aside>
+        <div class="lbl">Physical context</div>
+        <div class="rk">
+          <div class="ru"><span class="run mono">06</span><span class="rf"><span class="nm">DL360 A</span><span class="rbays"><i class="bt"></i><i class="bt"></i><i></i><i></i><i></i><i></i></span><span class="dot ok"></span></span></div>
+          <div class="ru"><span class="run mono">05</span><span class="rf free"><span>1U FREE</span></span></div>
+          <div class="ru"><span class="run mono">04</span><span class="rf"><span class="nm">NetApp</span><span class="dot no"></span></span></div>
+          <div class="ru"><span class="run mono">03</span><span class="rf"><span class="nm">Catalyst</span><span class="dot no"></span></span></div>
+          <div class="ru"><span class="run mono">02</span><span class="rf" style="border-color:var(--acc)"><span class="nm">DL360 B</span><span class="rbays"><i class="bt"></i><i class="bt"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i></span><span class="dot ok"></span></span></div>
+          <div class="ru"><span class="run mono">01</span><span class="rf"><span class="nm">DL380A</span><span class="rbays"><i class="bt"></i><i class="bt"></i><i></i><i></i><i></i><i></i></span><span class="dot ok"></span></span></div>
+        </div>
+        <p class="rknote">One rack &mdash; both modes point at it</p>
+      </aside>
+
+      <div>
+        <div class="ndhead"><span class="h">DL360 B</span><span class="s">unit 02 &middot; Gen10</span><span class="sp"></span><span class="mini-pill warn">Differs from plan</span></div>
+        <div class="tabs"><span>Chassis</span><span class="on">Storage</span><span>Hypervisor</span><span>Cluster role</span></div>
+        <div class="subs" style="grid-template-columns:1fr 1fr">
+          <div class="sub" style="border-color:rgba(122,92,196,.45)">
+            <div class="st"><b>Planned</b><span class="tiny pl">design</span></div>
+            <div class="v">6 drives to vSAN</div>
+            <div class="d">2 boot mirror &middot; 6 passthrough &middot; FTT=1</div>
+            <div class="act" style="color:var(--plan)">Edit the design &rarr;</div>
+          </div>
+          <div class="sub" style="border-color:rgba(30,158,90,.45)">
+            <div class="st"><b>Proven</b><span class="tiny ok">read 13:08</span></div>
+            <div class="v">8 passthrough, 0 boot</div>
+            <div class="d">no mirror carved yet &mdash; all 8 raw</div>
+            <div class="act">Carve the boot pair &rarr;</div>
+          </div>
+        </div>
+        <div class="drift" style="margin-top:11px">
+          <b>Drift &mdash; plan vs lab</b>
+          <div class="drow"><span class="k">Boot mirror on every host</span><span class="p">planned 2</span><span class="a bad">found 0</span></div>
+          <div class="drow"><span class="k">vSAN drives, DL360 A</span><span class="p">planned 6</span><span class="a bad">found 0 &mdash; RAID</span></div>
+          <div class="drow"><span class="k">vSAN drives, DL380A</span><span class="p">planned 6</span><span class="a bad">found 0 &mdash; RAID</span></div>
+          <div class="drow"><span class="k">vSAN drives, DL360 B</span><span class="p">planned 6</span><span class="a">found 8 &#10003;</span></div>
+          <div class="drow"><span class="k">Hosts reachable</span><span class="p">planned 3</span><span class="a">proven 3 &#10003;</span></div>
+        </div>
+      </div>
+
+      <aside>
+        <div class="lbl">Design outcome &rarr; reality</div>
+        <div class="oitem"><span class="onum mono">01</span><div><div class="ot">Architecture</div><div class="ov">3 identical Gen10 hosts</div><div class="od">plan met &mdash; all three proven</div></div><span class="chk">&#10003;</span></div>
+        <div class="oitem"><span class="onum mono">02</span><div><div class="ot">Storage pool</div><div class="ov">18 planned &middot; 8 real</div><div class="od">10 drives locked in RAID volumes</div></div><span class="chk no">&#9675;</span></div>
+        <div class="oitem"><span class="onum mono">03</span><div><div class="ot">Boot policy</div><div class="ov">2 &times; RAID 1 per host</div><div class="od">not carved on any host yet</div></div><span class="chk no">&#9675;</span></div>
+        <div class="attn"><b>Blocks the design</b><p>The plan wants 18 vSAN drives; the lab offers 8</p><small>Either rework RAID on DL360 A and DL380A, or lower the design to a 1-host local build.</small></div>
+        <div class="ready">
+          <div class="rr">Plan is achievable <b class="am">after RAID rework</b></div>
+          <div class="rr">Next design action <b class="ok">carve boot pairs</b></div>
+        </div>
+      </aside>
+    </div>
+  </div></div></figure>
+  <figcaption>The <strong>Build</strong> mode shown here. Flip to <strong>Design</strong> and you get the :3000 screen exactly as it is &mdash; profiles, Compare, undo/redo &mdash; except it edits a real kit instead of a mock. Strata already ships a &ldquo;Matches baseline&rdquo; chip; this makes that chip mean something.</figcaption>
+
+  <div class="cols2">
+    <div class="box good"><h4>What you gain</h4><ul>
+      <li>Both products keep their purpose &mdash; nothing gets neutered</li>
+      <li>Drift is the payoff: &ldquo;planned 18 vSAN drives, lab offers 8&rdquo; is the single most useful sentence the app could say</li>
+      <li>Gives the kit form from your handoff a real home: member checkboxes and storage choice live in Design mode</li>
+      <li>Empty subsystem tabs stop being embarrassing &mdash; in Design mode they&rsquo;re intentions, not missing readings</li>
+    </ul></div>
+    <div class="box cost"><h4>What it costs</h4><ul>
+      <li>Two surfaces to build and keep coherent</li>
+      <li>Needs a stored &ldquo;design&rdquo; document to diff against &mdash; new persistence, though the lab profile is most of it</li>
+      <li>Users must grasp the mode switch (mitigated: Build is the default landing)</li>
+    </ul></div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ============ OPTION C ============ -->
+<section>
+  <div class="opt-head"><span class="tag">Option C</span><h2>Absorb &mdash; take the chrome, drop the configurator</h2></div>
+  <p class="thesis">Steal Strata&rsquo;s frame and typography, throw away planning entirely, and give the whole right rail to the live cluster.</p>
+
+  <figure class="screen"><div class="scroll"><div class="inner">
+    <div class="sbar">
+      <span class="logo"></span><b>LAB BUILDER</b>
+      <span style="color:var(--faint); margin-left:10px">vSAN Lab &middot; rack R1</span>
+      <span class="sp"></span>
+      <span class="mini-pill ok">&#10003; 9 facts proven</span>
+      <span class="mini-pill">6 unread</span>
+      <span class="cta">Install ESXi on DL360 B &rarr;</span>
+    </div>
+    <dl class="metrics">
+      <div><dt>Servers</dt><dd class="pr">3 reachable</dd></div>
+      <div><dt>Hypervisors</dt><dd class="am">0 running</dd></div>
+      <div><dt>Datastores</dt><dd>0 mounted</dd></div>
+      <div><dt>VMs</dt><dd>&mdash;</dd></div>
+      <div><dt>Oldest proof</dt><dd class="mono" style="font-size:12px">15m</dd></div>
+    </dl>
+    <div class="body3">
+      <aside>
+        <div class="lbl">Rack R1</div>
+        <div class="rk">
+          <div class="ru"><span class="run mono">06</span><span class="rf"><span class="nm">DL360 A</span><span class="rbays"><i class="bt"></i><i class="bt"></i><i></i><i></i><i></i><i></i></span><span class="dot ok"></span></span></div>
+          <div class="ru"><span class="run mono">05</span><span class="rf free"><span>1U FREE</span></span></div>
+          <div class="ru"><span class="run mono">04</span><span class="rf"><span class="nm">NetApp</span><span class="dot no"></span></span></div>
+          <div class="ru"><span class="run mono">03</span><span class="rf"><span class="nm">Catalyst</span><span class="dot no"></span></span></div>
+          <div class="ru"><span class="run mono">02</span><span class="rf" style="border-color:var(--acc)"><span class="nm">DL360 B</span><span class="rbays"><i class="bt"></i><i class="bt"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i></span><span class="dot ok"></span></span></div>
+          <div class="ru"><span class="run mono">01</span><span class="rf"><span class="nm">DL380A</span><span class="rbays"><i class="bt"></i><i class="bt"></i><i></i><i></i><i></i><i></i></span><span class="dot ok"></span></span></div>
+        </div>
+        <p class="rknote">Physical devices only</p>
+      </aside>
+
+      <div>
+        <div class="ndhead"><span class="h">DL360 B</span><span class="s">Gen10 &middot; unit 02 &middot; <span class="mono">10.238.207.43</span></span><span class="sp"></span><span class="mini-pill ok">proven 13:08</span></div>
+        <div class="tabs"><span class="on">Management</span><span>Local storage</span><span>Hypervisor</span><span>Workloads</span></div>
+        <div class="subs" style="grid-template-columns:1fr 1fr">
+          <div class="sub"><div class="st"><b>Management</b><span class="tiny ok">13:08</span></div><div class="v">iLO 5 reachable</div><div class="d">credentials saved &middot; read-only probe ok</div><div class="act">Re-run check &rarr;</div></div>
+          <div class="sub"><div class="st"><b>Local storage</b><span class="tiny ok">13:08</span></div><div class="v">8 bays &middot; P408i-a Mixed</div><div class="d">all 8 raw &mdash; boot mirror not carved</div><div class="act">Carve boot pair &rarr;</div></div>
+          <div class="sub" style="grid-column:span 2; border-color:rgba(14,138,151,.45); background:var(--acc-wash)">
+            <div class="st"><b>Hypervisor</b><span class="tiny am">next step</span></div>
+            <div class="v">ESXi 8.0.3 ready to install</div>
+            <div class="d">boots from iLO virtual media &middot; asks before writing &middot; installs to the 2-drive mirror</div>
+            <div class="act">Install ESXi &rarr;</div>
+          </div>
+        </div>
+      </div>
+
+      <aside>
+        <div class="lbl">Cluster &amp; storage</div>
+        <div class="capsule">
+          <h5>vSAN &middot; vsan-lab</h5>
+          <div class="cs">not formed &mdash; needs 3 ESXi hosts</div>
+          <div class="mem"><span class="sk"></span>DL360 A<span class="c no">0 drives</span></div>
+          <div class="mem"><span class="sk"></span>DL360 B<span class="c">8 eligible</span></div>
+          <div class="mem"><span class="sk"></span>DL380A<span class="c no">0 drives</span></div>
+        </div>
+        <div style="margin-top:11px">
+          <div class="lbl">Datastores</div>
+          <div class="dsl"><span class="dsi v">V</span><div><b style="font-size:10.5px">vsanDatastore</b><small>not created</small></div></div>
+          <div class="dsl"><span class="dsi n">N</span><div><b style="font-size:10.5px">netapp-nfs-01</b><small>needs a /24 lab subnet</small></div></div>
+          <div class="dsl"><span class="dsi l">L</span><div><b style="font-size:10.5px">local datastores</b><small>available after ESXi</small></div></div>
+        </div>
+        <div class="attn"><b>Next</b><p>Install ESXi on DL360 B</p><small>Its drives are already eligible; the other two need RAID rework first.</small></div>
+      </aside>
+    </div>
+  </div></div></figure>
+  <figcaption>Tabs are renamed to things your backend can actually answer &mdash; Management, Local storage, Hypervisor, Workloads &mdash; so nothing is ever dark for lack of a data source. The right rail is the cluster and its datastores, live.</figcaption>
+
+  <div class="cols2">
+    <div class="box good"><h4>What you gain</h4><ul>
+      <li>Every panel is backed by a real endpoint &mdash; no empty shell</li>
+      <li>One screen, no modes to learn</li>
+      <li>Closest to what you already have, so the smallest build</li>
+    </ul></div>
+    <div class="box cost"><h4>What it costs</h4><ul>
+      <li>Throws away the configurator entirely &mdash; no profiles, no Compare, no what-if</li>
+      <li>The kit-design problem from your handoff stays homeless</li>
+      <li>Strata becomes a paint job rather than a capability</li>
+    </ul></div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<section class="prose">
+  <h2>Recommendation</h2>
+  <div class="verdict">
+    <p><strong>Option B</strong>, built in two steps so you get value before the second surface exists.</p>
+    <p><strong>Step 1 &mdash; ship Option C&rsquo;s screen.</strong> Port Strata&rsquo;s frame, header, metric strip, and three-column layout into <code>simplePages.tsx</code>, with tabs named for endpoints you can answer. That alone gets you the look, keeps the rack, and breaks nothing &mdash; and it is the shared shell both modes will use.</p>
+    <p><strong>Step 2 &mdash; add Design mode on top.</strong> The lab profile is already 80% of a design document: it stores <code>cluster_member_device_ids</code>, <code>storage_location</code>, <code>vcenter_enabled</code>. Point Strata&rsquo;s configurator at that record instead of <code>localStorage</code>, and the drift panel falls out for free &mdash; because you now have a plan and a proof side by side.</p>
+    <p>That sequencing also fixes the thing your own profile is currently lying about: the kit named <em>&ldquo;vSAN Lab&rdquo;</em> is stored as <code>single_server_local_storage</code> with vCenter disabled and no members. In Option B that contradiction is visible on screen the moment you open Design mode.</p>
+  </div>
+</section>
+</main>

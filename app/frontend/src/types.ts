@@ -100,6 +100,58 @@ export type ArtifactRecord = {
   metadata: Record<string, unknown>;
 };
 
+export type UiIntentRegionKind = "panel" | "drawer" | "section" | "row";
+
+export type UiIntentRegion = {
+  id: string;
+  label: string;
+  kind: UiIntentRegionKind;
+  defaultVisible?: boolean;
+  collapsible?: boolean;
+};
+
+export type UiIntentRegionLayout = {
+  visible: boolean;
+  collapsed: boolean;
+  order: number;
+};
+
+export type UiIntentRequest = {
+  page: string;
+  request: string;
+  regions: Array<Pick<UiIntentRegion, "id" | "label" | "kind">>;
+  current_layout: Record<string, UiIntentRegionLayout>;
+};
+
+export type UiIntentOp = {
+  region_id: string;
+  op: "hide" | "show" | "collapse" | "expand" | "moveUp" | "moveDown";
+};
+
+export type UiIntentResponse = {
+  ops: UiIntentOp[];
+  summary: string;
+  source: "local_rules" | "external_ai" | string;
+};
+
+export type AiChangeRequestCreate = {
+  page: string;
+  request: string;
+  target?: string | null;
+  route: string;
+  regions: Array<Pick<UiIntentRegion, "id" | "label" | "kind">>;
+  current_layout: Record<string, UiIntentRegionLayout>;
+  screenshot_path?: string | null;
+};
+
+export type AiChangeRequest = {
+  request_id: string;
+  status: "queued" | string;
+  artifact: string;
+  message: string;
+  next_action: string;
+};
+
 export type ReadinessIssue = {
   code: string;
   message: string;
@@ -197,6 +249,108 @@ export type ProviderModeSettingsWrite = {
   desired_mode: ProviderModeOption["mode"];
 };
 
+export type IloAccessSettings = {
+  device_id: string;
+  provider_id: string;
+  host: string | null;
+  host_source: string;
+  fallback_hosts: string[];
+  username: string | null;
+  username_configured: boolean;
+  password_configured: boolean;
+  verify_tls: boolean;
+  updated_at: string | null;
+  last_probe_status: string;
+  last_probe_time: string | null;
+  last_probe_freshness: string;
+  last_probe_is_current: boolean;
+  last_probe_message: string | null;
+  last_probe_target_source: string | null;
+  last_probe_target_matches_access_host: boolean;
+  last_probe_target_matches_configured_candidates: boolean;
+  last_probe_target_fingerprint_present: boolean;
+  next_safe_action: string;
+};
+
+export type IloAccessSettingsWrite = {
+  host?: string | null;
+  username?: string | null;
+  password?: string | null;
+  verify_tls?: boolean | null;
+};
+
+export type LabSafetyFlag = {
+  name: string;
+  label: string;
+  description: string;
+  required: boolean;
+  value: string | boolean | null;
+  enabled: boolean;
+  source: string;
+  status: string;
+};
+
+export type LabSafetySettings = {
+  flags: LabSafetyFlag[];
+  store_path: string;
+  updated_at: string | null;
+  confirmation_phrase: string;
+  device_reconfiguration_confirmation_phrase: string;
+  next_safe_action: string;
+};
+
+export type LabCredentialField = {
+  field: string;
+  env_var: string;
+  is_secret: boolean;
+  configured: boolean;
+  value: string | null;
+};
+
+export type LabCredentialGroup = {
+  id: string;
+  label: string;
+  hint: string;
+  fields: LabCredentialField[];
+  configured: boolean;
+};
+
+export type LabCredentials = {
+  groups: LabCredentialGroup[];
+  store_path: string;
+  restart_required: boolean;
+  next_safe_action: string;
+};
+
+export type LabCredentialsWrite = Partial<{
+  esxi_host: string;
+  esxi_username: string;
+  esxi_password: string;
+  cisco_username: string;
+  cisco_password: string;
+  cisco_enable_password: string;
+  netapp_username: string;
+  netapp_password: string;
+  vcenter_username: string;
+  vcenter_password: string;
+  snmp_community: string;
+  snmp_v3_username: string;
+  snmp_v3_auth_protocol: string;
+  snmp_v3_auth_password: string;
+  snmp_v3_priv_protocol: string;
+  snmp_v3_priv_password: string;
+}>;
+
+export type LabSafetySettingsWrite = {
+  lab_environment?: "isolated-real-lab" | null;
+  lab_acknowledge_real_hardware?: boolean | null;
+  lab_acknowledge_device_reconfiguration?: boolean | null;
+  lab_acknowledge_data_loss_risk?: boolean | null;
+  lab_acknowledge_lab_only?: boolean | null;
+  confirmation_phrase?: string | null;
+  device_reconfiguration_confirmation_phrase?: string | null;
+};
+
 export type ProviderProbeResult = {
   provider_id: string;
   status: string;
@@ -205,6 +359,47 @@ export type ProviderProbeResult = {
   blockers: string[];
   checked_at: string | null;
   [key: string]: unknown;
+};
+
+export type CiscoConsoleIdentityCandidate = {
+  port: string;
+  candidate_fingerprint: string;
+  description: string | null;
+  manufacturer: string | null;
+  transport: "serial" | "system_serial" | "usb-serial" | "usb_serial";
+  vid_pid: string | null;
+  usb_location: string | null;
+  serial_present: boolean;
+  recommended_bauds: number[];
+  recommended: boolean;
+};
+
+export type CiscoConsoleIdentityCandidates = {
+  provider_id: string;
+  status: string;
+  message: string;
+  checked_at: string | null;
+  candidates: CiscoConsoleIdentityCandidate[];
+};
+
+export type CiscoConsoleIdentityVerifyRequest = {
+  port: string;
+  baud: number;
+  candidate_fingerprint: string;
+};
+
+export type CiscoConsoleIdentityResult = ProviderProbeResult & {
+  port?: string;
+  baud?: number;
+  candidate_fingerprint?: string;
+  detected_vendor?: "cisco" | "netapp" | "unknown";
+  identity_verified?: boolean;
+  prompt_state?: string;
+  model?: string | null;
+  software_version?: string | null;
+  serial_fingerprint?: string | null;
+  commands_attempted?: string[];
+  read_only?: boolean;
 };
 
 export type LabValidationBlocker = {
@@ -389,12 +584,14 @@ export type LabGlobalSettings = {
   dom_dc?: string | null;
   dns_servers: string[];
   ntp_servers: string[];
+  snmp_servers?: string[];
   timezone: string | null;
   netapp_enabled: boolean;
   netapp_disabled_reason: string | null;
   vcenter_enabled: boolean;
   vlan_id: string | null;
   mtu: number | null;
+  snmp_version?: "v1" | "v2c" | "v3" | null;
 };
 
 export type LabSubnetOption = {
@@ -418,6 +615,7 @@ export type LabProfileDevices = {
   esxi?: string | null;
   ilo?: string | null;
   cisco?: string | null;
+  server_model?: "gen10" | "gen10plus" | null;
   netapp?: Record<string, unknown> | null;
   vcenter?: string | null;
 };
@@ -425,6 +623,14 @@ export type LabProfileDevices = {
 export type LabProfileFeatures = {
   netapp_enabled: boolean;
   vcenter_enabled: boolean;
+  /** Rack devices that make up the cluster. vSAN is a property of this set. */
+  cluster_member_device_ids?: string[];
+  /** "none" | "vsan" | "netapp" -- what backs the cluster's shared storage. */
+  shared_storage?: string;
+  deployment_mode?: string;
+  deployment_label?: string;
+  deployment_supported?: boolean;
+  storage_location?: string;
   firmware_gate_enabled: boolean;
   build_verification_enabled: boolean;
   storage_protocol: string;
@@ -530,6 +736,43 @@ export type LabProfileRuntimeApply = {
   message: string;
   next_action: string;
   lab_profiles: LabProfileList;
+};
+
+export type TopologyDesignScenario = "server_netapp_direct" | "server_netapp_vcenter" | "single_server_local_storage";
+
+export type TopologyDesignPlacement = "switch" | "ilo" | "server-gen10" | "server-gen10plus" | "netapp" | "vcenter" | "windows";
+
+export type TopologyDesignDraft = {
+  id: string;
+  profile_id: string;
+  scenario: TopologyDesignScenario;
+  subnet: string | null;
+  placements: Record<string, TopologyDesignPlacement | null>;
+  device_settings: Record<string, Record<string, string>>;
+  lane_settings: Record<string, Record<string, string>>;
+  connection_settings: Record<string, Record<string, string>>;
+  source: "default" | "saved";
+  draft_saved: boolean;
+  hardware_touched: boolean;
+  updated_at: string | null;
+  store_path: string;
+  message: string;
+  persistence_inventory: Array<{
+    choice: string;
+    persists_to: string;
+    commit_state: string;
+    hardware_effect: string;
+  }>;
+};
+
+export type TopologyDesignDraftWrite = {
+  profile_id: string;
+  scenario: TopologyDesignScenario;
+  subnet?: string | null;
+  placements: Record<string, TopologyDesignPlacement | null>;
+  device_settings?: Record<string, Record<string, string>>;
+  lane_settings?: Record<string, Record<string, string>>;
+  connection_settings?: Record<string, Record<string, string>>;
 };
 
 export type ControlActionClassification = "read-only" | "write" | "destructive" | "upgrade";
@@ -850,7 +1093,9 @@ export type WorkflowActionRun = {
   started_at: string;
   finished_at: string;
   checked_at: string;
+  evidence_checked_at?: string | null;
   status: string;
+  evidence_status?: string | null;
   source_type: "live_probe" | "live_cached" | "historical_artifact" | "test_fixture" | "not_checked" | string;
   freshness: string;
   not_mock: boolean;
@@ -865,6 +1110,84 @@ export type WorkflowActionRun = {
   blockers: string[];
   warnings: string[];
   next_action: string;
+};
+
+export type WorkflowActionDiagnosis = {
+  action_id: string;
+  action_label: string;
+  run_id: string | null;
+  status: string;
+  ai_enabled: boolean;
+  advisory_source: "local_rules" | "external_ai" | string;
+  confidence: "high" | "medium" | "low" | string;
+  probable_cause: string;
+  explanation: string;
+  suggested_next_action: string;
+  suggested_action_id: string | null;
+  suggested_action_safe: boolean;
+  evidence: Array<{
+    label: string;
+    detail: string;
+  }>;
+  recent_runs: Array<{
+    run_id: string;
+    status: string;
+    finished_at: string | null;
+    summary: string;
+    blocker_count: number;
+    warning_count: number;
+    trace_artifact: string | null;
+  }>;
+  safety_notes: string[];
+};
+
+export type OperatorIssuePacketCreate = {
+  route: string;
+  page_title: string;
+  operator_note: string;
+  ui_context?: Record<string, string>;
+};
+
+export type OperatorIssuePacket = {
+  packet_id: string;
+  created_at: string;
+  route: string;
+  page_title: string;
+  operator_note: string;
+  ui_context: Record<string, string>;
+  ai_enabled: boolean;
+  advisory_source: "local_rules" | "external_ai" | string;
+  summary: string;
+  recent_problem_runs: Array<{
+    run_id: string;
+    action_id: string;
+    stage_id: string;
+    started_at: string | null;
+    finished_at: string | null;
+    status: string;
+    source_type: string;
+    freshness: string;
+    command: string | null;
+    report_artifacts: string[];
+    summary: string;
+    blockers: string[];
+    warnings: string[];
+    next_action: string;
+  }>;
+  diagnoses: Array<{
+    action_id: string | null;
+    status: string | null;
+    confidence: string | null;
+    probable_cause: string;
+    suggested_next_action: string;
+    suggested_action_id: string | null;
+    suggested_action_safe: boolean;
+  }>;
+  suggested_next_steps: string[];
+  safety_notes: string[];
+  artifact: string;
+  markdown_artifact: string;
+  copy_prompt: string;
 };
 
 export type WorkflowAction = {
@@ -905,8 +1228,95 @@ export type WorkflowAction = {
 };
 
 export type WorkflowActionRunRequest = {
+  cisco_commands?: string[];
   confirmation_phrase?: string;
   confirmed_gates?: string[];
+  device_id?: string;
+  ilo_host?: string;
+};
+
+export type LabBuildStepStatus =
+  | "not_started"
+  | "preflight"
+  | "ready"
+  | "running"
+  | "waiting"
+  | "succeeded"
+  | "warning"
+  | "failed"
+  | "skipped"
+  | "blocked"
+  | string;
+
+export type LabBuildStep = {
+  step_id: string;
+  order: number;
+  label: string;
+  description: string;
+  status: LabBuildStepStatus;
+  summary: string;
+  operator_message: string;
+  technical_details: string;
+  suggested_action: string;
+  can_retry: boolean;
+  optional: boolean;
+  depends_on: string[];
+  provides: string[];
+  action_id: string;
+  action_mode: string;
+  operator_path: string;
+  rationale: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  action_run_id: string | null;
+  waiting_nonce: string | null;
+  lease_expires_at: string | null;
+};
+
+export type LabBuildPlan = {
+  kit_id: string;
+  kit_name: string;
+  deployment_mode: string;
+  status: string;
+  headline: string;
+  supporting_message: string;
+  blockers: string[];
+  steps: LabBuildStep[];
+  primary_action: string;
+};
+
+export type LabBuildRun = {
+  run_id: string;
+  revision: number;
+  kit_id: string;
+  kit_name: string;
+  deployment_mode: string;
+  status: string;
+  headline: string;
+  operator_message: string;
+  suggested_action: string;
+  started_at: string;
+  updated_at: string;
+  finished_at: string | null;
+  current_step_id: string | null;
+  steps: LabBuildStep[];
+  progress: {
+    completed: number;
+    total: number;
+    percent: number;
+  };
+  counts: {
+    completed: number;
+    warnings: number;
+    failed: number;
+  };
+  report_artifact: string | null;
+};
+
+export type LabBuildResumeRequest = {
+  action_run_id?: string;
+  run_revision: number;
+  waiting_nonce?: string;
 };
 
 export type WorkflowStage = {
@@ -1239,6 +1649,7 @@ export type MediaInventoryItem = {
 export type MediaInventory = {
   mode: string;
   configured_directories: string[];
+  configured_directory_paths: string[];
   items: MediaInventoryItem[];
   warnings: string[];
 };
@@ -1291,11 +1702,13 @@ export type IloUpgradeReadiness = {
 };
 
 export type IloSetupIntent = {
+  device_id: string;
   provider_id?: string;
   apply_enabled?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
   network: {
+    dhcp_enabled: boolean | null;
     hostname: string | null;
     management_ip: string | null;
     subnet_mask_or_prefix: string | null;
@@ -1305,15 +1718,39 @@ export type IloSetupIntent = {
   users: Array<{
     username_label: string;
     role: string;
+    password_ref_label: string | null;
   }>;
+  license: {
+    advanced_license_key_ref: string | null;
+    expected_status: string | null;
+  };
   snmp: {
     enabled: boolean;
+    version: "v1" | "v2c" | "v3";
+    system_location: string | null;
+    system_contact: string | null;
+    system_role: string | null;
     destinations: string[];
     community_or_user_ref_labels: string[];
+    snmpv3_security_name: string | null;
+    snmpv3_auth_protocol: "MD5" | "SHA" | "SHA256" | "SHA384" | "SHA512";
+    snmpv3_auth_passphrase_ref: string | null;
+    snmpv3_privacy_protocol: "DES" | "AES" | "AES256";
+    snmpv3_privacy_passphrase_ref: string | null;
+  };
+  ipv6: {
+    disable_all: boolean;
+    disable_dhcpv6_dns_server: boolean;
+    disable_dhcpv6_domain_name: boolean;
+    disable_dhcpv6_sntp_settings: boolean;
+    disable_dhcpv6_stateful_mode: boolean;
+    disable_dhcpv6_stateless_mode: boolean;
   };
   time: {
+    use_dhcp_supplied_time_settings: boolean | null;
     timezone: string | null;
     ntp_servers: string[];
+    interface_type: string | null;
   };
   dns_domain: {
     domain_name: string | null;
@@ -1324,8 +1761,44 @@ export type IloSetupIntent = {
 
 export type IloSetupIntentWrite = Omit<
   IloSetupIntent,
-  "provider_id" | "apply_enabled" | "created_at" | "updated_at"
+  "device_id" | "provider_id" | "apply_enabled" | "created_at" | "updated_at"
 >;
+
+export type IloDiscoveredSettings = {
+  provider_id: string;
+  source: string;
+  probe_time: string | null;
+  available: boolean;
+  network: {
+    dhcp_enabled: boolean | null;
+    hostname: string | null;
+    management_ip: string | null;
+    subnet_mask_or_prefix: string | null;
+    gateway: string | null;
+    vlan: string | null;
+  };
+  dns_domain: {
+    domain_name: string | null;
+    dns_servers: string[];
+  };
+  time: {
+    timezone: string | null;
+    ntp_servers: string[];
+    ntp_protocol_enabled: boolean | null;
+  };
+  license: {
+    status: string | null;
+    name: string | null;
+  };
+  snmp: {
+    enabled: boolean | null;
+  };
+  users: Array<{
+    username: string;
+    role: string | null;
+    enabled: boolean | null;
+  }>;
+};
 
 export type IloSetupPlanSection = {
   id: string;
@@ -1464,6 +1937,7 @@ export type HpeRaidVolumeIntent = {
 };
 
 export type HpeRaidIntent = {
+  device_id: string;
   provider_id?: string;
   apply_enabled?: boolean;
   created_at?: string | null;
@@ -1476,7 +1950,7 @@ export type HpeRaidIntent = {
 
 export type HpeRaidIntentWrite = Omit<
   HpeRaidIntent,
-  "provider_id" | "apply_enabled" | "created_at" | "updated_at"
+  "device_id" | "provider_id" | "apply_enabled" | "created_at" | "updated_at"
 >;
 
 export type HpeStorageDiscovery = {
@@ -1489,6 +1963,20 @@ export type HpeStorageDiscovery = {
   physical_drives: Array<Record<string, unknown>>;
   logical_drives: Array<Record<string, unknown>>;
   warnings: string[];
+  blockers: string[];
+  next_safe_action: string;
+};
+
+export type HpeVsanReadiness = {
+  provider_id: string;
+  source: string;
+  last_probe_time: string | null;
+  storage_inventory_available: boolean;
+  controller: Record<string, unknown>;
+  drives: Array<Record<string, unknown>>;
+  summary: Record<string, unknown>;
+  options: Array<Record<string, unknown>>;
+  apply_enabled: false;
   blockers: string[];
   next_safe_action: string;
 };
@@ -1538,3 +2026,22 @@ export type VMDeploymentCreate = {
 };
 
 export type VMDeploymentUpdate = Partial<VMDeploymentCreate>;
+
+export type DeviceInventoryItem = {
+  id: string;
+  device_type: string;
+  display_name: string;
+  host: string | null;
+  dhcp_enabled: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DeviceInventoryWrite = {
+  device_type: string;
+  display_name: string;
+  host?: string | null;
+  dhcp_enabled?: boolean;
+  notes?: string | null;
+};

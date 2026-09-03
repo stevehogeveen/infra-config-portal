@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.enums import EnvironmentName, RequestStatus, WorkflowRunStatus
+from app.services.list_utils import unique_strings
 from app.services.netapp_observations import validate_netapp_operator_notes
 
 VM_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{2,62}$")
@@ -78,6 +79,46 @@ class VMDeploymentCreate(BaseModel):
         if not self.datastore and not self.storage_tier:
             raise ValueError("datastore or storage_tier is required")
         return self
+
+
+class DeviceInventoryWrite(BaseModel):
+    device_type: str = Field(min_length=1, max_length=80)
+    display_name: str = Field(min_length=1, max_length=200)
+    host: str | None = Field(default=None, max_length=300)
+    dhcp_enabled: bool = False
+    notes: str | None = Field(default=None, max_length=4000)
+
+    @field_validator("device_type", "display_name", "host", "notes", mode="before")
+    @classmethod
+    def clean_inventory_text(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
+
+
+class DeviceInventoryUpdate(BaseModel):
+    device_type: str | None = Field(default=None, min_length=1, max_length=80)
+    display_name: str | None = Field(default=None, min_length=1, max_length=200)
+    host: str | None = Field(default=None, max_length=300)
+    dhcp_enabled: bool | None = None
+    notes: str | None = Field(default=None, max_length=4000)
+
+    @field_validator("device_type", "display_name", "host", "notes", mode="before")
+    @classmethod
+    def clean_inventory_update_text(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
+
+
+class DeviceInventoryRead(DeviceInventoryWrite):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class VMDeploymentUpdate(BaseModel):
@@ -292,11 +333,7 @@ class LabAddressPlan(BaseModel):
     @field_validator("netapp_nfs_lifs", "netapp_iscsi_lifs", mode="before")
     @classmethod
     def split_lifs(cls, value: Any) -> list[str]:
-        if value is None:
-            return []
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
+        return _clean_unique_string_list(value)
 
     @field_validator("subnet")
     @classmethod
@@ -334,7 +371,7 @@ class LabAddressPlan(BaseModel):
     @field_validator("netapp_nfs_lifs", "netapp_iscsi_lifs")
     @classmethod
     def validate_lifs(cls, value: list[str]) -> list[str]:
-        cleaned = [item.strip() for item in value if item.strip()]
+        cleaned = _clean_unique_string_list(value)
         for item in cleaned:
             try:
                 ip_address(item)
@@ -353,12 +390,14 @@ class LabGlobalSettings(BaseModel):
     dom_dc: str | None = Field(default=None, max_length=80)
     dns_servers: list[str] = Field(default_factory=list, max_length=8)
     ntp_servers: list[str] = Field(default_factory=list, max_length=8)
+    snmp_servers: list[str] = Field(default_factory=list, max_length=8)
     timezone: str | None = Field(default=None, max_length=80)
     netapp_enabled: bool = True
     netapp_disabled_reason: str | None = Field(default=None, max_length=300)
     vcenter_enabled: bool = False
     vlan_id: str | None = Field(default=None, max_length=80)
     mtu: int | None = Field(default=None, ge=576, le=9216)
+    snmp_version: Literal["v1", "v2c", "v3"] = "v2c"
 
     @field_validator(
         "gateway",
@@ -377,14 +416,10 @@ class LabGlobalSettings(BaseModel):
         text = str(value).strip()
         return text or None
 
-    @field_validator("dns_servers", "ntp_servers", mode="before")
+    @field_validator("dns_servers", "ntp_servers", "snmp_servers", mode="before")
     @classmethod
     def split_server_list(cls, value: Any) -> list[str]:
-        if value is None:
-            return []
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
+        return _clean_unique_string_list(value)
 
     @field_validator("gateway")
     @classmethod
@@ -396,10 +431,10 @@ class LabGlobalSettings(BaseModel):
                 raise ValueError("gateway must be an IPv4 or IPv6 address") from exc
         return value
 
-    @field_validator("dns_servers", "ntp_servers")
+    @field_validator("dns_servers", "ntp_servers", "snmp_servers")
     @classmethod
     def validate_server_list(cls, value: list[str]) -> list[str]:
-        cleaned = [item.strip() for item in value if item.strip()]
+        cleaned = _clean_unique_string_list(value)
         for item in cleaned:
             try:
                 ip_address(item)
@@ -431,6 +466,7 @@ class LabProfileDevices(BaseModel):
     esxi: str | None = None
     ilo: str | None = None
     cisco: str | None = None
+    server_model: Literal["gen10", "gen10plus"] | None = None
     netapp: dict[str, Any] | None = None
     vcenter: str | None = None
 
@@ -438,11 +474,32 @@ class LabProfileDevices(BaseModel):
 class LabProfileFeatures(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    # The lab's shape, described rather than picked from presets: which rack
+    # servers form the cluster, and what backs their shared storage. Local
+    # per-host volumes exist regardless and are not represented here.
+    cluster_member_device_ids: list[str] = Field(default_factory=list, max_length=32)
+    # None means "this kit never said", which is not the same as choosing none:
+    # kits saved before this field existed must keep deriving their storage from
+    # netapp_enabled/storage_protocol rather than being switched to local.
+    shared_storage: Literal["none", "vsan", "netapp_nfs", "netapp_iscsi"] | None = None
+    # Everything below is derived from the two fields above (see
+    # lab_topology._feature_state). They stay because ~40 call sites branch on
+    # netapp_enabled / vcenter_enabled / storage_protocol, and deployment_mode
+    # is an exact-string gate in esxi_installer_artifact.
     netapp_enabled: bool = True
     vcenter_enabled: bool = False
+    deployment_mode: Literal[
+        "server_netapp_direct",
+        "server_netapp_vcenter",
+        "single_server_local_storage",
+        "unsupported_vcenter_without_netapp",
+    ] = "server_netapp_direct"
+    deployment_label: str = Field(default="Server + NetApp direct attach", max_length=120)
+    deployment_supported: bool = False
+    storage_location: Literal["netapp_shared", "server_local"] = "netapp_shared"
     firmware_gate_enabled: bool = True
     build_verification_enabled: bool = True
-    storage_protocol: str = Field(default="nfs", max_length=40)
+    storage_protocol: Literal["nfs", "iscsi", "local", "none"] = "nfs"
     disable_ipv6: bool = True
     block_legacy_protocols: bool = True
     enable_snmp: bool = False
@@ -450,6 +507,13 @@ class LabProfileFeatures(BaseModel):
     enable_dns: bool = True
     netapp_disabled_reason: str | None = Field(default=None, max_length=300)
     vcenter_disabled_reason: str | None = Field(default=None, max_length=300)
+
+    @field_validator("deployment_mode", "storage_location", "storage_protocol", mode="before")
+    @classmethod
+    def normalize_choice(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        return str(value).strip().lower()
 
 
 class LabProfileWrite(BaseModel):
@@ -487,11 +551,7 @@ class LabProfileWrite(BaseModel):
     @field_validator("dns", "ntp", mode="before")
     @classmethod
     def split_top_level_server_list(cls, value: Any) -> list[str]:
-        if value is None:
-            return []
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
+        return _clean_unique_string_list(value)
 
     @field_validator("*", mode="after")
     @classmethod
@@ -579,6 +639,140 @@ class LabProfileRuntimeApplyRead(BaseModel):
     lab_profiles: LabProfileListRead
 
 
+class TopologyDesignDraftWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile_id: str = Field(min_length=1, max_length=120)
+    scenario: Literal["server_netapp_direct", "server_netapp_vcenter", "single_server_local_storage"]
+    subnet: str | None = Field(default=None, max_length=80)
+    placements: dict[str, str | None] = Field(default_factory=dict)
+    device_settings: dict[str, dict[str, str]] = Field(default_factory=dict)
+    lane_settings: dict[str, dict[str, str]] = Field(default_factory=dict)
+    connection_settings: dict[str, dict[str, str]] = Field(default_factory=dict)
+
+    @field_validator("profile_id", "scenario", "subnet", mode="before")
+    @classmethod
+    def strip_topology_design_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def reject_topology_design_secret_values(cls, value: Any) -> Any:
+        _reject_secret_values(value)
+        return value
+
+    @field_validator("placements")
+    @classmethod
+    def validate_topology_design_placement_keys(cls, value: dict[str, str | None]) -> dict[str, str | None]:
+        allowed = {"u1", "u2", "u3", "u4", "virtual"}
+        unknown = sorted(set(value) - allowed)
+        if unknown:
+            raise ValueError(f"placements contains unknown rack slot(s): {', '.join(unknown)}")
+        return value
+
+    @field_validator("device_settings")
+    @classmethod
+    def validate_topology_design_device_settings(cls, value: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+        allowed_parts = {"switch", "ilo", "server-gen10", "server-gen10plus", "netapp", "vcenter", "windows"}
+        allowed_fields = {
+            "access_state",
+            "datastore",
+            "credential_state",
+            "firmware",
+            "gateway",
+            "iscsi_lifs",
+            "management_ip",
+            "mgmt_vlan",
+            "name",
+            "nfs_lifs",
+            "notes",
+            "power_state",
+            "ports",
+            "protocol",
+            "raid_boot",
+            "raid_data",
+            "reachability",
+            "role",
+            "safe_checks",
+            "san_ports",
+            "storage_vlan",
+            "vm_network",
+        }
+        unknown_parts = sorted(set(value) - allowed_parts)
+        if unknown_parts:
+            raise ValueError(f"device_settings contains unknown device(s): {', '.join(unknown_parts)}")
+        for part, settings in value.items():
+            unknown_fields = sorted(set(settings) - allowed_fields)
+            if unknown_fields:
+                raise ValueError(f"device_settings for {part} contains unknown field(s): {', '.join(unknown_fields)}")
+            for field_name, field_value in settings.items():
+                if len(str(field_value)) > 240:
+                    raise ValueError(f"device_settings {part}.{field_name} is too long")
+        return value
+
+    @field_validator("lane_settings")
+    @classmethod
+    def validate_topology_design_lane_settings(cls, value: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+        allowed_lanes = {"management", "storage", "virtualization"}
+        allowed_fields = {"mtu", "notes", "protocol", "purpose", "source", "target", "vlan"}
+        unknown_lanes = sorted(set(value) - allowed_lanes)
+        if unknown_lanes:
+            raise ValueError(f"lane_settings contains unknown lane(s): {', '.join(unknown_lanes)}")
+        for lane, settings in value.items():
+            unknown_fields = sorted(set(settings) - allowed_fields)
+            if unknown_fields:
+                raise ValueError(f"lane_settings for {lane} contains unknown field(s): {', '.join(unknown_fields)}")
+            for field_name, field_value in settings.items():
+                if len(str(field_value)) > 240:
+                    raise ValueError(f"lane_settings {lane}.{field_name} is too long")
+        return value
+
+    @field_validator("connection_settings")
+    @classmethod
+    def validate_topology_design_connection_settings(cls, value: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+        allowed_connections = {"switch-server", "switch-netapp", "server-netapp", "server-vm"}
+        allowed_fields = {"lane", "mtu", "notes", "protocol", "source", "status", "target", "vlan"}
+        unknown_connections = sorted(set(value) - allowed_connections)
+        if unknown_connections:
+            raise ValueError(f"connection_settings contains unknown connection(s): {', '.join(unknown_connections)}")
+        for connection, settings in value.items():
+            unknown_fields = sorted(set(settings) - allowed_fields)
+            if unknown_fields:
+                raise ValueError(f"connection_settings for {connection} contains unknown field(s): {', '.join(unknown_fields)}")
+            for field_name, field_value in settings.items():
+                if len(str(field_value)) > 240:
+                    raise ValueError(f"connection_settings {connection}.{field_name} is too long")
+        return value
+
+
+class TopologyDesignPersistenceItemRead(BaseModel):
+    choice: str
+    persists_to: str
+    commit_state: str
+    hardware_effect: str
+
+
+class TopologyDesignDraftRead(BaseModel):
+    id: str
+    profile_id: str
+    scenario: str
+    subnet: str | None = None
+    placements: dict[str, str | None] = Field(default_factory=dict)
+    device_settings: dict[str, dict[str, str]] = Field(default_factory=dict)
+    lane_settings: dict[str, dict[str, str]] = Field(default_factory=dict)
+    connection_settings: dict[str, dict[str, str]] = Field(default_factory=dict)
+    source: Literal["default", "saved"]
+    draft_saved: bool
+    hardware_touched: bool = False
+    updated_at: datetime | None = None
+    store_path: str
+    message: str
+    persistence_inventory: list[TopologyDesignPersistenceItemRead] = Field(default_factory=list)
+
+
 class AuditEventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -615,6 +809,7 @@ class MediaInventoryItemRead(BaseModel):
 class MediaInventoryRead(BaseModel):
     mode: str
     configured_directories: list[str]
+    configured_directory_paths: list[str] = Field(default_factory=list, repr=False)
     items: list[MediaInventoryItemRead]
     warnings: list[str]
 
@@ -885,6 +1080,7 @@ SECRET_VALUE_RE = re.compile(
 
 
 class IloNetworkIntent(BaseModel):
+    dhcp_enabled: bool | None = None
     hostname: str | None = Field(default=None, max_length=120)
     management_ip: str | None = Field(default=None, max_length=80)
     subnet_mask_or_prefix: str | None = Field(default=None, max_length=80)
@@ -895,17 +1091,29 @@ class IloNetworkIntent(BaseModel):
 class IloUserIntent(BaseModel):
     username_label: str = Field(min_length=1, max_length=120)
     role: str = Field(min_length=1, max_length=120)
+    password_ref_label: str | None = Field(default=None, max_length=160)
 
 
 class IloSnmpIntent(BaseModel):
     enabled: bool = False
+    version: Literal["v1", "v2c", "v3"] = "v3"
+    system_location: str | None = Field(default=None, max_length=160)
+    system_contact: str | None = Field(default=None, max_length=160)
+    system_role: str | None = Field(default=None, max_length=160)
     destinations: list[str] = Field(default_factory=list, max_length=10)
     community_or_user_ref_labels: list[str] = Field(default_factory=list, max_length=10)
+    snmpv3_security_name: str | None = Field(default=None, max_length=120)
+    snmpv3_auth_protocol: Literal["MD5", "SHA", "SHA256", "SHA384", "SHA512"] = "MD5"
+    snmpv3_auth_passphrase_ref: str | None = Field(default=None, max_length=160)
+    snmpv3_privacy_protocol: Literal["DES", "AES", "AES256"] = "DES"
+    snmpv3_privacy_passphrase_ref: str | None = Field(default=None, max_length=160)
 
 
 class IloTimeIntent(BaseModel):
+    use_dhcp_supplied_time_settings: bool | None = None
     timezone: str | None = Field(default=None, max_length=120)
     ntp_servers: list[str] = Field(default_factory=list, max_length=10)
+    interface_type: str | None = Field(default=None, max_length=120)
 
 
 class IloDnsDomainIntent(BaseModel):
@@ -913,10 +1121,26 @@ class IloDnsDomainIntent(BaseModel):
     dns_servers: list[str] = Field(default_factory=list, max_length=10)
 
 
+class IloLicenseIntent(BaseModel):
+    advanced_license_key_ref: str | None = Field(default=None, max_length=180)
+    expected_status: str | None = Field(default=None, max_length=120)
+
+
+class IloIpv6Intent(BaseModel):
+    disable_all: bool = True
+    disable_dhcpv6_dns_server: bool = True
+    disable_dhcpv6_domain_name: bool = True
+    disable_dhcpv6_sntp_settings: bool = True
+    disable_dhcpv6_stateful_mode: bool = True
+    disable_dhcpv6_stateless_mode: bool = True
+
+
 class IloSetupIntentWrite(BaseModel):
     network: IloNetworkIntent = Field(default_factory=IloNetworkIntent)
     users: list[IloUserIntent] = Field(default_factory=list, max_length=20)
+    license: IloLicenseIntent = Field(default_factory=IloLicenseIntent)
     snmp: IloSnmpIntent = Field(default_factory=IloSnmpIntent)
+    ipv6: IloIpv6Intent = Field(default_factory=IloIpv6Intent)
     time: IloTimeIntent = Field(default_factory=IloTimeIntent)
     dns_domain: IloDnsDomainIntent = Field(default_factory=IloDnsDomainIntent)
     notes: str | None = Field(default=None, max_length=2000)
@@ -929,10 +1153,41 @@ class IloSetupIntentWrite(BaseModel):
 
 
 class IloSetupIntentRead(IloSetupIntentWrite):
+    device_id: str
     provider_id: str
     apply_enabled: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class IloAccessSettingsWrite(BaseModel):
+    host: str | None = Field(default=None, max_length=240)
+    username: str | None = Field(default=None, max_length=160)
+    password: str | None = Field(default=None, max_length=512)
+    verify_tls: bool | None = None
+
+
+class IloAccessSettingsRead(BaseModel):
+    device_id: str
+    provider_id: str
+    host: str | None = None
+    host_source: str
+    fallback_hosts: list[str] = Field(default_factory=list)
+    username: str | None = None
+    username_configured: bool = False
+    password_configured: bool = False
+    verify_tls: bool = True
+    updated_at: str | None = None
+    last_probe_status: str = "not_checked"
+    last_probe_time: str | None = None
+    last_probe_freshness: str = "not_checked"
+    last_probe_is_current: bool = False
+    last_probe_message: str | None = None
+    last_probe_target_source: str | None = None
+    last_probe_target_matches_access_host: bool = False
+    last_probe_target_matches_configured_candidates: bool = False
+    last_probe_target_fingerprint_present: bool = False
+    next_safe_action: str
 
 
 class HpeRaidVolumeIntent(BaseModel):
@@ -960,6 +1215,7 @@ class HpeRaidIntentWrite(BaseModel):
 
 
 class HpeRaidIntentRead(HpeRaidIntentWrite):
+    device_id: str
     provider_id: str
     apply_enabled: bool = False
     created_at: datetime | None = None
@@ -980,6 +1236,20 @@ class HpeStorageDiscoveryRead(BaseModel):
     next_safe_action: str
 
 
+class HpeVsanReadinessRead(BaseModel):
+    provider_id: str
+    source: str
+    last_probe_time: str | None = None
+    storage_inventory_available: bool = False
+    controller: dict[str, Any] = Field(default_factory=dict)
+    drives: list[dict[str, Any]] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    options: list[dict[str, Any]] = Field(default_factory=list)
+    apply_enabled: bool = False
+    blockers: list[str] = Field(default_factory=list)
+    next_safe_action: str
+
+
 class HpeRaidPlanPreviewRead(BaseModel):
     provider_id: str
     status: str
@@ -989,6 +1259,7 @@ class HpeRaidPlanPreviewRead(BaseModel):
     current_layout: HpeStorageDiscoveryRead
     desired_intent: HpeRaidIntentRead
     planned_layout: dict[str, Any] = Field(default_factory=dict)
+    local_storage_readiness: dict[str, Any] = Field(default_factory=dict)
     impact: dict[str, Any] = Field(default_factory=dict)
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -996,8 +1267,38 @@ class HpeRaidPlanPreviewRead(BaseModel):
     next_safe_action: str
 
 
-class HpeRaidApplyCreate(BaseModel):
+class IloWriteTargetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ilo_host: str = Field(max_length=80)
+
+    @field_validator("ilo_host", mode="before")
+    @classmethod
+    def strip_ilo_write_host(cls, value: str) -> str:
+        text = str(value).strip()
+        if not text:
+            raise ValueError("ilo_host is required")
+        return text
+
+    @field_validator("ilo_host")
+    @classmethod
+    def validate_ilo_write_host(cls, value: str) -> str:
+        try:
+            return str(ip_address(value))
+        except ValueError as exc:
+            raise ValueError("ilo_host must be an explicit IPv4 or IPv6 address") from exc
+
+
+class HpeRaidApplyCreate(IloWriteTargetRequest):
     confirmation_phrase: str
+
+
+class HpeRaidFactoryResetCreate(BaseModel):
+    confirmation_phrase: str
+
+
+class HpeRaidResetCreate(IloWriteTargetRequest):
+    pass
 
 
 class IloSetupPlanSectionRead(BaseModel):
@@ -1028,10 +1329,60 @@ class IloSetupPlanPreviewRead(BaseModel):
     removable_warnings: list[str] = Field(default_factory=list)
 
 
-class IloSetupApplyCreate(BaseModel):
+class IloSetupApplyCreate(IloWriteTargetRequest):
     confirmation_phrase: str
     requested_actions: list[str] = Field(default_factory=list)
     destructive_action_requested: bool = False
+
+
+class IloDiscoveredNetworkRead(BaseModel):
+    dhcp_enabled: bool | None = None
+    hostname: str | None = None
+    management_ip: str | None = None
+    subnet_mask_or_prefix: str | None = None
+    gateway: str | None = None
+    vlan: str | None = None
+
+
+class IloDiscoveredDnsDomainRead(BaseModel):
+    domain_name: str | None = None
+    dns_servers: list[str] = Field(default_factory=list)
+
+
+class IloDiscoveredTimeRead(BaseModel):
+    timezone: str | None = None
+    ntp_servers: list[str] = Field(default_factory=list)
+    ntp_protocol_enabled: bool | None = None
+
+
+class IloDiscoveredLicenseRead(BaseModel):
+    status: str | None = None
+    name: str | None = None
+
+
+class IloDiscoveredSnmpRead(BaseModel):
+    enabled: bool | None = None
+
+
+class IloDiscoveredUserRead(BaseModel):
+    username: str
+    role: str | None = None
+    enabled: bool | None = None
+
+
+class IloDiscoveredSettingsRead(BaseModel):
+    provider_id: str
+    source: str = "cached read-only iLO probe"
+    probe_time: datetime | None = None
+    freshness: str | None = None
+    target_matches_current_access: bool | None = None
+    available: bool = False
+    network: IloDiscoveredNetworkRead = Field(default_factory=IloDiscoveredNetworkRead)
+    dns_domain: IloDiscoveredDnsDomainRead = Field(default_factory=IloDiscoveredDnsDomainRead)
+    time: IloDiscoveredTimeRead = Field(default_factory=IloDiscoveredTimeRead)
+    license: IloDiscoveredLicenseRead = Field(default_factory=IloDiscoveredLicenseRead)
+    snmp: IloDiscoveredSnmpRead = Field(default_factory=IloDiscoveredSnmpRead)
+    users: list[IloDiscoveredUserRead] = Field(default_factory=list)
 
 
 class IloSetupCompareRowRead(BaseModel):
@@ -1121,6 +1472,18 @@ class IloReportPreviewRead(BaseModel):
     removable_warnings: list[str] = Field(default_factory=list)
 
 
+def _clean_unique_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        candidates = value.split(",")
+    elif isinstance(value, (list, tuple)):
+        candidates = value
+    else:
+        candidates = [value]
+    return unique_strings(candidates)
+
+
 def _reject_secret_values(value: Any) -> None:
     if isinstance(value, str):
         if SECRET_VALUE_RE.search(value):
@@ -1196,6 +1559,82 @@ class ProviderModeSettingsWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     desired_mode: Literal["local-readonly", "local-lab-readwrite"]
+
+
+class LabSafetyFlagRead(BaseModel):
+    name: str
+    label: str
+    description: str
+    required: bool
+    value: str | bool | None = None
+    enabled: bool
+    source: str
+    status: str
+
+
+class LabSafetySettingsRead(BaseModel):
+    flags: list[LabSafetyFlagRead]
+    store_path: str
+    updated_at: datetime | None = None
+    confirmation_phrase: str
+    device_reconfiguration_confirmation_phrase: str
+    next_safe_action: str
+
+
+class LabSafetySettingsWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lab_environment: Literal["isolated-real-lab"] | None = None
+    lab_acknowledge_real_hardware: bool | None = None
+    lab_acknowledge_device_reconfiguration: bool | None = None
+    lab_acknowledge_data_loss_risk: bool | None = None
+    lab_acknowledge_lab_only: bool | None = None
+    confirmation_phrase: str | None = None
+    device_reconfiguration_confirmation_phrase: str | None = None
+
+
+class LabCredentialFieldRead(BaseModel):
+    field: str
+    env_var: str
+    is_secret: bool
+    configured: bool
+    value: str | None = None
+
+
+class LabCredentialGroupRead(BaseModel):
+    id: str
+    label: str
+    hint: str
+    fields: list[LabCredentialFieldRead]
+    configured: bool
+
+
+class LabCredentialsRead(BaseModel):
+    groups: list[LabCredentialGroupRead]
+    store_path: str
+    restart_required: bool
+    next_safe_action: str
+
+
+class LabCredentialsWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    esxi_host: str | None = None
+    esxi_username: str | None = None
+    esxi_password: str | None = None
+    cisco_username: str | None = None
+    cisco_password: str | None = None
+    cisco_enable_password: str | None = None
+    netapp_username: str | None = None
+    netapp_password: str | None = None
+    vcenter_username: str | None = None
+    vcenter_password: str | None = None
+    snmp_community: str | None = None
+    snmp_v3_username: str | None = None
+    snmp_v3_auth_protocol: str | None = None
+    snmp_v3_auth_password: str | None = None
+    snmp_v3_priv_protocol: str | None = None
+    snmp_v3_priv_password: str | None = None
 
 
 class CiscoSetupReadinessRead(BaseModel):
@@ -1293,6 +1732,93 @@ class CiscoConsoleBootstrapApplyCreate(BaseModel):
     confirmation_phrase: str
     requested_actions: list[str] = Field(default_factory=list)
     destructive_action_requested: bool = False
+
+
+class CiscoConsoleIdentityCandidateRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    port: str
+    candidate_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    description: str | None = None
+    manufacturer: str | None = None
+    transport: Literal["serial", "usb-serial"]
+    vid_pid: str | None = Field(default=None, pattern=r"^[0-9A-F]{4}:[0-9A-F]{4}$")
+    usb_location: str | None = None
+    serial_present: bool
+    recommended_bauds: list[int] = Field(default_factory=list)
+    recommended: bool = False
+
+
+class CiscoConsoleIdentityCandidatesRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str
+    status: str
+    message: str
+    checked_at: str
+    candidates: list[CiscoConsoleIdentityCandidateRead] = Field(default_factory=list)
+    allowed_bauds: list[int] = Field(default_factory=list)
+    baud_is_identity_proof: Literal[False] = False
+    raw_identifiers_redacted: Literal[True] = True
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CiscoConsoleIdentityVerifyCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    port: str = Field(min_length=1, max_length=260)
+    baud: Literal[9600, 115200]
+    candidate_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("port")
+    @classmethod
+    def validate_explicit_serial_port(cls, value: str) -> str:
+        port = value.strip()
+        if any(ord(character) < 32 for character in port):
+            raise ValueError("port must not contain control characters")
+        if "://" in port:
+            raise ValueError("port must be a local serial device, not a network endpoint")
+        if not (
+            re.fullmatch(r"(?i)COM[1-9][0-9]{0,3}", port)
+            or re.fullmatch(r"(?i)\\\\\.\\COM[1-9][0-9]{0,3}", port)
+            or port.startswith("/dev/")
+        ):
+            raise ValueError("port must be an exact COM device or /dev serial path")
+        return port
+
+
+class CiscoConsoleIdentityVerifyRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str
+    status: str
+    message: str
+    checked_at: str
+    port: str
+    baud: int
+    candidate_fingerprint: str
+    detected_vendor: Literal["cisco", "netapp", "unknown"]
+    identity_verified: bool
+    prompt_state: str
+    model: str | None = None
+    software_version: str | None = None
+    serial_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    read_only: Literal[True] = True
+    verification_method: Literal[
+        "none",
+        "signed-exec",
+        "show-version-discriminator",
+    ] = "none"
+    baud_is_identity_proof: Literal[False] = False
+    raw_output_redacted: Literal[True] = True
+    raw_identifiers_redacted: Literal[True] = True
+    commands_attempted: list[Literal["show version", "show inventory"]] = Field(
+        default_factory=list
+    )
+    not_attempted: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class NetAppPlanPreviewRead(BaseModel):
@@ -1965,7 +2491,9 @@ class WorkflowActionRunRead(BaseModel):
     started_at: str
     finished_at: str
     checked_at: str
+    evidence_checked_at: str | None = None
     status: str
+    evidence_status: str | None = None
     source_type: Literal["live_probe", "live_cached", "historical_artifact", "test_fixture", "not_checked"] | str
     freshness: str
     not_mock: bool = True
@@ -1983,8 +2511,289 @@ class WorkflowActionRunRead(BaseModel):
 
 
 class WorkflowActionRunCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     confirmation_phrase: str | None = None
     confirmed_gates: list[str] = Field(default_factory=list)
+    cisco_commands: list[str] = Field(default_factory=list, max_length=4)
+    device_id: str | None = Field(default=None, max_length=36)
+    ilo_host: str | None = Field(default=None, max_length=80)
+
+    @field_validator("device_id", mode="before")
+    @classmethod
+    def strip_device_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("ilo_host", mode="before")
+    @classmethod
+    def strip_ilo_host(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("ilo_host")
+    @classmethod
+    def validate_ilo_host(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return str(ip_address(value))
+        except ValueError as exc:
+            raise ValueError("ilo_host must be an explicit IPv4 or IPv6 address") from exc
+
+    @field_validator("cisco_commands")
+    @classmethod
+    def validate_cisco_commands(cls, value: list[str]) -> list[str]:
+        commands: list[str] = []
+        for raw in value:
+            command = str(raw).strip()
+            interface_match = re.fullmatch(
+                r"show interface\s+Gi1/0/(?:[1-9]|[1-3][0-9]|4[0-8])",
+                command,
+                re.IGNORECASE,
+            )
+            running_match = re.fullmatch(
+                r"show running-config interface\s+Gi1/0/(?:[1-9]|[1-3][0-9]|4[0-8])",
+                command,
+                re.IGNORECASE,
+            )
+            if (
+                len(command) > 80
+                or (
+                    command.casefold() != "show interfaces status"
+                    and interface_match is None
+                    and running_match is None
+                )
+            ):
+                raise ValueError(
+                    "cisco_commands accepts only bounded read-only interface show commands"
+                )
+            commands.append(command)
+        return commands
+
+
+class LabBuildStepRead(BaseModel):
+    step_id: str
+    order: int
+    label: str
+    description: str
+    status: Literal[
+        "not_started",
+        "preflight",
+        "ready",
+        "running",
+        "waiting",
+        "succeeded",
+        "warning",
+        "failed",
+        "skipped",
+        "blocked",
+    ] | str
+    summary: str
+    operator_message: str
+    technical_details: str = ""
+    suggested_action: str
+    can_retry: bool = False
+    optional: bool = False
+    depends_on: list[str] = Field(default_factory=list)
+    provides: list[str] = Field(default_factory=list)
+    action_id: str
+    action_mode: str
+    operator_path: str
+    rationale: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    action_run_id: str | None = None
+    waiting_nonce: str | None = None
+    lease_expires_at: str | None = None
+
+
+class LabBuildPlanRead(BaseModel):
+    kit_id: str
+    kit_name: str
+    deployment_mode: str
+    status: str
+    headline: str
+    supporting_message: str
+    blockers: list[str] = Field(default_factory=list)
+    steps: list[LabBuildStepRead] = Field(default_factory=list)
+    primary_action: str
+
+
+class LabBuildProgressRead(BaseModel):
+    completed: int
+    total: int
+    percent: int
+
+
+class LabBuildCountsRead(BaseModel):
+    completed: int
+    warnings: int
+    failed: int
+
+
+class LabBuildResumeCreate(BaseModel):
+    action_run_id: str | None = Field(default=None, min_length=1, max_length=240)
+    run_revision: int = Field(ge=1)
+    waiting_nonce: str | None = Field(default=None, min_length=16, max_length=128)
+
+
+class LabBuildRunRead(BaseModel):
+    run_id: str
+    revision: int
+    kit_id: str
+    kit_name: str
+    deployment_mode: str
+    status: str
+    headline: str
+    operator_message: str
+    suggested_action: str
+    started_at: str
+    updated_at: str
+    finished_at: str | None = None
+    current_step_id: str | None = None
+    steps: list[LabBuildStepRead] = Field(default_factory=list)
+    progress: LabBuildProgressRead
+    counts: LabBuildCountsRead
+    report_artifact: str | None = None
+
+
+class WorkflowActionDiagnosisEvidenceRead(BaseModel):
+    label: str
+    detail: str
+
+
+class WorkflowActionDiagnosisRecentRunRead(BaseModel):
+    run_id: str
+    status: str
+    finished_at: str | None = None
+    summary: str
+    blocker_count: int = 0
+    warning_count: int = 0
+    trace_artifact: str | None = None
+
+
+class WorkflowActionDiagnosisRead(BaseModel):
+    action_id: str
+    action_label: str
+    run_id: str | None = None
+    status: str
+    ai_enabled: bool = False
+    advisory_source: Literal["local_rules", "external_ai"] | str = "local_rules"
+    confidence: Literal["high", "medium", "low"] | str
+    probable_cause: str
+    explanation: str
+    suggested_next_action: str
+    suggested_action_id: str | None = None
+    suggested_action_safe: bool = False
+    evidence: list[WorkflowActionDiagnosisEvidenceRead] = Field(default_factory=list)
+    recent_runs: list[WorkflowActionDiagnosisRecentRunRead] = Field(default_factory=list)
+    safety_notes: list[str] = Field(default_factory=list)
+
+
+class OperatorIssuePacketCreate(BaseModel):
+    route: str = Field(default="/", max_length=160)
+    page_title: str = Field(default="", max_length=120)
+    operator_note: str = Field(default="", max_length=1600)
+    ui_context: dict[str, str] = Field(default_factory=dict)
+
+
+class OperatorIssuePacketRunRead(BaseModel):
+    run_id: str
+    action_id: str
+    stage_id: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    status: str
+    source_type: str
+    freshness: str
+    command: str | None = None
+    report_artifacts: list[str] = Field(default_factory=list)
+    summary: str
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    next_action: str
+
+
+class OperatorIssuePacketDiagnosisRead(BaseModel):
+    action_id: str | None = None
+    status: str | None = None
+    confidence: str | None = None
+    probable_cause: str
+    suggested_next_action: str
+    suggested_action_id: str | None = None
+    suggested_action_safe: bool = False
+
+
+class OperatorIssuePacketRead(BaseModel):
+    packet_id: str
+    created_at: str
+    route: str
+    page_title: str
+    operator_note: str
+    ui_context: dict[str, str] = Field(default_factory=dict)
+    ai_enabled: bool = False
+    advisory_source: Literal["local_rules", "external_ai"] | str = "local_rules"
+    summary: str
+    recent_problem_runs: list[OperatorIssuePacketRunRead] = Field(default_factory=list)
+    diagnoses: list[OperatorIssuePacketDiagnosisRead] = Field(default_factory=list)
+    suggested_next_steps: list[str] = Field(default_factory=list)
+    safety_notes: list[str] = Field(default_factory=list)
+    artifact: str
+    markdown_artifact: str
+    copy_prompt: str
+
+
+class UiIntentRegionRead(BaseModel):
+    id: str = Field(min_length=1, max_length=80)
+    label: str = Field(min_length=1, max_length=120)
+    kind: Literal["panel", "drawer", "section", "row"] | str = "section"
+
+
+class UiIntentRegionLayoutRead(BaseModel):
+    visible: bool = True
+    collapsed: bool = False
+    order: int = 0
+
+
+class UiIntentRequest(BaseModel):
+    page: str = Field(min_length=1, max_length=80)
+    request: str = Field(min_length=1, max_length=400)
+    regions: list[UiIntentRegionRead] = Field(default_factory=list, max_length=40)
+    current_layout: dict[str, UiIntentRegionLayoutRead] = Field(default_factory=dict)
+
+
+class UiIntentOpRead(BaseModel):
+    region_id: str = Field(min_length=1, max_length=80)
+    op: Literal["hide", "show", "collapse", "expand", "moveUp", "moveDown"]
+
+
+class UiIntentResponse(BaseModel):
+    ops: list[UiIntentOpRead] = Field(default_factory=list)
+    summary: str
+    source: Literal["local_rules", "external_ai"] | str = "local_rules"
+
+
+class AiChangeRequestCreate(BaseModel):
+    page: str = Field(min_length=1, max_length=80)
+    request: str = Field(min_length=1, max_length=1600)
+    target: str | None = Field(default=None, max_length=120)
+    route: str = Field(default="/", max_length=160)
+    regions: list[UiIntentRegionRead] = Field(default_factory=list, max_length=60)
+    current_layout: dict[str, UiIntentRegionLayoutRead] = Field(default_factory=dict)
+    screenshot_path: str | None = Field(default=None, max_length=240)
+
+
+class AiChangeRequestRead(BaseModel):
+    request_id: str
+    status: Literal["queued"] | str = "queued"
+    artifact: str
+    message: str
+    next_action: str
 
 
 class WorkflowActionRead(BaseModel):

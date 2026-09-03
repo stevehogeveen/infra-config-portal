@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import socket
 import subprocess
@@ -12,8 +11,12 @@ from typing import Any
 from app.core.config import settings
 from app.providers.action_policy import LOCAL_LAB_READWRITE_MODE, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
+from app.services.guarded_action_context import GuardedActionContext, guarded_confirmation, guarded_flag
+from app.services.json_file_store import write_json_object, write_text_value
 from app.services.lab_profiles import active_lab_profile_context
+from app.services.list_utils import unique_preserving_order, unique_strings
 from app.services.netapp_state import get_netapp_runtime_state, validate_netapp_setup
+from app.services.path_utils import path_exists, repo_relative_path
 
 PROVIDER_ID = "netapp-ontap"
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -88,7 +91,7 @@ def build_netapp_setup_baseline(*, run_address_scan: bool = False, write_report:
         payload = _not_in_scope_payload("setup-upgrade-baseline", report_path=BASELINE_REPORT)
         if write_report:
             CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-            BASELINE_REPORT.write_text(_baseline_markdown(payload), encoding="utf-8")
+            write_text_value(BASELINE_REPORT, _baseline_markdown(payload))
         return payload
     checked_at = _now()
     runtime_state = get_netapp_runtime_state()
@@ -127,7 +130,7 @@ def build_netapp_setup_baseline(*, run_address_scan: bool = False, write_report:
     sanitized = _sanitize(payload)
     if write_report:
         CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-        BASELINE_REPORT.write_text(_baseline_markdown(sanitized), encoding="utf-8")
+        write_text_value(BASELINE_REPORT, _baseline_markdown(sanitized))
     return sanitized
 
 
@@ -150,7 +153,9 @@ def build_netapp_setup_preview(*, run_address_scan: bool = False, write_report: 
     )
 
 
-def apply_netapp_setup(*, write_report: bool = True) -> dict[str, Any]:
+def apply_netapp_setup(
+    *, write_report: bool = True, guarded_context: GuardedActionContext | None = None
+) -> dict[str, Any]:
     if not _netapp_in_scope():
         payload = _not_in_scope_payload(
             "setup-apply",
@@ -158,16 +163,14 @@ def apply_netapp_setup(*, write_report: bool = True) -> dict[str, Any]:
             json_path=SETUP_APPLY_JSON,
         )
         if write_report:
-            CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-            SETUP_APPLY_JSON.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            SETUP_APPLY_REPORT.write_text(_setup_apply_markdown(payload), encoding="utf-8")
+            _write_report_payload(SETUP_APPLY_JSON, SETUP_APPLY_REPORT, payload, _setup_apply_markdown)
         return payload
     checked_at = _now()
     runtime_state = get_netapp_runtime_state()
     detected_state = _detected_setup_state(runtime_state)
     intent = get_netapp_setup_intent()
     address_scan = scan_planned_netapp_addresses(enabled=True)
-    gates = _setup_apply_gates(detected_state, intent, address_scan)
+    gates = _setup_apply_gates(detected_state, intent, address_scan, guarded_context=guarded_context)
     blocked = bool(gates["blockers"])
     payload = {
         "provider_id": PROVIDER_ID,
@@ -231,9 +234,7 @@ def apply_netapp_setup(*, write_report: bool = True) -> dict[str, Any]:
     }
     sanitized = _sanitize(payload)
     if write_report:
-        CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-        SETUP_APPLY_JSON.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
-        SETUP_APPLY_REPORT.write_text(_setup_apply_markdown(sanitized), encoding="utf-8")
+        _write_report_payload(SETUP_APPLY_JSON, SETUP_APPLY_REPORT, sanitized, _setup_apply_markdown)
     return sanitized
 
 
@@ -245,9 +246,12 @@ def run_netapp_post_setup_validation(*, write_report: bool = True) -> dict[str, 
             json_path=POST_SETUP_VALIDATION_JSON,
         )
         if write_report:
-            CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-            POST_SETUP_VALIDATION_JSON.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            POST_SETUP_VALIDATION_REPORT.write_text(_post_setup_validation_markdown(payload), encoding="utf-8")
+            _write_report_payload(
+                POST_SETUP_VALIDATION_JSON,
+                POST_SETUP_VALIDATION_REPORT,
+                payload,
+                _post_setup_validation_markdown,
+            )
         return payload
     validation = validate_netapp_setup(check_ports=True, write_report=True)
     payload = {
@@ -261,9 +265,12 @@ def run_netapp_post_setup_validation(*, write_report: bool = True) -> dict[str, 
     }
     sanitized = _sanitize(payload)
     if write_report:
-        CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-        POST_SETUP_VALIDATION_JSON.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
-        POST_SETUP_VALIDATION_REPORT.write_text(_post_setup_validation_markdown(sanitized), encoding="utf-8")
+        _write_report_payload(
+            POST_SETUP_VALIDATION_JSON,
+            POST_SETUP_VALIDATION_REPORT,
+            sanitized,
+            _post_setup_validation_markdown,
+        )
     return sanitized
 
 
@@ -324,10 +331,7 @@ def _build_setup_preview(
     if not _netapp_in_scope():
         payload = _not_in_scope_payload(action, report_path=report_path, json_path=json_path)
         if write_report:
-            CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-            if json_path is not None:
-                json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            report_path.write_text(_setup_preview_markdown(payload), encoding="utf-8")
+            _write_report_payload(json_path, report_path, payload, _setup_preview_markdown)
         return payload
     checked_at = _now()
     runtime_state = get_netapp_runtime_state()
@@ -374,10 +378,7 @@ def _build_setup_preview(
     }
     sanitized = _sanitize(payload)
     if write_report:
-        CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-        if json_path is not None:
-            json_path.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
-        report_path.write_text(_setup_preview_markdown(sanitized), encoding="utf-8")
+        _write_report_payload(json_path, report_path, sanitized, _setup_preview_markdown)
     return sanitized
 
 
@@ -473,11 +474,11 @@ def _string_list(value: Any) -> list[str]:
         return []
     if isinstance(value, str):
         candidates = value.split(",")
-    elif isinstance(value, (list, tuple)):
+    elif isinstance(value, (list, tuple, set)):
         candidates = value
     else:
-        candidates = [value]
-    return [item for item in (_clean_string(candidate) for candidate in candidates) if item]
+        return []
+    return _unique([item for item in (_clean_string(candidate) for candidate in candidates) if item])
 
 
 def _clean_string(value: Any) -> str | None:
@@ -491,17 +492,26 @@ def _setup_apply_gates(
     detected_state: str,
     intent: dict[str, Any],
     address_scan: dict[str, Any],
+    *,
+    guarded_context: GuardedActionContext | None = None,
 ) -> dict[str, Any]:
     policy = current_lab_action_policy(settings.provider_mode)
     flag_state = {
         "provider_mode": settings.provider_mode,
-        "netapp_setup_apply": os.getenv("NETAPP_SETUP_APPLY") == "true",
-        "netapp_setup_confirm": os.getenv("NETAPP_SETUP_CONFIRM") == SETUP_CONFIRM_PHRASE,
-        "netapp_setup_allow_cluster_create": os.getenv("NETAPP_SETUP_ALLOW_CLUSTER_CREATE") == "true",
+        "netapp_setup_apply": guarded_flag(
+            "NETAPP_SETUP_APPLY", action_id="netapp.setup-apply", context=guarded_context
+        ),
+        "netapp_setup_confirm": guarded_confirmation(
+            "NETAPP_SETUP_CONFIRM", action_id="netapp.setup-apply", context=guarded_context
+        )
+        == SETUP_CONFIRM_PHRASE,
+        "netapp_setup_allow_cluster_create": guarded_flag(
+            "NETAPP_SETUP_ALLOW_CLUSTER_CREATE", action_id="netapp.setup-apply", context=guarded_context
+        ),
         "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
     }
     blockers = []
-    blockers.extend(policy.action_blockers("netapp.initial-setup", "storage_config"))
+    blockers.extend(unique_strings(policy.action_blockers("netapp.initial-setup", "storage_config")))
     if detected_state not in SETUP_SUPPORTED_STATES:
         blockers.append(f"Console state is `{detected_state}`; setup apply only supports cluster/node setup wizard states.")
     if intent["missing_fields"]:
@@ -723,7 +733,11 @@ def _scan_is_free(address_scan: dict[str, Any]) -> bool:
 
 
 def _existing_reports(paths: list[str]) -> list[str]:
-    return [path for path in paths if (REPO_ROOT / path).exists()]
+    existing: list[str] = []
+    for path in paths:
+        if path_exists(REPO_ROOT / path):
+            existing.append(path)
+    return existing
 
 
 def _not_attempted() -> list[str]:
@@ -734,6 +748,18 @@ def _not_attempted() -> list[str]:
         "SVM, LIF, volume, export, datastore, or iSCSI creation",
         "controller reboot, takeover/giveback, wipe, or ONTAP upgrade",
     ]
+
+
+def _write_report_payload(
+    json_path: Path | None,
+    report_path: Path,
+    payload: dict[str, Any],
+    markdown_builder: Any,
+) -> None:
+    CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
+    if json_path is not None:
+        write_json_object(json_path, payload)
+    write_text_value(report_path, markdown_builder(payload))
 
 
 def _netapp_in_scope() -> bool:
@@ -921,7 +947,7 @@ def _redaction_values() -> list[str]:
 
 
 def _rel(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
+    return repo_relative_path(path, REPO_ROOT)
 
 
 def _now() -> str:
@@ -929,4 +955,4 @@ def _now() -> str:
 
 
 def _unique(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))
+    return unique_preserving_order(values)

@@ -3,12 +3,17 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from app.providers.redaction import redact_sensitive
+from app.services.env_utils import env_flag, env_int, read_env_file_values
 from app.services.hpe_raid import REPO_ROOT
+from app.services.json_file_store import read_json_object, write_json_object, write_text_value
+from app.services.list_utils import unique_preserving_order, unique_strings
+from app.services.path_utils import display_path, path_exists as _path_exists, path_mtime, safe_read_text
 from app.services.status_source import attach_status_source
 
 CODEX_RUN_DIR = REPO_ROOT / "artifacts" / "codex-runs"
@@ -121,7 +126,7 @@ def build_full_rebuild_summary_reports() -> dict[str, Any]:
     )
     sanitized = _sanitize(payload)
     _write_requested_reports(sanitized)
-    SUMMARY_JSON.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
+    write_json_object(SUMMARY_JSON, sanitized)
     return sanitized
 
 
@@ -142,8 +147,14 @@ def run_full_rebuild_execution() -> dict[str, Any]:
         firmware_report,
     )
 
+    cisco_env = _real_lab_env()
+    cisco_stage = (
+        ("cisco_management_readonly", ["-c", _cisco_management_probe_code()], SOURCE_REPORTS["cisco_console"])
+        if (cisco_env.get("CISCO_MGMT_CONFIGURED") or "").strip().lower() in {"1", "true", "yes", "on"}
+        else ("cisco_console_bootstrap", ["scripts/cisco_real_lab_workflow.py", "--apply"], SOURCE_REPORTS["cisco_console"])
+    )
     stage_specs = [
-        ("cisco_console_bootstrap", ["scripts/cisco_real_lab_workflow.py", "--apply"], SOURCE_REPORTS["cisco_console"]),
+        cisco_stage,
         ("ilo_reachability_inventory", ["scripts/ilo_real_reachability.py"], SOURCE_REPORTS["ilo_reachability"]),
         ("hpe_raid_discovery", ["scripts/hpe_raid_workflow.py", "discovery"], SOURCE_REPORTS["raid_discovery"]),
         ("hpe_raid_plan", ["scripts/hpe_raid_workflow.py", "plan", "--default-esxi-intent"], SOURCE_REPORTS["raid_plan"]),
@@ -153,7 +164,7 @@ def run_full_rebuild_execution() -> dict[str, Any]:
         ("esxi_one_time_boot", ["scripts/esxi_boot_workflow.py", "one-time-boot"], SOURCE_REPORTS["esxi_one_time_boot"]),
         ("esxi_detect_installer", ["scripts/esxi_boot_workflow.py", "detect-installer"], SOURCE_REPORTS["esxi_installer_boot"]),
     ]
-    if os.getenv("LAB_ALLOW_POWER_ACTIONS", "").strip().lower() in {"1", "true", "yes", "on"}:
+    if env_flag("LAB_ALLOW_POWER_ACTIONS"):
         stage_specs.insert(
             -1,
             ("esxi_reset_installer_boot", ["scripts/esxi_boot_workflow.py", "reset-installer-boot"], SOURCE_REPORTS["esxi_installer_boot"]),
@@ -169,7 +180,7 @@ def run_full_rebuild_execution() -> dict[str, Any]:
     else:
         for key, command, report in stage_specs:
             stages[key] = _run_live_stage(command, report)
-    stages["cisco_bootstrap"] = stages["cisco_console_bootstrap"]
+    stages["cisco_bootstrap"] = stages.get("cisco_console_bootstrap") or stages.get("cisco_management_readonly")
     stages["hpe_ilo"] = stages["ilo_reachability_inventory"]
     stages["hpe_raid"] = _combined_stage(
         "HPE RAID discovery, plan, and pending checks ran.",
@@ -184,12 +195,14 @@ def run_full_rebuild_execution() -> dict[str, Any]:
         ],
     )
 
-    blockers = [
-        blocker
-        for stage in stages.values()
-        for blocker in stage.get("blockers", [])
-        if isinstance(stage, dict)
-    ]
+    blockers = unique_preserving_order(
+        [
+            blocker
+            for stage in stages.values()
+            for blocker in stage.get("blockers", [])
+            if isinstance(stage, dict)
+        ]
+    )
     failed = [key for key, stage in stages.items() if stage.get("status") == "failed"]
     blocked = [key for key, stage in stages.items() if stage.get("status") == "blocked"]
     status = "failed" if failed else "blocked" if blocked or blockers else "completed"
@@ -200,7 +213,7 @@ def run_full_rebuild_execution() -> dict[str, Any]:
         "message": "Real full lab rebuild execution ran live local-lab-readwrite stages.",
         "provider_mode": "local-lab-readwrite",
         "env_file": ".env.local.real-lab",
-        "blockers": list(dict.fromkeys(blockers)),
+        "blockers": blockers,
         "warnings": _execution_warnings(),
         "git": git_status,
         "source_reports": {
@@ -224,19 +237,15 @@ def run_full_rebuild_execution() -> dict[str, Any]:
     )
     sanitized = _sanitize(payload)
     _write_requested_reports(sanitized)
-    EXECUTION_SUMMARY_JSON.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
-    SUMMARY_JSON.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
+    write_json_object(EXECUTION_SUMMARY_JSON, sanitized)
+    write_json_object(SUMMARY_JSON, sanitized)
     return sanitized
 
 
 def get_full_rebuild_summary() -> dict[str, Any]:
-    if SUMMARY_JSON.exists():
-        try:
-            payload = json.loads(SUMMARY_JSON.read_text(encoding="utf-8"))
-            if isinstance(payload, dict):
-                return payload
-        except (OSError, ValueError):
-            pass
+    payload = read_json_object(SUMMARY_JSON)
+    if payload:
+        return payload
     return attach_status_source(
         {
         "provider_id": "full-device-rebuild",
@@ -262,18 +271,33 @@ def get_full_rebuild_summary() -> dict[str, Any]:
 
 def _run_live_stage(command: list[str], report: Path) -> dict[str, Any]:
     env = _real_lab_env()
-    python = ".venv/bin/python" if (REPO_ROOT / "app" / "backend" / ".venv" / "bin" / "python").exists() else "python3"
-    result = subprocess.run(
-        [python, *command],
-        cwd=REPO_ROOT / "app" / "backend",
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=int(os.getenv("FULL_REBUILD_STAGE_TIMEOUT_SECONDS", "1800")),
-    )
+    timeout_seconds = env_int("FULL_REBUILD_STAGE_TIMEOUT_SECONDS", 1800, minimum=1)
+    try:
+        result = subprocess.run(
+            [_python_executable(), *command],
+            cwd=REPO_ROOT / "app" / "backend",
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "status": "blocked",
+            "command": " ".join(command),
+            "returncode": 124,
+            "report": _display_path(report),
+            "message": f"Live stage timed out after {timeout_seconds} seconds.",
+            "blockers": [f"Live stage timed out after {timeout_seconds} seconds; inspect console/target access before rerun."],
+            "warnings": [],
+            "summary": {
+                "stdout_tail": _tail(_stream_text(exc.stdout)),
+                "stderr_tail": _tail(_stream_text(exc.stderr)),
+            },
+        }
     parsed = _parse_stage_json(result.stdout)
-    blockers = list(parsed.get("blockers") or [])
+    blockers = unique_strings(parsed.get("blockers"))
     if result.returncode != 0 and not blockers:
         blockers.extend(_report_blockers(report))
     if result.returncode != 0 and not blockers:
@@ -290,28 +314,56 @@ def _run_live_stage(command: list[str], report: Path) -> dict[str, Any]:
         "report": _display_path(report),
         "message": parsed.get("message") or parsed.get("classification") or "Live stage completed with redacted output captured.",
         "blockers": blockers,
-        "warnings": list(parsed.get("warnings") or []),
+        "warnings": unique_strings(parsed.get("warnings")),
         "summary": _sanitize(parsed),
     }
 
 
+def _stream_text(value: str | bytes | None) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value or ""
+
+
+def _tail(value: str, *, max_chars: int = 4000) -> str:
+    return value[-max_chars:]
+
+
 def _combined_stage(message: str, stage_items: list[dict[str, Any]]) -> dict[str, Any]:
-    blockers = [blocker for stage in stage_items for blocker in stage.get("blockers", [])]
-    warnings = [warning for stage in stage_items for warning in stage.get("warnings", [])]
+    blockers = [blocker for stage in stage_items for blocker in unique_strings(stage.get("blockers"))]
+    warnings = [warning for stage in stage_items for warning in unique_strings(stage.get("warnings"))]
     statuses = [stage.get("status") for stage in stage_items]
     status = "failed" if "failed" in statuses else "blocked" if blockers or "blocked" in statuses else "completed"
     return {
         "status": status,
         "message": message,
-        "blockers": list(dict.fromkeys(blockers)),
-        "warnings": list(dict.fromkeys(warnings)),
+        "blockers": unique_preserving_order(blockers),
+        "warnings": unique_preserving_order(warnings),
     }
 
 
+def _cisco_management_probe_code() -> str:
+    return (
+        "import json; "
+        "from app.providers.cisco_ansible import CiscoAnsibleAdapter; "
+        "result = CiscoAnsibleAdapter('local-lab-readwrite').probe(); "
+        "print(json.dumps({"
+        "'status': result.get('status'), "
+        "'message': result.get('message'), "
+        "'fallback': result.get('fallback'), "
+        "'blockers': result.get('blockers') or [], "
+        "'warnings': result.get('warnings') or []"
+        "}, indent=2)); "
+        "raise SystemExit(0 if result.get('status') == 'ok' else 1)"
+    )
+
+
 def _report_blockers(path: Path) -> list[str]:
-    if not path.exists():
+    if not _path_exists(path):
         return []
-    text = path.read_text(encoding="utf-8", errors="replace")
+    text = safe_read_text(path)
+    if not text:
+        return []
     blockers: list[str] = []
     in_blockers = False
     for line in text.splitlines():
@@ -330,12 +382,8 @@ def _real_lab_env() -> dict[str, str]:
     env = os.environ.copy()
     env["PROVIDER_MODE"] = "local-lab-readwrite"
     env["PYTHONPATH"] = "."
-    if REAL_LAB_ENV.exists():
-        from dotenv import dotenv_values
-
-        for key, value in dotenv_values(REAL_LAB_ENV).items():
-            if value is not None and key not in env:
-                env[key] = value
+    for key, value in read_env_file_values(REAL_LAB_ENV).items():
+        env.setdefault(key, value)
     return env
 
 
@@ -356,9 +404,9 @@ def _parse_stage_json(output: str) -> dict[str, Any]:
 
 def _execution_warnings() -> list[str]:
     warnings = ["Real execution target does not block only because the caller is Codex or codex exec."]
-    if not REAL_LAB_ENV.exists():
+    if not _path_exists(REAL_LAB_ENV):
         warnings.append(".env.local.real-lab was not found; live stages may block on missing configuration.")
-    if os.getenv("LAB_ALLOW_POWER_ACTIONS", "").strip().lower() not in {"1", "true", "yes", "on"}:
+    if not env_flag("LAB_ALLOW_POWER_ACTIONS"):
         warnings.append("Server reset stage was skipped because LAB_ALLOW_POWER_ACTIONS is not enabled.")
     return warnings
 
@@ -372,12 +420,15 @@ def _next_action(status: str, blockers: list[str]) -> str:
 
 
 def _write_requested_reports(payload: dict[str, Any]) -> None:
-    BASELINE_REPORT.write_text(_baseline_markdown(payload), encoding="utf-8")
-    CISCO_BOOTSTRAP_REPORT.write_text(_stage_markdown("Cisco Full Bootstrap Report", payload, "cisco_bootstrap"), encoding="utf-8")
-    HPE_ILO_REPORT.write_text(_stage_markdown("HPE Full Rebuild iLO Report", payload, "hpe_ilo"), encoding="utf-8")
-    HPE_RAID_REPORT.write_text(_stage_markdown("HPE Full Rebuild RAID Report", payload, "hpe_raid"), encoding="utf-8")
-    ESXI_BOOT_REPORT.write_text(_stage_markdown("ESXi Full Rebuild Boot Report", payload, "esxi_boot"), encoding="utf-8")
-    FINAL_REPORT.write_text(_final_markdown(payload), encoding="utf-8")
+    write_text_value(BASELINE_REPORT, _baseline_markdown(payload))
+    write_text_value(
+        CISCO_BOOTSTRAP_REPORT,
+        _stage_markdown("Cisco Full Bootstrap Report", payload, "cisco_bootstrap"),
+    )
+    write_text_value(HPE_ILO_REPORT, _stage_markdown("HPE Full Rebuild iLO Report", payload, "hpe_ilo"))
+    write_text_value(HPE_RAID_REPORT, _stage_markdown("HPE Full Rebuild RAID Report", payload, "hpe_raid"))
+    write_text_value(ESXI_BOOT_REPORT, _stage_markdown("ESXi Full Rebuild Boot Report", payload, "esxi_boot"))
+    write_text_value(FINAL_REPORT, _final_markdown(payload))
 
 
 def _cisco_privilege_stage(source_summaries: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -386,7 +437,7 @@ def _cisco_privilege_stage(source_summaries: dict[str, dict[str, Any]]) -> dict[
     blockers = []
     if "Privileged exec confirmed: `False`" in text or "Did not reach privileged exec" in text:
         blockers.append("Cisco console reached exec but privileged exec was not confirmed.")
-    if not CISCO_PRIVILEGE_REPORT.exists():
+    if not _path_exists(CISCO_PRIVILEGE_REPORT):
         blockers.append("Cisco privilege report is missing.")
     return _stage(
         "blocked" if blockers else "unknown",
@@ -427,9 +478,17 @@ def _run_git(args: list[str]) -> str:
 
 
 def _report_summary(path: Path) -> dict[str, Any]:
-    if not path.exists():
+    if not _path_exists(path):
         return {"status": "missing", "path": _display_path(path)}
-    text = path.read_text(encoding="utf-8", errors="replace")
+    text = safe_read_text(path)
+    modified_timestamp = path_mtime(path)
+    if not text or modified_timestamp is None:
+        return {
+            "status": "unavailable",
+            "path": _display_path(path),
+            "error": "report could not be read",
+        }
+    modified_at = datetime.fromtimestamp(modified_timestamp, UTC).isoformat()
     lines = [line for line in text.splitlines() if line.strip()]
     extract = []
     for line in lines:
@@ -447,7 +506,7 @@ def _report_summary(path: Path) -> dict[str, Any]:
     return {
         "status": "present",
         "path": _display_path(path),
-        "modified_at": datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat(),
+        "modified_at": modified_at,
         "line_count": len(lines),
         "extract": "\n".join(extract),
     }
@@ -542,7 +601,8 @@ def _now() -> str:
 
 
 def _display_path(path: Path) -> str:
-    try:
-        return str(path.relative_to(REPO_ROOT))
-    except ValueError:
-        return str(path)
+    return display_path(path, REPO_ROOT)
+
+
+def _python_executable() -> str:
+    return os.getenv("PYTHON") or sys.executable

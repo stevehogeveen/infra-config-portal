@@ -151,8 +151,55 @@ class VMDeploymentRequest(Base):
 class IloSetupIntent(Base):
     __tablename__ = "ilo_setup_intents"
 
+    device_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("device_inventory.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
     provider_id: Mapped[str] = mapped_column(String(80), primary_key=True)
     intent_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+    )
+
+
+class DeviceInventory(Base):
+    __tablename__ = "device_inventory"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    device_type: Mapped[str] = mapped_column(String(80), index=True)
+    display_name: Mapped[str] = mapped_column(String(200), index=True)
+    host: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    dhcp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    seed_key: Mapped[str | None] = mapped_column(String(80), unique=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+    )
+
+
+class DeviceInventoryState(Base):
+    __tablename__ = "device_inventory_state"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default="legacy-seed-v1")
+    seeded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class IloDeviceCredential(Base):
+    __tablename__ = "ilo_device_credentials"
+
+    device_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("device_inventory.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    credentials_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -164,6 +211,11 @@ class IloSetupIntent(Base):
 class HpeRaidIntent(Base):
     __tablename__ = "hpe_raid_intents"
 
+    device_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("device_inventory.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
     provider_id: Mapped[str] = mapped_column(String(80), primary_key=True)
     intent_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

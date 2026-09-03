@@ -4,7 +4,11 @@ import re
 from collections.abc import Iterable
 from typing import Any
 
-from app.providers.ilo_redfish import PROVIDER_ID as ILO_PROVIDER_ID
+from app.providers.ilo_redfish import (
+    PROVIDER_ID as ILO_PROVIDER_ID,
+    IloRedfishConfig,
+    ilo_target_fingerprint,
+)
 from app.providers.probe_cache import get_probe_result
 from app.schemas import (
     IloUpgradeReadinessRead,
@@ -14,14 +18,23 @@ from app.schemas import (
     UpgradeRuleRead,
     UpgradeSubjectRead,
 )
+from app.services.list_utils import unique_preserving_order
 from app.services.media_inventory import get_media_inventory
 
 COMPATIBLE_CONFIDENCE = {"exact", "likely", "weak"}
 NO_KNOWN_ILO_RULES: tuple[UpgradeRuleRead, ...] = ()
 
 
-def get_ilo_upgrade_readiness() -> IloUpgradeReadinessRead:
-    probe_result, _checked_at = get_probe_result(ILO_PROVIDER_ID)
+def get_ilo_upgrade_readiness(
+    probe_result: dict[str, Any] | None = None,
+    *,
+    use_cached_probe: bool = True,
+    config: IloRedfishConfig | None = None,
+) -> IloUpgradeReadinessRead:
+    if use_cached_probe:
+        probe_result, _checked_at = get_probe_result(ILO_PROVIDER_ID)
+    if config is not None and not _probe_matches_config(probe_result, config):
+        probe_result = None
     subject = ilo_subject_from_probe(probe_result)
     media_inventory = get_media_inventory()
     candidates = upgrade_candidates_from_media(subject, media_inventory.items)
@@ -47,6 +60,21 @@ def get_ilo_upgrade_readiness() -> IloUpgradeReadinessRead:
         upgrade_chain=decision.candidate_chain,
         apply_enabled=False,
     )
+
+
+def _probe_matches_config(
+    probe_result: dict[str, Any] | None,
+    config: IloRedfishConfig,
+) -> bool:
+    if not isinstance(probe_result, dict):
+        return False
+    target_fingerprint = str(probe_result.get("target_fingerprint") or "")
+    configured_fingerprints = {
+        fingerprint
+        for candidate in config.target_candidates
+        if (fingerprint := ilo_target_fingerprint(candidate.get("host")))
+    }
+    return bool(target_fingerprint and target_fingerprint in configured_fingerprints)
 
 
 def ilo_subject_from_probe(probe_result: dict[str, Any] | None) -> UpgradeSubjectRead:
@@ -582,10 +610,4 @@ def _generation_from_label(label: str) -> str | None:
 
 
 def _unique(values: Iterable[str]) -> list[str]:
-    seen: set[str] = set()
-    unique_values: list[str] = []
-    for value in values:
-        if value and value not in seen:
-            seen.add(value)
-            unique_values.append(value)
-    return unique_values
+    return unique_preserving_order(values, skip_falsey=True)

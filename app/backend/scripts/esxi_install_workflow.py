@@ -10,13 +10,14 @@ from app.services.esxi_install_readiness import (
     REPO_ROOT,
     get_esxi_install_readiness,
 )
+from app.services.path_utils import display_path
 
 
 def main() -> int:
     with SessionLocal() as session:
         result = get_esxi_install_readiness(session)
     print(json.dumps(_summary(result), indent=2))
-    print(f"esxi_install_readiness_report={ESXI_INSTALL_READINESS_REPORT.relative_to(REPO_ROOT)}")
+    print(f"esxi_install_readiness_report={_rel(ESXI_INSTALL_READINESS_REPORT)}")
     return 0 if result.get("status") == "ready" else 1
 
 
@@ -31,10 +32,14 @@ def _summary(result: dict) -> dict:
             "one_time_boot_supported": (result.get("boot_control") or {}).get("one_time_boot_supported"),
             "iso_ready": (result.get("iso") or {}).get("ready"),
             "blockers": result.get("blockers") or [],
-            "report": str(ESXI_INSTALL_READINESS_REPORT.relative_to(REPO_ROOT)),
+            "report": _rel(ESXI_INSTALL_READINESS_REPORT),
         },
         [settings.ilo_test_host, settings.ilo_test_username, settings.ilo_test_password],
     )
+
+
+def _rel(path) -> str:
+    return display_path(path, REPO_ROOT)
 
 
 if __name__ == "__main__":

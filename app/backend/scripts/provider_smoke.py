@@ -4,19 +4,23 @@ import json
 import os
 import socket
 import shutil
+import sys
 import time
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from dotenv import dotenv_values
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REAL_LAB_ENV = REPO_ROOT / ".env.local.real-lab"
 REPORT_DIR = REPO_ROOT / "artifacts" / "real-lab"
 CONNECT_TIMEOUT_SECONDS = 3.0
 PROVIDER_SMOKE_PROVIDERS_ENV = "PROVIDER_SMOKE_PROVIDERS"
+PROVIDER_SMOKE_REQUIRE_REAL_ENV = "PROVIDER_SMOKE_REQUIRE_REAL"
 PROVIDER_IDS = (
     "ilo-redfish",
     "cisco-console",
@@ -24,11 +28,9 @@ PROVIDER_IDS = (
     "esxi-readonly",
 )
 
-if REAL_LAB_ENV.exists():
-    for key, value in dotenv_values(REAL_LAB_ENV).items():
-        if key == "PROVIDER_MODE" or value is None or key in os.environ:
-            continue
-        os.environ[key] = value
+from app.services.env_utils import load_real_lab_env  # noqa: E402
+
+load_real_lab_env(REPO_ROOT)
 
 # Load local lab env before app imports; settings reads env at import time.
 from app.core.config import settings  # noqa: E402
@@ -46,17 +48,22 @@ from app.providers.ilo_redfish import (  # noqa: E402
     ilo_redfish_redaction_values,
 )
 from app.providers.lab_safety import current_lab_safety  # noqa: E402
+from app.services.path_utils import display_path, file_mode, glob_paths, path_exists  # noqa: E402
 from app.providers.redaction import redact_sensitive  # noqa: E402
 from app.providers.registry import ProviderRegistryError, provider_registry  # noqa: E402
+from app.services.json_file_store import write_json_object, write_text_value  # noqa: E402
+from app.services.list_utils import unique_strings  # noqa: E402
 
 
 def main() -> int:
     selected_provider_ids = _selected_provider_ids()
     real_probe_modes = {LOCAL_READONLY_MODE, LOCAL_LAB_MODE}
+    require_real_mode = _env_flag(PROVIDER_SMOKE_REQUIRE_REAL_ENV, default=True)
     print(f"provider_mode={settings.provider_mode}")
     report: dict[str, Any] = {
         "checked_at": datetime.now(UTC).isoformat(),
         "provider_mode": settings.provider_mode,
+        "require_real_mode": require_real_mode,
         "selected_providers": selected_provider_ids,
         "preflight": _preflight_summary(selected_provider_ids),
         "guarded_rebuild_planning": _guarded_rebuild_planning(),
@@ -68,6 +75,20 @@ def main() -> int:
         ),
     }
     print(json.dumps(redact_sensitive(report["preflight"], _redaction_values()), indent=2))
+
+    if require_real_mode and settings.provider_mode not in real_probe_modes:
+        message = (
+            f"{PROVIDER_SMOKE_REQUIRE_REAL_ENV}=true requires PROVIDER_MODE to be "
+            "local-readonly or local-lab-readwrite."
+        )
+        print(f"real_mode_gate=failed message={message}")
+        report["quality_gate"] = {
+            "status": "failed",
+            "message": message,
+            "not_attempted": ["provider status collection", "provider probes"],
+        }
+        _write_report(report)
+        return 2
 
     if set(selected_provider_ids) == set(PROVIDER_IDS):
         try:
@@ -136,6 +157,18 @@ def _selected_provider_ids() -> list[str]:
     return provider_ids
 
 
+def _env_flag(name: str, *, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 def _provider_adapter(provider_id: str) -> Any:
     if provider_id == "ilo-redfish":
         return IloRedfishAdapter()
@@ -192,7 +225,7 @@ def _preflight_summary(provider_ids: list[str] | None = None) -> dict[str, Any]:
     summary = {
         "env_file": {
             "path": ".env.local.real-lab",
-            "exists": REAL_LAB_ENV.exists(),
+            "exists": _path_exists(REAL_LAB_ENV),
             "mode": _file_mode(REAL_LAB_ENV),
         },
         "required_env": _required_env_summary(provider_ids),
@@ -261,7 +294,7 @@ def _legacy_safety_summary(safety: Any) -> dict[str, str]:
 
 
 def _tool_availability(provider_ids: list[str]) -> dict[str, bool]:
-    tools = {"python": shutil.which("python3") is not None}
+    tools = {"python": bool(sys.executable or shutil.which("python") or shutil.which("python3"))}
     if "cisco-ansible" in provider_ids:
         tools.update(
             {
@@ -429,19 +462,14 @@ def _setting_name(env_name: str) -> str:
 
 
 def _file_mode(path: Path) -> str | None:
-    if not path.exists():
-        return None
-    return oct(path.stat().st_mode & 0o777)
+    return file_mode(path)
 
 
 def _serial_candidate_summary() -> dict[str, Any]:
-    stable = (
-        sorted(Path("/dev/serial/by-id").glob("*"))
-        if Path("/dev/serial/by-id").exists()
-        else []
-    )
-    usb = sorted(Path("/dev").glob("ttyUSB*"))
-    acm = sorted(Path("/dev").glob("ttyACM*"))
+    stable_root = Path("/dev/serial/by-id")
+    stable = _safe_glob(stable_root, "*") if _path_exists(stable_root) else []
+    usb = _safe_glob(Path("/dev"), "ttyUSB*")
+    acm = _safe_glob(Path("/dev"), "ttyACM*")
     return {
         "stable_by_id_count": len(stable),
         "ttyUSB_count": len(usb),
@@ -449,6 +477,14 @@ def _serial_candidate_summary() -> dict[str, Any]:
         "stable_by_id_paths": [str(path) for path in stable],
         "fallback_paths": [str(path) for path in [*usb, *acm]],
     }
+
+
+def _path_exists(path: Path) -> bool:
+    return path_exists(path)
+
+
+def _safe_glob(path: Path, pattern: str) -> list[Path]:
+    return sorted(glob_paths(path, pattern))
 
 
 def _tcp_preflight(provider_ids: list[str] | None = None) -> dict[str, Any]:
@@ -736,10 +772,17 @@ def _write_report(report: dict[str, Any]) -> None:
     sanitized = redact_sensitive(report, _redaction_values())
     json_path = REPORT_DIR / f"provider-smoke-{stamp}.json"
     markdown_path = REPORT_DIR / f"provider-smoke-{stamp}.md"
-    json_path.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
-    markdown_path.write_text(_markdown_report(sanitized), encoding="utf-8")
-    print(f"report_json={json_path.relative_to(REPO_ROOT)}")
-    print(f"report_markdown={markdown_path.relative_to(REPO_ROOT)}")
+    latest_json_path = REPORT_DIR / "provider-smoke-latest.json"
+    latest_markdown_path = REPORT_DIR / "provider-smoke-latest.md"
+    write_json_object(json_path, sanitized)
+    markdown = _markdown_report(sanitized)
+    write_text_value(markdown_path, markdown)
+    write_json_object(latest_json_path, sanitized)
+    write_text_value(latest_markdown_path, markdown)
+    print(f"report_json={_rel(json_path)}")
+    print(f"report_markdown={_rel(markdown_path)}")
+    print(f"latest_report_json={_rel(latest_json_path)}")
+    print(f"latest_report_markdown={_rel(latest_markdown_path)}")
 
 
 def _markdown_report(report: dict[str, Any]) -> str:
@@ -749,6 +792,7 @@ def _markdown_report(report: dict[str, Any]) -> str:
         "",
         f"Checked at: {report.get('checked_at', 'unknown')}",
         f"Provider mode: {report.get('provider_mode', 'unknown')}",
+        f"Require real mode: {report.get('require_real_mode', False)}",
         "",
         "## Preflight",
         f"- env_file_exists: {((preflight.get('env_file') or {}).get('exists', False))}",
@@ -792,6 +836,14 @@ def _markdown_report(report: dict[str, Any]) -> str:
             "## Safety",
         ]
     )
+    quality_gate = report.get("quality_gate") or {}
+    if quality_gate:
+        lines.extend(
+            [
+                f"- quality_gate: {quality_gate.get('status', 'unknown')}",
+                f"- quality_gate_message: {quality_gate.get('message', 'not set')}",
+            ]
+        )
     safety = ((report.get("preflight") or {}).get("safety") or {})
     for key, value in safety.items():
         lines.append(f"- {key}: {value}")
@@ -820,9 +872,9 @@ def _markdown_report(report: dict[str, Any]) -> str:
             f"- {probe.get('provider_id')}: {probe.get('status')} - {probe.get('message')}"
         )
         lines.extend(_probe_detail_lines(probe))
-        for blocker in probe.get("blockers", []):
+        for blocker in unique_strings(probe.get("blockers")):
             lines.append(f"  - blocker: {blocker}")
-        for warning in probe.get("warnings", []):
+        for warning in unique_strings(probe.get("warnings")):
             lines.append(f"  - warning: {warning}")
     lines.extend(
         [
@@ -846,9 +898,9 @@ def _provider_next_action(provider: dict[str, Any]) -> str:
     for action in provider.get("safe_actions", []):
         if action.get("enabled"):
             return str(action.get("reason") or "read-only action enabled")
-    blockers = provider.get("blockers") or []
+    blockers = unique_strings(provider.get("blockers"))
     if blockers:
-        return str(blockers[0])
+        return blockers[0]
     safe_actions = provider.get("safe_actions") or []
     if safe_actions:
         return str(safe_actions[0].get("reason") or "review read-only action")
@@ -957,6 +1009,10 @@ def _redaction_values() -> list[str | None]:
         settings.cisco_test_password,
         settings.cisco_enable_password,
     ]
+
+
+def _rel(path: Path) -> str:
+    return display_path(path, REPO_ROOT)
 
 
 if __name__ == "__main__":

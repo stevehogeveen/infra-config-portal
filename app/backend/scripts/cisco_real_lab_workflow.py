@@ -5,6 +5,7 @@ import ipaddress
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -21,7 +22,16 @@ from app.providers.cisco_console import (
     discover_cisco_console,
 )
 from app.providers.redaction import redact_sensitive
+from app.services.env_utils import env_flag as _env_flag
 from app.services.hpe_raid import REPO_ROOT
+from app.services.json_file_store import write_json_object, write_json_value, write_text_value
+from app.services.list_utils import unique_preserving_order
+from app.services.path_utils import display_path, path_exists
+from app.services.provider_profile_defaults import (
+    active_cisco_network_defaults,
+    first_configured,
+    first_configured_list,
+)
 
 REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-4h-lab-run-report.md"
 FIX_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-privileged-exec-fix-report.md"
@@ -92,18 +102,18 @@ def main() -> int:
         "blockers": [],
         "warnings": [],
         "artifacts": {
-            "report": str(REPORT.relative_to(REPO_ROOT)),
-            "privileged_exec_fix_report": str(FIX_REPORT.relative_to(REPO_ROOT)),
-            "privilege_hardening_report": str(PRIVILEGE_HARDENING_REPORT.relative_to(REPO_ROOT)),
-            "privilege_diagnosis_report": str(PRIVILEGE_DIAGNOSIS_REPORT.relative_to(REPO_ROOT)),
-            "password_recovery_guidance_report": str(PASSWORD_RECOVERY_REPORT.relative_to(REPO_ROOT)),
-            "bootstrap_apply_report": str(BOOTSTRAP_APPLY_REPORT.relative_to(REPO_ROOT)),
-            "vlan10_bootstrap_fix_report": str(VLAN10_BOOTSTRAP_FIX_REPORT.relative_to(REPO_ROOT)),
-            "login_bootstrap_fix_report": str(LOGIN_BOOTSTRAP_FIX_REPORT.relative_to(REPO_ROOT)),
-            "commander_mode_report": str(COMMANDER_MODE_REPORT.relative_to(REPO_ROOT)),
-            "details": str(DETAILS.relative_to(REPO_ROOT)),
-            "samples": str(SAMPLES.relative_to(REPO_ROOT)),
-            "commands": str(COMMANDS.relative_to(REPO_ROOT)),
+            "report": _rel(REPORT),
+            "privileged_exec_fix_report": _rel(FIX_REPORT),
+            "privilege_hardening_report": _rel(PRIVILEGE_HARDENING_REPORT),
+            "privilege_diagnosis_report": _rel(PRIVILEGE_DIAGNOSIS_REPORT),
+            "password_recovery_guidance_report": _rel(PASSWORD_RECOVERY_REPORT),
+            "bootstrap_apply_report": _rel(BOOTSTRAP_APPLY_REPORT),
+            "vlan10_bootstrap_fix_report": _rel(VLAN10_BOOTSTRAP_FIX_REPORT),
+            "login_bootstrap_fix_report": _rel(LOGIN_BOOTSTRAP_FIX_REPORT),
+            "commander_mode_report": _rel(COMMANDER_MODE_REPORT),
+            "details": _rel(DETAILS),
+            "samples": _rel(SAMPLES),
+            "commands": _rel(COMMANDS),
         },
     }
 
@@ -383,7 +393,7 @@ def _bootstrap_apply_requested(args: argparse.Namespace) -> bool:
 
 def _baud_order(first_baud: int | None) -> tuple[int, ...]:
     values = [first_baud, *BAUD_RATES] if first_baud else list(BAUD_RATES)
-    return tuple(dict.fromkeys(int(value) for value in values if value))
+    return tuple(unique_preserving_order(int(value) for value in values if value))
 
 
 def _ensure_privileged(conn: Any, prompt: Prompt) -> PrivilegeResult:
@@ -680,23 +690,47 @@ def _read_privilege_level(conn: Any) -> int | None:
 
 
 def _bootstrap_plan(identity: dict[str, Any] | None = None) -> dict[str, Any]:
+    profile_defaults = active_cisco_network_defaults()
     hostname = settings.cisco_hostname or "lab-cisco-switch"
-    target_ip = settings.cisco_target_ip or LAB_CISCO_MANAGEMENT_IP
-    prefix = settings.cisco_management_prefix or "/24"
+    target_ip = first_configured(
+        profile_defaults.get("planned_management_ip"),
+        settings.cisco_target_ip,
+        LAB_CISCO_MANAGEMENT_IP,
+    )
+    prefix = first_configured(
+        profile_defaults.get("subnet_prefix"),
+        settings.cisco_management_prefix,
+        "/24",
+    ) or "/24"
     netmask = _netmask(prefix)
-    vlan = str(settings.cisco_management_vlan or "10")
+    vlan = first_configured(
+        profile_defaults.get("management_vlan"),
+        settings.cisco_management_vlan,
+        "10",
+    ) or "10"
     interface = settings.cisco_management_interface or f"Vlan{vlan}"
     domain_name = settings.cisco_domain_name or CISCO_DEFAULT_DOMAIN_NAME
     username = settings.cisco_test_username
     access_ports = _selected_or_detected_access_ports(identity or {})
+    gateway = first_configured(
+        profile_defaults.get("gateway"),
+        settings.cisco_management_gateway,
+    )
+    dns_servers = first_configured_list(
+        profile_defaults.get("dns_servers"),
+        list(settings.cisco_dns_servers),
+    )
+    ntp_servers = first_configured_list(profile_defaults.get("ntp_servers"))
     commands = [
         "terminal length 0",
         "configure terminal",
         f"hostname {hostname}",
         f"ip domain-name {domain_name}",
     ]
-    for dns_server in settings.cisco_dns_servers:
+    for dns_server in dns_servers:
         commands.append(f"ip name-server {dns_server}")
+    for ntp_server in ntp_servers:
+        commands.append(f"ntp server {ntp_server}")
     commands.extend(["lldp run", "no ip http server", "no ip http secure-server"])
     commands.extend([f"vlan {vlan}", " name LAB-MGMT"])
     commands.append(f"interface {interface}")
@@ -714,8 +748,8 @@ def _bootstrap_plan(identity: dict[str, Any] | None = None) -> dict[str, Any]:
                     " exit",
                 ]
             )
-    if settings.cisco_management_gateway:
-        commands.append(f"ip default-gateway {settings.cisco_management_gateway}")
+    if gateway:
+        commands.append(f"ip default-gateway {gateway}")
     if username and settings.cisco_test_password:
         commands.append(f"username {username} privilege 15 secret <redacted>")
     commands.extend(
@@ -736,16 +770,10 @@ def _bootstrap_plan(identity: dict[str, Any] | None = None) -> dict[str, Any]:
         ]
     )
     blockers = []
-    if target_ip != LAB_CISCO_MANAGEMENT_IP:
-        blockers.append(f"Cisco VLAN 10 bootstrap target must be {LAB_CISCO_MANAGEMENT_IP}.")
-    if prefix not in {"/24", "255.255.255.0"}:
-        blockers.append("Cisco VLAN 10 bootstrap requires a /24 management prefix.")
-    if interface.lower() != "vlan10":
-        blockers.append("Cisco VLAN 10 bootstrap requires interface Vlan10.")
     if not target_ip:
-        blockers.append("CISCO_TARGET_IP or ANSIBLE_CISCO_HOST is required for Cisco management IP.")
+        blockers.append("The active kit must define a Cisco management IP.")
     if not netmask:
-        blockers.append("CISCO_MANAGEMENT_PREFIX must be a valid prefix or netmask.")
+        blockers.append("The active kit must define a valid Cisco management prefix or netmask.")
     if not username or not settings.cisco_test_password:
         blockers.append("Cisco local admin username/password are required for SSH/SCP bootstrap.")
     return {
@@ -765,10 +793,12 @@ def _bootstrap_plan(identity: dict[str, Any] | None = None) -> dict[str, Any]:
             "is configured for show commands, backup, validation, drift checks, and future repeatable config"
         ),
         "ansible_control_host": settings.ansible_control_host,
-        "gateway_configured": bool(settings.cisco_management_gateway),
+        "gateway_configured": bool(gateway),
         "domain_configured": bool(domain_name),
         "domain_source": "env" if settings.cisco_domain_name else "default",
-        "dns_server_count": len(settings.cisco_dns_servers),
+        "dns_server_count": len(dns_servers),
+        "ntp_server_count": len(ntp_servers),
+        "profile_bound": bool(profile_defaults.get("planned_management_ip")),
         "ssh_key_generation": f"rsa general-keys label {CISCO_SSH_HOSTKEY_LABEL} modulus 2048",
         "ssh_keypair_name": CISCO_SSH_HOSTKEY_LABEL,
         "ssh_version": "2",
@@ -782,17 +812,15 @@ def _bootstrap_plan(identity: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 def _selected_or_detected_access_ports(identity: dict[str, Any]) -> list[str]:
+    del identity
     configured = _configured_access_ports()
     if configured:
         return _unique_ports([*CISCO_ALWAYS_ACCESS_PORTS, *configured])
-    detected = identity.get("detected_access_ports")
-    if isinstance(detected, list):
-        return _unique_ports([*CISCO_ALWAYS_ACCESS_PORTS, *[str(item) for item in detected if str(item).strip()]])
     return list(CISCO_ALWAYS_ACCESS_PORTS)
 
 
 def _unique_ports(ports: list[str]) -> list[str]:
-    return list(dict.fromkeys(port.strip() for port in ports if port.strip()))
+    return unique_preserving_order(port.strip() for port in ports if port.strip())
 
 
 def _configured_access_ports() -> list[str]:
@@ -806,10 +834,9 @@ def _configured_access_ports() -> list[str]:
 
 
 def _access_port_source(identity: dict[str, Any]) -> str:
+    del identity
     if _configured_access_ports():
         return "always-access-plus-configured-env"
-    if identity.get("detected_access_ports"):
-        return "always-access-plus-detected-show-interfaces-status"
     return "always-access-default"
 
 
@@ -819,6 +846,17 @@ def _apply_bootstrap(conn: Any, plan: dict[str, Any]) -> dict[str, Any]:
         ActionCategory.NETWORK_CONFIG,
     )
     blockers = [*policy_blockers, *(plan.get("blockers") or [])]
+    target_ip = str(plan.get("management_ip") or "")
+    confirmation_phrase = f"APPLY CISCO CONSOLE BOOTSTRAP {target_ip}"
+    if not _env_flag("CISCO_CONSOLE_APPLY_ENABLED"):
+        blockers.append("CISCO_CONSOLE_APPLY_ENABLED=true is required.")
+    if os.getenv("LAB_APPLY_ACK") != "YES":
+        blockers.append("LAB_APPLY_ACK=YES is required.")
+    if not target_ip or os.getenv("LAB_TARGET_ACK") != target_ip:
+        blockers.append(f"LAB_TARGET_ACK={target_ip or '<active kit Cisco IP>'} is required.")
+    if os.getenv("CISCO_BOOTSTRAP_CONFIRM") != confirmation_phrase:
+        blockers.append(f'CISCO_BOOTSTRAP_CONFIRM="{confirmation_phrase}" is required.')
+    blockers = unique_preserving_order(blockers)
     if blockers:
         return {"status": "blocked", "serial_writes_attempted": False, "blockers": blockers}
     sent = []
@@ -937,14 +975,15 @@ def _ethernet_readiness() -> dict[str, Any]:
     if not host:
         return {"status": "blocked", "blockers": ["Cisco target IP is missing."]}
     host_route = _host_route_to(host)
-    ping = subprocess.run(["ping", "-c", "2", "-W", "2", host], capture_output=True, text=True, check=False)
+    ping = _ping_host(host)
     ssh = _tcp_connect(host, 22, timeout=4.0)
     scp = _scp_validation(host)
-    status = "ready" if ping.returncode == 0 and ssh["reachable"] and scp["reachable"] else "blocked"
+    ping_ready = ping["status"] == "ok"
+    status = "ready" if ping_ready and ssh["reachable"] and scp["reachable"] else "blocked"
     blockers = []
     if host_route["status"] != "ready":
-        blockers.append("Ubuntu host route to Cisco management IP failed.")
-    if ping.returncode != 0:
+        blockers.append("Host route to Cisco management IP failed.")
+    if not ping_ready:
         blockers.append("Ping to Cisco management IP failed.")
     if not ssh["reachable"]:
         blockers.append("SSH TCP/22 to Cisco management IP failed.")
@@ -953,7 +992,7 @@ def _ethernet_readiness() -> dict[str, Any]:
     return {
         "status": status,
         "host_route": host_route,
-        "ping": {"status": "ok" if ping.returncode == 0 else "failed", "returncode": ping.returncode},
+        "ping": ping,
         "ssh": ssh,
         "scp": scp,
         "blockers": blockers,
@@ -1033,6 +1072,7 @@ def _claim_cisco_console(
 
 def _serial_ownership(discovery: dict[str, Any]) -> dict[str, Any]:
     paths = _console_ownership_paths(discovery)
+    unavailable_tools = [] if shutil.which("fuser") else ["fuser"]
     owners_by_pid: dict[int, dict[str, Any]] = {}
     for path in paths:
         for pid in _pids_using_path(path):
@@ -1041,10 +1081,16 @@ def _serial_ownership(discovery: dict[str, Any]) -> dict[str, Any]:
             owner["paths"].append(path)
     owners = []
     for owner in owners_by_pid.values():
-        owner["paths"] = list(dict.fromkeys(owner.get("paths") or []))
+        owner["paths"] = unique_preserving_order(owner.get("paths") or [])
         owner["summary"] = _owner_summary(owner)
         owners.append(owner)
-    return {"checked_paths": paths, "owned": bool(owners), "owners": owners}
+    return {
+        "checked_paths": paths,
+        "ownership_check_supported": not unavailable_tools,
+        "unavailable_tools": unavailable_tools,
+        "owned": bool(owners),
+        "owners": owners,
+    }
 
 
 def _console_ownership_paths(discovery: dict[str, Any]) -> list[str]:
@@ -1063,18 +1109,24 @@ def _console_ownership_paths(discovery: dict[str, Any]) -> list[str]:
                 resolved = os.path.realpath(path)
                 if resolved != path:
                     paths.append(resolved)
-    return list(dict.fromkeys(paths))
+    return unique_preserving_order(paths)
 
 
 def _pids_using_path(path: str) -> list[int]:
-    result = subprocess.run(["fuser", path], capture_output=True, text=True, check=False)
+    fuser = shutil.which("fuser")
+    if not fuser:
+        return []
+    try:
+        result = subprocess.run([fuser, path], capture_output=True, text=True, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return []
     if result.returncode != 0:
         return []
     pids = []
     for token in result.stdout.split():
         if token.isdigit():
             pids.append(int(token))
-    return list(dict.fromkeys(pids))
+    return unique_preserving_order(pids)
 
 
 def _process_info(pid: int) -> dict[str, Any]:
@@ -1133,7 +1185,7 @@ def _clear_console_lock_files(paths: list[str], *, lock_dirs: tuple[Path, ...]) 
     removed = []
     errors = []
     for lock_path in _console_lock_paths(paths, lock_dirs=lock_dirs):
-        if not lock_path.exists():
+        if not path_exists(lock_path):
             continue
         try:
             lock_path.unlink()
@@ -1149,11 +1201,7 @@ def _console_lock_paths(paths: list[str], *, lock_dirs: tuple[Path, ...]) -> lis
         basename = Path(path).name
         if basename.startswith("tty"):
             names.append(f"LCK..{basename}")
-    return list(dict.fromkeys(lock_dir / name for lock_dir in lock_dirs for name in names))
-
-
-def _env_flag(name: str) -> bool:
-    return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+    return unique_preserving_order(lock_dir / name for lock_dir in lock_dirs for name in names)
 
 
 def _send(conn: Any, command: str, *, secret: bool = False) -> None:
@@ -1394,7 +1442,7 @@ def _detect_access_ports_from_interfaces_status(output: str) -> list[str]:
             continue
         if vlan.isdigit():
             ports.append(port)
-    return list(dict.fromkeys(ports))
+    return unique_preserving_order(ports)
 
 
 def _looks_like_switchport(value: str) -> bool:
@@ -1428,7 +1476,7 @@ def _parse_vlan10_ports(vlan_output: str, interfaces_output: str) -> list[str]:
             if _looks_like_switchport(token):
                 ports.append(token)
     if ports:
-        return list(dict.fromkeys(ports))
+        return unique_preserving_order(ports)
     for line in interfaces_output.splitlines():
         parts = line.split()
         if len(parts) < 4:
@@ -1437,7 +1485,7 @@ def _parse_vlan10_ports(vlan_output: str, interfaces_output: str) -> list[str]:
         vlan = parts[-4] if len(parts) >= 6 else parts[2]
         if _looks_like_switchport(port) and vlan == "10":
             ports.append(port)
-    return list(dict.fromkeys(ports))
+    return unique_preserving_order(ports)
 
 
 def _netmask(prefix: str) -> str | None:
@@ -1469,15 +1517,50 @@ def _tcp_connect(host: str, port: int, *, timeout: float) -> dict[str, Any]:
 
 
 def _host_route_to(host: str) -> dict[str, Any]:
-    result = subprocess.run(["ip", "route", "get", host], capture_output=True, text=True, check=False)
+    command = ["route", "PRINT", host] if os.name == "nt" else ["ip", "route", "get", host]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        return {
+            "status": "unsupported",
+            "supported": False,
+            "returncode": None,
+            "route": "",
+            "dev": None,
+            "src": None,
+            "error": f"{command[0]} route lookup failed: {exc}",
+        }
     route = " ".join((result.stdout or result.stderr or "").split())
     return {
         "status": "ready" if result.returncode == 0 else "blocked",
+        "supported": True,
         "returncode": result.returncode,
         "route": route,
         "dev": _route_token(route, "dev"),
         "src": _route_token(route, "src"),
         "error": None if result.returncode == 0 else route,
+    }
+
+
+def _ping_host(host: str) -> dict[str, Any]:
+    command = ["ping", "-n", "2", "-w", "2000", host] if os.name == "nt" else ["ping", "-c", "2", "-W", "2", host]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        return {
+            "status": "unsupported",
+            "supported": False,
+            "returncode": None,
+            "command": command[:1],
+            "error": f"ping failed: {exc}",
+        }
+    output = " ".join((result.stdout or result.stderr or "").split())
+    return {
+        "status": "ok" if result.returncode == 0 else "failed",
+        "supported": True,
+        "returncode": result.returncode,
+        "command": command[:1],
+        "error": None if result.returncode == 0 else output,
     }
 
 
@@ -1534,33 +1617,21 @@ def _redact_process_text(text: str) -> str:
 
 
 def _finish(payload: dict[str, Any]) -> int:
-    payload["blockers"] = list(dict.fromkeys(payload["blockers"]))
-    payload["warnings"] = list(dict.fromkeys(payload["warnings"]))
+    payload["blockers"] = unique_preserving_order(payload["blockers"])
+    payload["warnings"] = unique_preserving_order(payload["warnings"])
     payload["status"] = "blocked" if payload["blockers"] else "completed"
     sanitized = _sanitize(payload)
     _write_json(DETAILS, sanitized)
-    REPORT.write_text(_markdown(sanitized), encoding="utf-8")
-    FIX_REPORT.write_text(_markdown(sanitized, title="Cisco Privileged Exec Fix Report"), encoding="utf-8")
-    LOGIN_BOOTSTRAP_FIX_REPORT.write_text(
-        _markdown(sanitized, title="Cisco Login Bootstrap Fix Report"),
-        encoding="utf-8",
-    )
-    COMMANDER_MODE_REPORT.write_text(
-        _markdown(sanitized, title="Cisco Console Commander Mode Report"),
-        encoding="utf-8",
-    )
-    PRIVILEGE_HARDENING_REPORT.write_text(
-        _markdown(sanitized, title="Cisco Privilege Hardening Report"),
-        encoding="utf-8",
-    )
-    PRIVILEGE_DIAGNOSIS_REPORT.write_text(
-        _markdown(sanitized, title="Cisco Privilege Diagnosis Report"),
-        encoding="utf-8",
-    )
-    PASSWORD_RECOVERY_REPORT.write_text(_password_recovery_markdown(sanitized), encoding="utf-8")
+    _write_text(REPORT, _markdown(sanitized))
+    _write_text(FIX_REPORT, _markdown(sanitized, title="Cisco Privileged Exec Fix Report"))
+    _write_text(LOGIN_BOOTSTRAP_FIX_REPORT, _markdown(sanitized, title="Cisco Login Bootstrap Fix Report"))
+    _write_text(COMMANDER_MODE_REPORT, _markdown(sanitized, title="Cisco Console Commander Mode Report"))
+    _write_text(PRIVILEGE_HARDENING_REPORT, _markdown(sanitized, title="Cisco Privilege Hardening Report"))
+    _write_text(PRIVILEGE_DIAGNOSIS_REPORT, _markdown(sanitized, title="Cisco Privilege Diagnosis Report"))
+    _write_text(PASSWORD_RECOVERY_REPORT, _password_recovery_markdown(sanitized))
     if _should_write_bootstrap_apply_report(sanitized):
-        BOOTSTRAP_APPLY_REPORT.write_text(_bootstrap_apply_markdown(sanitized), encoding="utf-8")
-    VLAN10_BOOTSTRAP_FIX_REPORT.write_text(_vlan10_bootstrap_fix_markdown(sanitized), encoding="utf-8")
+        _write_text(BOOTSTRAP_APPLY_REPORT, _bootstrap_apply_markdown(sanitized))
+    _write_text(VLAN10_BOOTSTRAP_FIX_REPORT, _vlan10_bootstrap_fix_markdown(sanitized))
     print(json.dumps(_summary(sanitized), indent=2))
     return 0 if payload["status"] in {"completed", "blocked"} else 1
 
@@ -1581,11 +1652,11 @@ def _summary(payload: dict[str, Any]) -> dict[str, Any]:
         "prompt_detected": prompt.get("prompt_detected"),
         "selected_baud": prompt.get("selected_baud"),
         "blockers": payload.get("blockers") or [],
-        "report": str(FIX_REPORT.relative_to(REPO_ROOT)),
-        "vlan10_bootstrap_fix_report": str(VLAN10_BOOTSTRAP_FIX_REPORT.relative_to(REPO_ROOT)),
-        "login_bootstrap_fix_report": str(LOGIN_BOOTSTRAP_FIX_REPORT.relative_to(REPO_ROOT)),
-        "commander_mode_report": str(COMMANDER_MODE_REPORT.relative_to(REPO_ROOT)),
-        "details": str(DETAILS.relative_to(REPO_ROOT)),
+        "report": _rel(FIX_REPORT),
+        "vlan10_bootstrap_fix_report": _rel(VLAN10_BOOTSTRAP_FIX_REPORT),
+        "login_bootstrap_fix_report": _rel(LOGIN_BOOTSTRAP_FIX_REPORT),
+        "commander_mode_report": _rel(COMMANDER_MODE_REPORT),
+        "details": _rel(DETAILS),
     }
 
 
@@ -1659,9 +1730,9 @@ def _markdown(payload: dict[str, Any], *, title: str = "Cisco 4h Lab Run Report"
             f"- Enable password rejected: `{_enable_password_rejected_label(privilege)}`.",
             f"- Password recovery/factory reset required: `{_password_recovery_required(privilege)}`.",
             f"- Operator next action: {_privilege_next_action(privilege)}",
-            f"- Bootstrap commands redacted artifact: `{COMMANDS.relative_to(REPO_ROOT)}`.",
-            f"- Console samples redacted artifact: `{SAMPLES.relative_to(REPO_ROOT)}`.",
-            f"- Details artifact: `{DETAILS.relative_to(REPO_ROOT)}`.",
+            f"- Bootstrap commands redacted artifact: `{_rel(COMMANDS)}`.",
+            f"- Console samples redacted artifact: `{_rel(SAMPLES)}`.",
+            f"- Details artifact: `{_rel(DETAILS)}`.",
             "",
             "## Safety",
             "",
@@ -1929,7 +2000,18 @@ def _sanitize(payload: Any) -> Any:
 
 def _write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    if isinstance(payload, dict):
+        write_json_object(path, payload)
+        return
+    write_json_value(path, payload)
+
+
+def _write_text(path: Path, text: str) -> None:
+    write_text_value(path, text)
+
+
+def _rel(path: Path) -> str:
+    return display_path(path, REPO_ROOT)
 
 
 if __name__ == "__main__":

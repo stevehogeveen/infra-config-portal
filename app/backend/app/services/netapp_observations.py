@@ -20,6 +20,15 @@ FORBIDDEN_OPERATOR_NOTE_FRAGMENTS = (
     "secret",
     "token",
 )
+BOOLEAN_FIELDS = (
+    "controller_a_console_seen",
+    "controller_b_console_seen",
+    "controller_a_sp_cabled",
+    "controller_b_sp_cabled",
+    "management_network_reviewed",
+    "planned_targets_reviewed",
+    "existing_data_risk_acknowledged",
+)
 
 _OBSERVATION_STORE: dict[str, Any] | None = None
 
@@ -59,13 +68,7 @@ def save_netapp_observations(payload: dict[str, Any], updated_by: str) -> dict[s
     _OBSERVATION_STORE = {
         "provider_id": PROVIDER_ID,
         "observed_console_state": observed_state,
-        "controller_a_console_seen": bool(payload.get("controller_a_console_seen", False)),
-        "controller_b_console_seen": bool(payload.get("controller_b_console_seen", False)),
-        "controller_a_sp_cabled": bool(payload.get("controller_a_sp_cabled", False)),
-        "controller_b_sp_cabled": bool(payload.get("controller_b_sp_cabled", False)),
-        "management_network_reviewed": bool(payload.get("management_network_reviewed", False)),
-        "planned_targets_reviewed": bool(payload.get("planned_targets_reviewed", False)),
-        "existing_data_risk_acknowledged": bool(payload.get("existing_data_risk_acknowledged", False)),
+        **{field: _boolean_value(payload.get(field, False), field) for field in BOOLEAN_FIELDS},
         "operator_notes": operator_notes,
         "updated_at": datetime.now(UTC),
         "updated_by": updated_by,
@@ -73,6 +76,22 @@ def save_netapp_observations(payload: dict[str, Any], updated_by: str) -> dict[s
         "sent_to_netapp": False,
     }
     return dict(_OBSERVATION_STORE)
+
+
+def _boolean_value(value: Any, field: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, int) and value in {0, 1}:
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"", "false", "0", "no", "n", "off"}:
+            return False
+    raise ValueError(f"{field} must be a boolean")
 
 
 def validate_netapp_operator_notes(value: str | None) -> str:

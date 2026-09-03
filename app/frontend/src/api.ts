@@ -1,10 +1,15 @@
 import type {
   ArtifactRecord,
   AuditEvent,
+  AiChangeRequest,
+  AiChangeRequestCreate,
   Catalog,
   CiscoBootstrapRequirements,
   CiscoBootstrapRequirementsUpdate,
   CiscoConsoleBootstrapPlan,
+  CiscoConsoleIdentityCandidates,
+  CiscoConsoleIdentityResult,
+  CiscoConsoleIdentityVerifyRequest,
   CiscoSetupReadiness,
   CiscoSetupWizardPlan,
   ControlAccessConfig,
@@ -12,6 +17,8 @@ import type {
   ControlActionCatalog,
   ControlActionPlan,
   ControlActionRun,
+  DeviceInventoryItem,
+  DeviceInventoryWrite,
   FirmwareFileSelections,
   FirmwareFileSelectionsWrite,
   FirmwareSummary,
@@ -19,17 +26,30 @@ import type {
   HpeRaidIntentWrite,
   HpeRaidPlanPreview,
   HpeStorageDiscovery,
+  HpeVsanReadiness,
+  IloAccessSettings,
+  IloAccessSettingsWrite,
   IloBaselinePreview,
   IloBaselineReadiness,
+  IloDiscoveredSettings,
   IloSetupIntent,
   IloSetupIntentWrite,
   IloSetupPlanPreview,
   IloUpgradeReadiness,
+  LabCredentials,
+  LabCredentialsWrite,
+  LabSafetySettings,
+  LabSafetySettingsWrite,
+  LabBuildPlan,
+  LabBuildRun,
+  LabBuildResumeRequest,
   LabValidationSummary,
   LabProfile,
   LabProfileList,
   LabProfileRuntimeApply,
   LabProfileWrite,
+  TopologyDesignDraft,
+  TopologyDesignDraftWrite,
   MediaInventory,
   NetAppConsoleReadiness,
   NetAppObservationUpdate,
@@ -38,6 +58,8 @@ import type {
   NetAppPlanPreview,
   NetAppReadinessComparison,
   NetAppUpgradeReadiness,
+  OperatorIssuePacket,
+  OperatorIssuePacketCreate,
   ProviderModeSettings,
   ProviderModeSettingsWrite,
   ProviderProbeResult,
@@ -45,9 +67,12 @@ import type {
   ReportCenter,
   RequestReadiness,
   RequestRecord,
+  UiIntentRequest,
+  UiIntentResponse,
   VMDeploymentCreate,
   VMDeploymentUpdate,
   WorkflowAction,
+  WorkflowActionDiagnosis,
   WorkflowActionRunRequest,
   WorkflowActionRun,
   WorkflowRun,
@@ -55,37 +80,83 @@ import type {
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+const VM_DEPLOY_APPLY_TIMEOUT_MS = 20 * 60 * 1000;
 
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
+  timeoutMs?: number;
 };
 
 async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      "X-Mock-User": "local-dev-user",
-      ...(options.headers ?? {})
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(apiErrorMessage(error.detail ?? response.statusText));
+  let response: Response;
+  const { timeoutMs = 30000, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...fetchOptions,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Local-User": "local-operator",
+        ...(options.headers ?? {})
+      },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      signal: options.signal ?? controller.signal
+    });
+  } catch (err) {
+    const timedOut = err instanceof DOMException && err.name === "AbortError";
+    throw new Error(timedOut ? `Request timed out while requesting ${path}.` : `Network error while requesting ${path}.`);
+  } finally {
+    window.clearTimeout(timeout);
   }
 
-  return response.json() as Promise<T>;
+  if (!response.ok) {
+    throw new Error(await apiErrorFromResponse(response));
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  const text = await response.text();
+  if (!text.trim()) {
+    return undefined as T;
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`Invalid JSON response from ${path}.`);
+  }
 }
 
-function apiErrorMessage(detail: unknown): string {
+async function apiErrorFromResponse(response: Response): Promise<string> {
+  const text = await response.text().catch(() => "");
+  if (response.status === 500 && text.trim().toLowerCase() === "internal server error") {
+    return "The Lab Builder backend is unavailable. Reconnect it, then try again.";
+  }
+  if (!text.trim()) {
+    return response.statusText || `Request failed with HTTP ${response.status}`;
+  }
+  try {
+    const payload = JSON.parse(text) as { detail?: unknown };
+    return apiErrorMessage(payload.detail ?? payload);
+  } catch {
+    return text.trim();
+  }
+}
+
+export function apiErrorMessage(detail: unknown): string {
   if (typeof detail === "string") {
     return detail;
   }
   if (Array.isArray(detail)) {
-    return detail
+    const messages = detail
       .map((item) => {
+        if (typeof item === "string") {
+          return item;
+        }
+        if (typeof item === "number" || typeof item === "boolean") {
+          return String(item);
+        }
         if (!item || typeof item !== "object") {
           return "";
         }
@@ -96,10 +167,17 @@ function apiErrorMessage(detail: unknown): string {
         const message = typeof record.msg === "string" ? record.msg : "Invalid value";
         return location ? `${location}: ${message}` : message;
       })
-      .filter(Boolean)
-      .join("; ");
+      .filter(Boolean);
+    return messages.length ? messages.join("; ") : "Request failed.";
   }
-  return JSON.stringify(detail);
+  if (detail === null || detail === undefined) {
+    return "Request failed.";
+  }
+  try {
+    return JSON.stringify(detail);
+  } catch {
+    return String(detail);
+  }
 }
 
 export const api = {
@@ -109,6 +187,8 @@ export const api = {
     provider_mode: string;
     operator_runtime_mode: string;
     expected_runtime_mode: string;
+    lab_subnet_cidr?: string | null;
+    host_ipv4_addresses?: string[];
     dev_test_banner: string | null;
   }>("/health"),
   catalog: () => apiRequest<Catalog>("/api/v1/catalog"),
@@ -143,52 +223,109 @@ export const api = {
   workflowStages: () => apiRequest<WorkflowStage[]>("/api/v1/workflows/stages"),
   workflowStage: (id: string) =>
     apiRequest<WorkflowStage>(`/api/v1/workflows/stages/${encodeURIComponent(id)}`),
-  workflowActions: () => apiRequest<WorkflowAction[]>("/api/v1/workflows/actions"),
+  workflowActions: () => apiRequest<WorkflowAction[]>("/api/v1/workflows/actions", { timeoutMs: 90000 }),
   workflowAction: (id: string) =>
     apiRequest<WorkflowAction>(`/api/v1/workflows/actions/${encodeURIComponent(id)}`),
   runWorkflowAction: (id: string, payload?: WorkflowActionRunRequest) =>
     apiRequest<WorkflowActionRun>(`/api/v1/workflows/actions/${encodeURIComponent(id)}/run`, {
       method: "POST",
-      body: payload
+      body: payload,
+      timeoutMs: id === "esxi.vm-deploy-apply" ? VM_DEPLOY_APPLY_TIMEOUT_MS : 120000
     }),
   workflowActionRuns: (id: string) =>
     apiRequest<WorkflowActionRun[]>(`/api/v1/workflows/actions/${encodeURIComponent(id)}/runs`),
+  workflowActionDiagnosis: (id: string) =>
+    apiRequest<WorkflowActionDiagnosis>(`/api/v1/workflows/actions/${encodeURIComponent(id)}/diagnosis`),
+  labBuildPlan: () => apiRequest<LabBuildPlan>("/api/v1/lab-build/plan"),
+  latestLabBuildRun: (kitId: string) =>
+    apiRequest<LabBuildRun | null>(`/api/v1/lab-build/runs/latest?kit_id=${encodeURIComponent(kitId)}`),
+  startLabBuild: () =>
+    apiRequest<LabBuildRun>("/api/v1/lab-build/runs", {
+      method: "POST",
+      timeoutMs: 120000
+    }),
+  labBuildRun: (id: string) =>
+    apiRequest<LabBuildRun>(`/api/v1/lab-build/runs/${encodeURIComponent(id)}`),
+  resumeLabBuild: (id: string, payload: LabBuildResumeRequest) =>
+    apiRequest<LabBuildRun>(`/api/v1/lab-build/runs/${encodeURIComponent(id)}/resume`, {
+      method: "POST",
+      body: payload,
+      timeoutMs: 120000
+    }),
+  retryLabBuildStep: (runId: string, stepId: string) =>
+    apiRequest<LabBuildRun>(
+      `/api/v1/lab-build/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(stepId)}/retry`,
+      { method: "POST" }
+    ),
+  createOperatorIssuePacket: (payload: OperatorIssuePacketCreate) =>
+    apiRequest<OperatorIssuePacket>("/api/v1/operator-issue-packets", {
+      method: "POST",
+      body: payload
+    }),
+  resolveUiIntent: (payload: UiIntentRequest) =>
+    apiRequest<UiIntentResponse>("/api/v1/ui-intent", {
+      method: "POST",
+      body: payload
+    }),
+  createAiChangeRequest: (payload: AiChangeRequestCreate) =>
+    apiRequest<AiChangeRequest>("/api/v1/ai-change-requests", {
+      method: "POST",
+      body: payload
+    }),
   requestArtifacts: (id: string) =>
     apiRequest<ArtifactRecord[]>(`/api/v1/requests/${id}/artifacts`),
   workflowRunArtifacts: (id: string) =>
     apiRequest<ArtifactRecord[]>(`/api/v1/workflow-runs/${id}/artifacts`),
-  auditEvents: () => apiRequest<AuditEvent[]>("/api/v1/audit-events"),
+  auditEvents: (timeoutMs?: number) => apiRequest<AuditEvent[]>("/api/v1/audit-events", { timeoutMs }),
   mediaInventory: () => apiRequest<MediaInventory>("/api/v1/media-inventory"),
-  iloUpgradeReadiness: () =>
-    apiRequest<IloUpgradeReadiness>("/api/v1/providers/ilo-redfish/upgrade-readiness"),
-  iloBaselinePreview: () =>
-    apiRequest<IloBaselinePreview>("/api/v1/providers/hpe-ilo/baseline-preview"),
-  iloBaselineReadiness: () =>
-    apiRequest<IloBaselineReadiness>("/api/v1/providers/hpe-ilo/readiness"),
-  iloSetupIntent: () =>
-    apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent"),
-  saveIloSetupIntent: (payload: IloSetupIntentWrite) =>
-    apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent", {
+  iloUpgradeReadiness: (deviceId: string) =>
+    apiRequest<IloUpgradeReadiness>(`/api/v1/providers/ilo-redfish/upgrade-readiness?device_id=${encodeURIComponent(deviceId)}`),
+  iloBaselinePreview: (deviceId: string) =>
+    apiRequest<IloBaselinePreview>(`/api/v1/providers/hpe-ilo/baseline-preview?device_id=${encodeURIComponent(deviceId)}`),
+  iloBaselineReadiness: (deviceId: string) =>
+    apiRequest<IloBaselineReadiness>(`/api/v1/providers/hpe-ilo/readiness?device_id=${encodeURIComponent(deviceId)}`),
+  iloSetupIntent: (deviceId: string) =>
+    apiRequest<IloSetupIntent>(`/api/v1/providers/ilo-redfish/setup-intent?device_id=${encodeURIComponent(deviceId)}`),
+  iloDiscoveredSettings: (deviceId: string) =>
+    apiRequest<IloDiscoveredSettings>(`/api/v1/providers/ilo-redfish/discovered-settings?device_id=${encodeURIComponent(deviceId)}`),
+  saveIloSetupIntent: (deviceId: string, payload: IloSetupIntentWrite) =>
+    apiRequest<IloSetupIntent>(`/api/v1/providers/ilo-redfish/setup-intent?device_id=${encodeURIComponent(deviceId)}`, {
       method: "PUT",
       body: payload
     }),
-  iloSetupPlanPreview: () =>
-    apiRequest<IloSetupPlanPreview>("/api/v1/providers/ilo-redfish/setup-plan-preview"),
-  hpeStorageDiscovery: () =>
-    apiRequest<HpeStorageDiscovery>("/api/v1/providers/ilo-redfish/hpe-storage-discovery"),
-  hpeRaidIntent: () =>
-    apiRequest<HpeRaidIntent>("/api/v1/providers/ilo-redfish/hpe-raid-intent"),
-  saveHpeRaidIntent: (payload: HpeRaidIntentWrite) =>
-    apiRequest<HpeRaidIntent>("/api/v1/providers/ilo-redfish/hpe-raid-intent", {
+  iloAccessSettings: (deviceId: string) =>
+    apiRequest<IloAccessSettings>(`/api/v1/providers/ilo-redfish/access-settings?device_id=${encodeURIComponent(deviceId)}`),
+  saveIloAccessSettings: (deviceId: string, payload: IloAccessSettingsWrite) =>
+    apiRequest<IloAccessSettings>(`/api/v1/providers/ilo-redfish/access-settings?device_id=${encodeURIComponent(deviceId)}`, {
       method: "PUT",
       body: payload
     }),
-  hpeRaidPlanPreview: () =>
-    apiRequest<HpeRaidPlanPreview>("/api/v1/providers/ilo-redfish/hpe-raid-plan-preview"),
+  iloSetupPlanPreview: (deviceId: string) =>
+    apiRequest<IloSetupPlanPreview>(`/api/v1/providers/ilo-redfish/setup-plan-preview?device_id=${encodeURIComponent(deviceId)}`),
+  hpeStorageDiscovery: (deviceId: string) =>
+    apiRequest<HpeStorageDiscovery>(`/api/v1/providers/ilo-redfish/hpe-storage-discovery?device_id=${encodeURIComponent(deviceId)}`),
+  hpeVsanReadiness: (deviceId: string) =>
+    apiRequest<HpeVsanReadiness>(`/api/v1/providers/ilo-redfish/vsan-readiness?device_id=${encodeURIComponent(deviceId)}`),
+  hpeRaidIntent: (deviceId: string) =>
+    apiRequest<HpeRaidIntent>(`/api/v1/providers/ilo-redfish/hpe-raid-intent?device_id=${encodeURIComponent(deviceId)}`),
+  saveHpeRaidIntent: (deviceId: string, payload: HpeRaidIntentWrite) =>
+    apiRequest<HpeRaidIntent>(`/api/v1/providers/ilo-redfish/hpe-raid-intent?device_id=${encodeURIComponent(deviceId)}`, {
+      method: "PUT",
+      body: payload
+    }),
+  hpeRaidPlanPreview: (deviceId: string) =>
+    apiRequest<HpeRaidPlanPreview>(`/api/v1/providers/ilo-redfish/hpe-raid-plan-preview?device_id=${encodeURIComponent(deviceId)}`),
   hpeRaidApplyPlan: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-apply-plan"),
-  applyHpeRaidPlan: (confirmation_phrase: string) =>
+  applyHpeRaidPlan: (confirmation_phrase: string, ilo_host: string) =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-apply", {
+      method: "POST",
+      body: { confirmation_phrase, ilo_host }
+    }),
+  hpeRaidFactoryResetPreview: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-factory-reset-preview"),
+  applyHpeRaidFactoryReset: (confirmation_phrase: string) =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-factory-reset-apply", {
       method: "POST",
       body: { confirmation_phrase }
     }),
@@ -196,9 +333,10 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-pending"),
   hpeRaidResetPlan: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-reset-plan"),
-  resetHpeRaidServer: () =>
+  resetHpeRaidServer: (ilo_host: string) =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-reset", {
-      method: "POST"
+      method: "POST",
+      body: { ilo_host }
     }),
   validateHpeRaidAfterReset: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-validate-after-reset", {
@@ -208,6 +346,16 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/esxi-install-readiness"),
   ciscoSetupReadiness: () =>
     apiRequest<CiscoSetupReadiness>("/api/v1/providers/cisco/setup-readiness"),
+  ciscoSshProbe: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/cisco-ansible/probe", {
+      method: "POST",
+      timeoutMs: 70000
+    }),
+  ciscoCurrentIntentDiff: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/cisco/current-intent-diff", {
+      method: "POST",
+      timeoutMs: 90000
+    }),
   ciscoSetupWizardPlan: () =>
     apiRequest<CiscoSetupWizardPlan>("/api/v1/providers/cisco/setup-wizard-plan"),
   ciscoBootstrapRequirements: () =>
@@ -219,6 +367,14 @@ export const api = {
     }),
   ciscoConsoleBootstrapPlan: () =>
     apiRequest<CiscoConsoleBootstrapPlan>("/api/v1/providers/cisco/console-bootstrap/plan"),
+  ciscoConsoleIdentityCandidates: () =>
+    apiRequest<CiscoConsoleIdentityCandidates>("/api/v1/providers/cisco-console/identity-candidates"),
+  verifyCiscoConsoleIdentity: (payload: CiscoConsoleIdentityVerifyRequest) =>
+    apiRequest<CiscoConsoleIdentityResult>("/api/v1/providers/cisco-console/verify-identity", {
+      method: "POST",
+      body: payload,
+      timeoutMs: 30000
+    }),
   netappPlanPreview: () =>
     apiRequest<NetAppPlanPreview>("/api/v1/providers/netapp-ontap/plan-preview"),
   netappConsoleReadiness: () =>
@@ -233,7 +389,13 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/console-read-state"),
   runNetappConsoleReadState: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/console-read-state", {
-      method: "POST"
+      method: "POST",
+      timeoutMs: 70000
+    }),
+  runNetappConsoleLoginState: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/console-login-state", {
+      method: "POST",
+      timeoutMs: 70000
     }),
   netappLiveState: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/live-state"),
@@ -263,11 +425,30 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/nfs-setup-validate", {
       method: "POST"
     }),
+  netappIscsiSetupPreview: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/iscsi-setup-preview"),
+  runNetappIscsiSetupApply: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/iscsi-setup-apply", {
+      method: "POST"
+    }),
+  validateNetappIscsiSetup: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/iscsi-setup-validate", {
+      method: "POST"
+    }),
+  esxiIscsiDatastorePreview: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/esxi-readonly/iscsi-datastore-preview", {
+      method: "POST"
+    }),
+  validateEsxiIscsiDatastore: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/esxi-readonly/iscsi-datastore-validate", {
+      method: "POST"
+    }),
   esxiVmDeployPreview: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/esxi-readonly/vm-deploy-preview"),
   runEsxiVmDeployApply: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/esxi-readonly/vm-deploy-apply", {
-      method: "POST"
+      method: "POST",
+      timeoutMs: VM_DEPLOY_APPLY_TIMEOUT_MS
     }),
   validateEsxiVmDeploy: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/esxi-readonly/vm-deploy-validate", {
@@ -314,6 +495,19 @@ export const api = {
       method: "PUT",
       body: payload
     }),
+  labSafetySettings: () =>
+    apiRequest<LabSafetySettings>("/api/v1/settings/lab-safety"),
+  updateLabSafetySettings: (payload: LabSafetySettingsWrite) =>
+    apiRequest<LabSafetySettings>("/api/v1/settings/lab-safety", {
+      method: "PUT",
+      body: payload
+    }),
+  labCredentials: () => apiRequest<LabCredentials>("/api/v1/lab/credentials"),
+  updateLabCredentials: (payload: LabCredentialsWrite) =>
+    apiRequest<LabCredentials>("/api/v1/lab/credentials", {
+      method: "POST",
+      body: payload
+    }),
   controlActions: () => apiRequest<ControlActionCatalog>("/api/v1/control/actions"),
   updateControlAccessConfig: (sectionId: string, payload: ControlAccessConfigWrite) =>
     apiRequest<ControlAccessConfig>(`/api/v1/control/access/${encodeURIComponent(sectionId)}`, {
@@ -350,9 +544,9 @@ export const api = {
   goldenState: () =>
     apiRequest<ProviderProbeResult>("/api/v1/lab/golden-state"),
   labValidation: () =>
-    apiRequest<LabValidationSummary>("/api/v1/lab/validation"),
+    apiRequest<LabValidationSummary>("/api/v1/lab/validation", { timeoutMs: 120000 }),
   labValidationHandoff: () =>
-    apiRequest<LabValidationSummary>("/api/v1/lab/validation/handoff"),
+    apiRequest<LabValidationSummary>("/api/v1/lab/validation/handoff", { timeoutMs: 120000 }),
   vcenterNetappReadiness: () =>
     apiRequest<ProviderProbeResult>("/api/v1/lab/vcenter-netapp/readiness"),
   vcenterNetappDatastorePlan: () =>
@@ -380,6 +574,13 @@ export const api = {
   reportSummary: () =>
     apiRequest<ReportCenter>("/api/v1/reports/summary"),
   labProfiles: () => apiRequest<LabProfileList>("/api/v1/lab/profiles"),
+  deviceInventory: () => apiRequest<DeviceInventoryItem[]>("/api/v1/device-inventory"),
+  createDevice: (payload: DeviceInventoryWrite) =>
+    apiRequest<DeviceInventoryItem>("/api/v1/device-inventory", { method: "POST", body: payload }),
+  updateDevice: (id: string, payload: Partial<DeviceInventoryWrite>) =>
+    apiRequest<DeviceInventoryItem>(`/api/v1/device-inventory/${id}`, { method: "PATCH", body: payload }),
+  deleteDevice: (id: string) =>
+    apiRequest<void>(`/api/v1/device-inventory/${id}`, { method: "DELETE" }),
   createLabProfile: (payload: LabProfileWrite) =>
     apiRequest<LabProfile>("/api/v1/lab/profiles", {
       method: "POST",
@@ -398,10 +599,22 @@ export const api = {
     apiRequest<LabProfileRuntimeApply>("/api/v1/lab/profiles/active/apply-runtime-env", {
       method: "POST"
     }),
+  topologyDesignDraft: (profileId: string, scenario: string, subnet?: string | null) => {
+    const params = new URLSearchParams({ profile_id: profileId, scenario });
+    if (subnet) params.set("subnet", subnet);
+    return apiRequest<TopologyDesignDraft>(`/api/v1/lab/topology-design-draft?${params.toString()}`);
+  },
+  saveTopologyDesignDraft: (payload: TopologyDesignDraftWrite) =>
+    apiRequest<TopologyDesignDraft>("/api/v1/lab/topology-design-draft", {
+      method: "PUT",
+      body: payload
+    }),
   ciscoConsolePromptReadiness: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/cisco-console/prompt-readiness", {
       method: "POST"
     }),
-  probeProvider: (id: string) =>
-    apiRequest<ProviderProbeResult>(`/api/v1/providers/${id}/probe`, { method: "POST" })
+  probeProvider: (id: string, deviceId?: string | null) => {
+    const params = id === "ilo-redfish" && deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : "";
+    return apiRequest<ProviderProbeResult>(`/api/v1/providers/${id}/probe${params}`, { method: "POST" });
+  }
 };

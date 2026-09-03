@@ -11,7 +11,6 @@ from app.core.config import settings
 from app.core.database import get_session
 from app.models import AuditEvent
 from app.providers.cisco_ansible import CiscoAnsibleAdapter
-from app.providers.cisco_console import CiscoConsoleAdapter
 from app.providers.esxi_readonly import EsxiReadonlyAdapter
 from app.providers.ilo_redfish import IloRedfishAdapter
 from app.providers.mock import MockSourceOfTruthAdapter
@@ -23,6 +22,8 @@ from app.providers.registry import (
 )
 from app.schemas import (
     ApprovalCreate,
+    AiChangeRequestCreate,
+    AiChangeRequestRead,
     ArtifactRead,
     AuditEventRead,
     CatalogRead,
@@ -30,6 +31,9 @@ from app.schemas import (
     CiscoBootstrapRequirementsUpdate,
     CiscoConsoleBootstrapApplyCreate,
     CiscoConsoleBootstrapPlanRead,
+    CiscoConsoleIdentityCandidatesRead,
+    CiscoConsoleIdentityVerifyCreate,
+    CiscoConsoleIdentityVerifyRead,
     CiscoSetupReadinessRead,
     CiscoSetupWizardPlanRead,
     ControlAccessConfigRead,
@@ -37,17 +41,26 @@ from app.schemas import (
     ControlActionCatalogRead,
     ControlActionPlanRead,
     ControlActionRunRead,
+    DeviceInventoryRead,
+    DeviceInventoryUpdate,
+    DeviceInventoryWrite,
     FirmwareFileSelectionsRead,
     FirmwareFileSelectionsWrite,
     FirmwareSummaryRead,
     HpeRaidApplyCreate,
+    HpeRaidFactoryResetCreate,
+    HpeRaidResetCreate,
     HpeRaidIntentRead,
     HpeRaidIntentWrite,
     HpeRaidPlanPreviewRead,
     HpeStorageDiscoveryRead,
+    HpeVsanReadinessRead,
+    IloAccessSettingsRead,
+    IloAccessSettingsWrite,
     IloBaselinePreviewRead,
     IloBaselineReadinessRead,
     IloDestructiveRebuildPreviewRead,
+    IloDiscoveredSettingsRead,
     IloReadinessSummaryRead,
     IloReportPreviewRead,
     IloSetupApplyCreate,
@@ -56,11 +69,21 @@ from app.schemas import (
     IloSetupIntentWrite,
     IloSetupPlanPreviewRead,
     IloUpgradeReadinessRead,
+    IloWriteTargetRequest,
+    LabCredentialsRead,
+    LabCredentialsWrite,
+    LabSafetySettingsRead,
+    LabSafetySettingsWrite,
     LabValidationSummaryRead,
     LabProfileListRead,
     LabProfileRead,
     LabProfileRuntimeApplyRead,
     LabProfileWrite,
+    LabBuildPlanRead,
+    LabBuildResumeCreate,
+    LabBuildRunRead,
+    TopologyDesignDraftRead,
+    TopologyDesignDraftWrite,
     MediaInventoryRead,
     NetAppConsoleReadinessRead,
     NetAppObservationRead,
@@ -68,6 +91,8 @@ from app.schemas import (
     NetAppPlanPreviewRead,
     NetAppReadinessComparisonRead,
     NetAppUpgradeReadinessRead,
+    OperatorIssuePacketCreate,
+    OperatorIssuePacketRead,
     ProviderArtifactRead,
     ProviderModeSettingsRead,
     ProviderModeSettingsWrite,
@@ -77,8 +102,11 @@ from app.schemas import (
     ReportCenterSummaryRead,
     RequestReadinessRead,
     RequestRead,
+    UiIntentRequest,
+    UiIntentResponse,
     VMDeploymentCreate,
     VMDeploymentUpdate,
+    WorkflowActionDiagnosisRead,
     WorkflowActionRead,
     WorkflowActionRunCreate,
     WorkflowActionRunRead,
@@ -89,6 +117,7 @@ from app.services.artifacts import (
     list_request_artifacts,
     list_workflow_run_artifacts,
 )
+from app.services.audit import record_audit_event
 from app.services.cisco_bootstrap_requirements import (
     CiscoBootstrapRequirementsValidationError,
     get_cisco_bootstrap_requirements,
@@ -97,6 +126,10 @@ from app.services.cisco_bootstrap_requirements import (
 from app.services.cisco_console_bootstrap import (
     apply_cisco_console_bootstrap,
     build_cisco_console_bootstrap_plan,
+)
+from app.services.cisco_console_identity import (
+    list_cisco_console_identity_candidates,
+    verify_cisco_console_identity,
 )
 from app.services.lifecycle import (
     ExecutionPreflightError,
@@ -119,6 +152,7 @@ from app.services.lifecycle import (
     update_vm_deployment_request,
 )
 from app.services.cisco_setup_readiness import get_cisco_setup_readiness
+from app.services.cisco_current_intent import get_cisco_current_intent_diff
 from app.services.cisco_setup_wizard_plan import get_cisco_setup_wizard_plan
 from app.services.build_verification import get_lab_build_verification
 from app.services.control_actions import (
@@ -132,12 +166,29 @@ from app.services.control_access import (
     ControlAccessConfigValidationError,
     update_control_access_config,
 )
+from app.services.device_inventory import (
+    DeviceInventoryAddressModeError,
+    DeviceInventoryNotFoundError,
+    create_device,
+    delete_device,
+    list_devices,
+    update_device,
+)
 from app.services.ilo_baseline import (
     get_ilo_baseline_preview,
     get_ilo_baseline_readiness,
 )
+from app.services.ilo_access_settings import (
+    IloAccessSettingsError,
+    IloDeviceNotFoundError,
+    ilo_config_for_device,
+    read_ilo_access_settings,
+    resolve_ilo_device_id,
+    update_ilo_access_settings,
+)
 from app.services.ilo_readiness import (
     get_ilo_destructive_rebuild_preview,
+    get_ilo_discovered_settings,
     get_ilo_readiness_summary,
     get_ilo_report_preview,
     get_ilo_setup_compare,
@@ -154,6 +205,16 @@ from app.services.provider_mode_settings import (
     read_provider_mode_settings,
     update_provider_mode_settings,
 )
+from app.services.lab_credentials import (
+    LabCredentialsError,
+    read_lab_credentials_status,
+    update_lab_credentials,
+)
+from app.services.lab_safety_settings import (
+    LabSafetySettingsError,
+    read_lab_safety_settings,
+    update_lab_safety_settings,
+)
 from app.services.lab_profiles import (
     LabProfileError,
     LabProfileNotFoundError,
@@ -163,10 +224,30 @@ from app.services.lab_profiles import (
     list_lab_profiles,
     update_lab_profile,
 )
+from app.services.topology_design_drafts import (
+    TopologyDesignDraftError,
+    get_topology_design_draft,
+    save_topology_design_draft,
+)
 from app.services.lab_validation import get_lab_validation_summary
+from app.services.lab_build_engine import (
+    LabBuildPlanError,
+    LabBuildRunNotFoundError,
+    LabBuildRunStateError,
+    LabBuildStepNotFoundError,
+    LabBuildStepRetryError,
+    get_lab_build_plan,
+    get_lab_build_run,
+    get_latest_lab_build_run,
+    resume_lab_build,
+    retry_lab_build_step,
+    start_lab_build,
+)
 from app.services.hpe_raid import (
+    apply_hpe_raid_factory_reset,
     apply_hpe_raid_plan,
     build_hpe_raid_apply_plan,
+    build_hpe_raid_factory_reset_preview,
     build_hpe_raid_reset_plan,
     get_hpe_raid_intent,
     get_hpe_raid_plan_preview,
@@ -176,6 +257,7 @@ from app.services.hpe_raid import (
     validate_hpe_raid_after_reset,
     write_hpe_raid_pending_report,
 )
+from app.services.hpe_vsan_readiness import get_hpe_vsan_readiness
 from app.services.esxi_install_readiness import get_esxi_install_readiness
 from app.services.esxi_management_recovery import (
     recover_esxi_management,
@@ -185,6 +267,10 @@ from app.services.esxi_netapp_datastore import (
     apply_esxi_netapp_datastore,
     build_esxi_netapp_datastore_preview,
     validate_esxi_netapp_datastore,
+)
+from app.services.esxi_iscsi_datastore import (
+    build_esxi_iscsi_datastore_preview,
+    validate_esxi_iscsi_datastore,
 )
 from app.services.esxi_vm_deploy import (
     apply_esxi_vm_deploy,
@@ -212,6 +298,7 @@ from app.services.netapp_address_plan import (
     apply_netapp_address_remediation,
     build_netapp_address_remediation_plan,
     build_netapp_address_remediation_preview,
+    diagnose_netapp_ha_node_warning,
     validate_netapp_address_remediation,
 )
 from app.services.netapp_console_readiness import get_netapp_console_readiness
@@ -233,16 +320,23 @@ from app.services.netapp_real_lab import (
     run_netapp_live_state,
     run_netapp_setup_validation,
     run_netapp_console_discovery,
+    run_netapp_console_login_state,
     run_netapp_console_read_state,
 )
 from app.services.netapp_setup_intent import (
     apply_netapp_setup,
     build_netapp_setup_preview,
+    run_netapp_post_setup_validation,
 )
 from app.services.netapp_nfs_setup import (
     apply_netapp_nfs_setup,
     build_netapp_nfs_setup_preview,
     validate_netapp_nfs_setup,
+)
+from app.services.netapp_iscsi_setup import (
+    apply_netapp_iscsi_setup,
+    build_netapp_iscsi_setup_preview,
+    validate_netapp_iscsi_setup,
 )
 from app.services.netapp_upgrade_center import (
     apply_netapp_upgrade,
@@ -251,8 +345,11 @@ from app.services.netapp_upgrade_center import (
     validate_netapp_upgrade,
 )
 from app.services.netapp_upgrade_readiness import get_netapp_upgrade_readiness
+from app.services.operator_issue_packets import create_operator_issue_packet
 from app.services.readiness import get_request_readiness
 from app.services.report_center import get_report_center, get_report_summary
+from app.services.ai_change_requests import create_ai_change_request
+from app.services.ui_intent import resolve_ui_intent
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
 from app.services.vcenter_netapp_readiness import (
     get_vcenter_attach_esxi_apply,
@@ -272,6 +369,7 @@ from app.services.workflow_registry import (
     list_workflow_actions,
     list_workflow_stages,
 )
+from app.services.workflow_action_diagnosis import diagnose_workflow_action
 from app.services.workflow_action_runner import (
     list_workflow_action_runs,
     run_workflow_action,
@@ -490,6 +588,71 @@ def read_workflow_stages() -> list[WorkflowStageRead]:
     return list_workflow_stages()
 
 
+@router.get("/lab-build/plan", response_model=LabBuildPlanRead)
+def read_lab_build_plan(session: Session = Depends(get_session)) -> LabBuildPlanRead:
+    try:
+        return get_lab_build_plan(session=session)
+    except LabBuildPlanError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/lab-build/runs", response_model=LabBuildRunRead)
+def create_lab_build_run(session: Session = Depends(get_session)) -> LabBuildRunRead:
+    try:
+        return start_lab_build(session)
+    except LabBuildPlanError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/lab-build/runs/latest", response_model=LabBuildRunRead | None)
+def read_latest_lab_build_run(kit_id: str | None = None) -> LabBuildRunRead | None:
+    return get_latest_lab_build_run(kit_id=kit_id)
+
+
+@router.get("/lab-build/runs/{run_id}", response_model=LabBuildRunRead)
+def read_lab_build_run(run_id: str) -> LabBuildRunRead:
+    try:
+        return get_lab_build_run(run_id)
+    except LabBuildRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Lab build run not found") from exc
+
+
+@router.post("/lab-build/runs/{run_id}/resume", response_model=LabBuildRunRead)
+def resume_lab_build_run(
+    run_id: str,
+    payload: LabBuildResumeCreate,
+    session: Session = Depends(get_session),
+) -> LabBuildRunRead:
+    try:
+        return resume_lab_build(
+            run_id,
+            session,
+            action_run_id=payload.action_run_id,
+            run_revision=payload.run_revision,
+            waiting_nonce=payload.waiting_nonce,
+        )
+    except LabBuildRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Lab build run not found") from exc
+    except LabBuildRunStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/lab-build/runs/{run_id}/steps/{step_id}/retry", response_model=LabBuildRunRead)
+def retry_lab_build_run_step(
+    run_id: str,
+    step_id: str,
+    session: Session = Depends(get_session),
+) -> LabBuildRunRead:
+    try:
+        return retry_lab_build_step(run_id, step_id, session)
+    except LabBuildRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Lab build run not found") from exc
+    except LabBuildStepNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Lab build step not found") from exc
+    except LabBuildStepRetryError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.get("/workflows/actions", response_model=list[WorkflowActionRead])
 def read_workflow_actions() -> list[WorkflowActionRead]:
     return list_workflow_actions()
@@ -519,14 +682,43 @@ def run_workflow_action_route(
 
 
 @router.get("/workflows/actions/{action_id}/runs", response_model=list[WorkflowActionRunRead])
-def read_workflow_action_runs(action_id: str) -> list[WorkflowActionRunRead]:
+def read_workflow_action_runs(action_id: str, limit: int = Query(20, ge=1, le=100)) -> list[WorkflowActionRunRead]:
     try:
-        return list_workflow_action_runs(action_id)
+        return list_workflow_action_runs(action_id, limit=limit)
     except WorkflowRegistryNotFoundError as exc:
         raise HTTPException(
             status_code=404,
             detail={"blocker": "Workflow action not found", "action_id": action_id},
         ) from exc
+
+
+@router.get("/workflows/actions/{action_id}/diagnosis", response_model=WorkflowActionDiagnosisRead)
+def read_workflow_action_diagnosis(
+    action_id: str,
+    limit: int = Query(5, ge=1, le=10),
+) -> WorkflowActionDiagnosisRead:
+    try:
+        return diagnose_workflow_action(action_id, limit=limit)
+    except WorkflowRegistryNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"blocker": "Workflow action not found", "action_id": action_id},
+        ) from exc
+
+
+@router.post("/operator-issue-packets", response_model=OperatorIssuePacketRead)
+def create_operator_issue_packet_route(payload: OperatorIssuePacketCreate) -> OperatorIssuePacketRead:
+    return create_operator_issue_packet(payload.model_dump())
+
+
+@router.post("/ui-intent", response_model=UiIntentResponse)
+def resolve_ui_intent_route(payload: UiIntentRequest) -> UiIntentResponse:
+    return resolve_ui_intent(payload)
+
+
+@router.post("/ai-change-requests", response_model=AiChangeRequestRead)
+def create_ai_change_request_route(payload: AiChangeRequestCreate) -> AiChangeRequestRead:
+    return create_ai_change_request(payload)
 
 
 @router.get("/workflows/stages/{stage_id}", response_model=WorkflowStageRead)
@@ -558,6 +750,65 @@ def update_provider_mode_settings_route(
         return update_provider_mode_settings(payload.model_dump())
     except ProviderModeSettingsError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/settings/lab-safety", response_model=LabSafetySettingsRead)
+def read_lab_safety_settings_route() -> LabSafetySettingsRead:
+    return read_lab_safety_settings()
+
+
+@router.put("/settings/lab-safety", response_model=LabSafetySettingsRead)
+def update_lab_safety_settings_route(
+    payload: LabSafetySettingsWrite,
+    fastapi_request: FastAPIRequest,
+    session: Session = Depends(get_session),
+) -> LabSafetySettingsRead:
+    update_payload = payload.model_dump(exclude_none=True)
+    try:
+        result = update_lab_safety_settings(update_payload)
+    except LabSafetySettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    changed = sorted(
+        key
+        for key in update_payload
+        if key not in {"confirmation_phrase", "device_reconfiguration_confirmation_phrase"}
+    )
+    record_audit_event(
+        session,
+        actor=get_current_actor(fastapi_request),
+        event_type="settings.lab_safety.updated",
+        message="Lab safety runtime settings were updated.",
+        data={"changed_fields": changed},
+    )
+    session.commit()
+    return result
+
+
+@router.get("/lab/credentials", response_model=LabCredentialsRead)
+def read_lab_credentials_route() -> LabCredentialsRead:
+    return read_lab_credentials_status()
+
+
+@router.post("/lab/credentials", response_model=LabCredentialsRead)
+def update_lab_credentials_route(
+    payload: LabCredentialsWrite,
+    fastapi_request: FastAPIRequest,
+    session: Session = Depends(get_session),
+) -> LabCredentialsRead:
+    update_payload = payload.model_dump(exclude_none=True)
+    try:
+        result = update_lab_credentials(update_payload)
+    except LabCredentialsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    record_audit_event(
+        session,
+        actor=get_current_actor(fastapi_request),
+        event_type="lab.credentials.updated",
+        message="Lab device credentials were updated.",
+        data={"changed_fields": sorted(update_payload.keys())},
+    )
+    session.commit()
+    return result
 
 
 @router.get("/control/actions", response_model=ControlActionCatalogRead)
@@ -711,6 +962,45 @@ def read_lab_profiles() -> LabProfileListRead:
     return list_lab_profiles()
 
 
+@router.get("/device-inventory", response_model=list[DeviceInventoryRead])
+def read_device_inventory(session: Session = Depends(get_session)) -> list[DeviceInventoryRead]:
+    return list_devices(session)
+
+
+@router.post(
+    "/device-inventory",
+    response_model=DeviceInventoryRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_device_inventory(
+    payload: DeviceInventoryWrite,
+    session: Session = Depends(get_session),
+) -> DeviceInventoryRead:
+    return create_device(session, payload.model_dump())
+
+
+@router.patch("/device-inventory/{device_id}", response_model=DeviceInventoryRead)
+def update_device_inventory(
+    device_id: str,
+    payload: DeviceInventoryUpdate,
+    session: Session = Depends(get_session),
+) -> DeviceInventoryRead:
+    try:
+        return update_device(session, device_id, payload.model_dump(exclude_unset=True))
+    except DeviceInventoryNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except DeviceInventoryAddressModeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.delete("/device-inventory/{device_id}", status_code=status.HTTP_200_OK)
+def delete_device_inventory(device_id: str, session: Session = Depends(get_session)) -> None:
+    try:
+        delete_device(session, device_id)
+    except DeviceInventoryNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+
+
 @router.post(
     "/lab/profiles",
     response_model=LabProfileRead,
@@ -749,12 +1039,40 @@ def apply_active_lab_profile_runtime_env_route() -> LabProfileRuntimeApplyRead:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.get("/lab/topology-design-draft", response_model=TopologyDesignDraftRead)
+def read_topology_design_draft(
+    profile_id: str = Query("runtime", min_length=1, max_length=120),
+    scenario: str = Query(..., min_length=1, max_length=80),
+    subnet: str | None = Query(None, max_length=80),
+) -> TopologyDesignDraftRead:
+    try:
+        return get_topology_design_draft(profile_id=profile_id, scenario=scenario, subnet=subnet)
+    except TopologyDesignDraftError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/lab/topology-design-draft", response_model=TopologyDesignDraftRead)
+def update_topology_design_draft(payload: TopologyDesignDraftWrite) -> TopologyDesignDraftRead:
+    try:
+        return save_topology_design_draft(payload.model_dump())
+    except TopologyDesignDraftError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.get(
     "/providers/cisco/setup-readiness",
     response_model=CiscoSetupReadinessRead,
 )
 def read_cisco_setup_readiness() -> CiscoSetupReadinessRead:
     return get_cisco_setup_readiness()
+
+
+@router.post(
+    "/providers/cisco/current-intent-diff",
+    response_model=ProviderProbeResultRead,
+)
+def run_cisco_current_intent_diff() -> ProviderProbeResultRead:
+    return get_cisco_current_intent_diff()
 
 
 @router.get(
@@ -804,20 +1122,60 @@ def apply_cisco_console_bootstrap_route(
     return apply_cisco_console_bootstrap(payload.model_dump())
 
 
+@router.get(
+    "/providers/cisco-console/identity-candidates",
+    response_model=CiscoConsoleIdentityCandidatesRead,
+)
+def read_cisco_console_identity_candidates() -> CiscoConsoleIdentityCandidatesRead:
+    return CiscoConsoleIdentityCandidatesRead.model_validate(
+        list_cisco_console_identity_candidates()
+    )
+
+
+@router.post(
+    "/providers/cisco-console/verify-identity",
+    response_model=CiscoConsoleIdentityVerifyRead,
+)
+def verify_cisco_console_identity_route(
+    payload: CiscoConsoleIdentityVerifyCreate,
+) -> CiscoConsoleIdentityVerifyRead:
+    return CiscoConsoleIdentityVerifyRead.model_validate(
+        verify_cisco_console_identity(
+            port=payload.port,
+            baud=payload.baud,
+            candidate_fingerprint=payload.candidate_fingerprint,
+        )
+    )
+
+
 @router.post(
     "/providers/cisco-console/prompt-readiness",
     response_model=ProviderProbeResultRead,
 )
 def cisco_console_prompt_readiness() -> ProviderProbeResultRead:
-    return _run_provider_probe("cisco-console", CiscoConsoleAdapter().prompt_readiness)
+    return _legacy_cisco_console_scan_blocked()
 
 
 @router.post("/providers/{provider_id}/probe", response_model=ProviderProbeResultRead)
-def probe_provider(provider_id: str) -> ProviderProbeResultRead:
+def probe_provider(
+    provider_id: str,
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> ProviderProbeResultRead:
     if provider_id == "ilo-redfish":
-        return _run_provider_probe(provider_id, IloRedfishAdapter().probe)
+        try:
+            resolved_id = resolve_ilo_device_id(session, device_id)
+            config = ilo_config_for_device(session, resolved_id)
+        except IloDeviceNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Device not found") from exc
+        except IloAccessSettingsError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return _run_provider_probe(
+            provider_id,
+            IloRedfishAdapter(config=config).probe,
+        )
     if provider_id == "cisco-console":
-        return _run_provider_probe(provider_id, CiscoConsoleAdapter().probe)
+        return _legacy_cisco_console_scan_blocked()
     if provider_id == "cisco-ansible":
         return _run_provider_probe(provider_id, CiscoAnsibleAdapter().probe)
     if provider_id == "esxi-readonly":
@@ -825,36 +1183,102 @@ def probe_provider(provider_id: str) -> ProviderProbeResultRead:
     raise HTTPException(status_code=404, detail="Provider probe not found")
 
 
+def _legacy_cisco_console_scan_blocked() -> ProviderProbeResultRead:
+    candidates = list_cisco_console_identity_candidates()
+    candidate_blockers = list(candidates.get("blockers") or [])
+    return ProviderProbeResultRead.model_validate(
+        {
+            **candidates,
+            "status": "blocked",
+            "message": (
+                "Automatic Cisco console scanning is retired. Open Cisco setup, choose the "
+                "exact physical cable and baud, then run the explicit read-only identity check."
+            ),
+            "blockers": [
+                "An exact operator-pinned console candidate is required before serial contact.",
+                *candidate_blockers,
+            ],
+            "action": "identity-selection-required",
+            "legacy_auto_scan_disabled": True,
+            "serial_ports_opened": 0,
+        }
+    )
+
+
 @router.get(
     "/providers/ilo-redfish/upgrade-readiness",
     response_model=IloUpgradeReadinessRead,
 )
-def read_ilo_upgrade_readiness() -> IloUpgradeReadinessRead:
-    return get_ilo_upgrade_readiness()
+def read_ilo_upgrade_readiness(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> IloUpgradeReadinessRead:
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_upgrade_readiness(
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
     "/providers/hpe-ilo/baseline-preview",
     response_model=IloBaselinePreviewRead,
 )
-def read_hpe_ilo_baseline_preview() -> IloBaselinePreviewRead:
-    return get_ilo_baseline_preview()
+def read_hpe_ilo_baseline_preview(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> IloBaselinePreviewRead:
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_baseline_preview(
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
     "/providers/hpe-ilo/readiness",
     response_model=IloBaselineReadinessRead,
 )
-def read_hpe_ilo_readiness() -> IloBaselineReadinessRead:
-    return get_ilo_baseline_readiness()
+def read_hpe_ilo_readiness(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> IloBaselineReadinessRead:
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_baseline_readiness(
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
     "/providers/ilo-redfish/readiness-summary",
     response_model=IloReadinessSummaryRead,
 )
-def read_ilo_readiness_summary() -> IloReadinessSummaryRead:
-    return get_ilo_readiness_summary()
+def read_ilo_readiness_summary(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> IloReadinessSummaryRead:
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_readiness_summary(
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -870,9 +1294,20 @@ def read_ilo_destructive_rebuild_preview() -> IloDestructiveRebuildPreviewRead:
     response_model=IloSetupPlanPreviewRead,
 )
 def read_ilo_setup_plan_preview(
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> IloSetupPlanPreviewRead:
-    return get_ilo_setup_plan_preview(session)
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_setup_plan_preview(
+            session,
+            resolved_id,
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -880,9 +1315,34 @@ def read_ilo_setup_plan_preview(
     response_model=IloSetupIntentRead,
 )
 def read_ilo_setup_intent(
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> IloSetupIntentRead:
-    return get_ilo_setup_intent(session)
+    try:
+        return get_ilo_setup_intent(session, resolve_ilo_device_id(session, device_id))
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get(
+    "/providers/ilo-redfish/discovered-settings",
+    response_model=IloDiscoveredSettingsRead,
+)
+def read_ilo_discovered_settings(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> IloDiscoveredSettingsRead:
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_discovered_settings(
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.put(
@@ -891,9 +1351,19 @@ def read_ilo_setup_intent(
 )
 def update_ilo_setup_intent(
     payload: IloSetupIntentWrite,
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> IloSetupIntentRead:
-    return save_ilo_setup_intent(session, payload)
+    try:
+        return save_ilo_setup_intent(
+            session,
+            resolve_ilo_device_id(session, device_id),
+            payload,
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -901,9 +1371,20 @@ def update_ilo_setup_intent(
     response_model=IloSetupCompareReportRead,
 )
 def read_ilo_setup_compare(
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> IloSetupCompareReportRead:
-    return get_ilo_setup_compare(session)
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_setup_compare(
+            session,
+            resolved_id,
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -911,9 +1392,20 @@ def read_ilo_setup_compare(
     response_model=IloReportPreviewRead,
 )
 def read_ilo_report_preview(
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> IloReportPreviewRead:
-    return get_ilo_report_preview(session)
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_ilo_report_preview(
+            session,
+            resolved_id,
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -938,11 +1430,78 @@ def apply_ilo_setup_route(
 
 
 @router.get(
+    "/providers/ilo-redfish/access-settings",
+    response_model=IloAccessSettingsRead,
+)
+def read_ilo_access_settings_route(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> IloAccessSettingsRead:
+    try:
+        return read_ilo_access_settings(session, resolve_ilo_device_id(session, device_id))
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put(
+    "/providers/ilo-redfish/access-settings",
+    response_model=IloAccessSettingsRead,
+)
+def update_ilo_access_settings_route(
+    payload: IloAccessSettingsWrite,
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> IloAccessSettingsRead:
+    try:
+        return update_ilo_access_settings(
+            session,
+            resolve_ilo_device_id(session, device_id),
+            payload.model_dump(exclude_unset=True),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.get(
     "/providers/ilo-redfish/hpe-storage-discovery",
     response_model=HpeStorageDiscoveryRead,
 )
-def read_hpe_storage_discovery() -> HpeStorageDiscoveryRead:
-    return get_hpe_storage_discovery()
+def read_hpe_storage_discovery(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> HpeStorageDiscoveryRead:
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_hpe_storage_discovery(
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get(
+    "/providers/ilo-redfish/vsan-readiness",
+    response_model=HpeVsanReadinessRead,
+)
+def read_hpe_vsan_readiness(
+    device_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> HpeVsanReadinessRead:
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_hpe_vsan_readiness(
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -950,9 +1509,15 @@ def read_hpe_storage_discovery() -> HpeStorageDiscoveryRead:
     response_model=HpeRaidIntentRead,
 )
 def read_hpe_raid_intent(
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> HpeRaidIntentRead:
-    return get_hpe_raid_intent(session)
+    try:
+        return get_hpe_raid_intent(session, resolve_ilo_device_id(session, device_id))
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.put(
@@ -961,9 +1526,19 @@ def read_hpe_raid_intent(
 )
 def update_hpe_raid_intent(
     payload: HpeRaidIntentWrite,
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> HpeRaidIntentRead:
-    return save_hpe_raid_intent(session, payload)
+    try:
+        return save_hpe_raid_intent(
+            session,
+            resolve_ilo_device_id(session, device_id),
+            payload,
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -971,9 +1546,20 @@ def update_hpe_raid_intent(
     response_model=HpeRaidPlanPreviewRead,
 )
 def read_hpe_raid_plan_preview(
+    device_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> HpeRaidPlanPreviewRead:
-    return get_hpe_raid_plan_preview(session)
+    try:
+        resolved_id = resolve_ilo_device_id(session, device_id)
+        return get_hpe_raid_plan_preview(
+            session,
+            resolved_id,
+            config=ilo_config_for_device(session, resolved_id),
+        )
+    except IloDeviceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Device not found") from exc
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(
@@ -998,6 +1584,27 @@ def apply_hpe_raid_route(
 
 
 @router.get(
+    "/providers/ilo-redfish/hpe-raid-factory-reset-preview",
+    response_model=ProviderProbeResultRead,
+)
+def read_hpe_raid_factory_reset_preview(
+    session: Session = Depends(get_session),
+) -> ProviderProbeResultRead:
+    return build_hpe_raid_factory_reset_preview(session)
+
+
+@router.post(
+    "/providers/ilo-redfish/hpe-raid-factory-reset-apply",
+    response_model=ProviderProbeResultRead,
+)
+def apply_hpe_raid_factory_reset_route(
+    payload: HpeRaidFactoryResetCreate,
+    session: Session = Depends(get_session),
+) -> ProviderProbeResultRead:
+    return apply_hpe_raid_factory_reset(session, payload)
+
+
+@router.get(
     "/providers/ilo-redfish/hpe-raid-pending",
     response_model=ProviderProbeResultRead,
 )
@@ -1019,8 +1626,12 @@ def read_hpe_raid_reset_plan() -> ProviderProbeResultRead:
     "/providers/ilo-redfish/hpe-raid-reset",
     response_model=ProviderProbeResultRead,
 )
-def reset_hpe_raid_server_route() -> ProviderProbeResultRead:
-    return reset_server_for_raid()
+def reset_hpe_raid_server_route(
+    payload: HpeRaidResetCreate,
+) -> ProviderProbeResultRead:
+    return reset_server_for_raid(
+        ilo_host=payload.ilo_host,
+    )
 
 
 @router.post(
@@ -1071,8 +1682,12 @@ def run_esxi_vm_deploy_validate_route() -> ProviderProbeResultRead:
     "/providers/esxi-readonly/recover-management",
     response_model=ProviderProbeResultRead,
 )
-def run_esxi_recover_management_route() -> ProviderProbeResultRead:
-    return recover_esxi_management()
+def run_esxi_recover_management_route(
+    payload: IloWriteTargetRequest,
+) -> ProviderProbeResultRead:
+    return recover_esxi_management(
+        ilo_host=payload.ilo_host,
+    )
 
 
 @router.post(
@@ -1105,6 +1720,22 @@ def run_esxi_netapp_datastore_apply_route() -> ProviderProbeResultRead:
 )
 def run_esxi_netapp_datastore_validate_route() -> ProviderProbeResultRead:
     return validate_esxi_netapp_datastore()
+
+
+@router.post(
+    "/providers/esxi-readonly/iscsi-datastore-preview",
+    response_model=ProviderProbeResultRead,
+)
+def run_esxi_iscsi_datastore_preview_route() -> ProviderProbeResultRead:
+    return build_esxi_iscsi_datastore_preview()
+
+
+@router.post(
+    "/providers/esxi-readonly/iscsi-datastore-validate",
+    response_model=ProviderProbeResultRead,
+)
+def run_esxi_iscsi_datastore_validate_route() -> ProviderProbeResultRead:
+    return validate_esxi_iscsi_datastore()
 
 
 @router.get(
@@ -1155,6 +1786,14 @@ def run_netapp_console_state_route() -> ProviderProbeResultRead:
     return run_netapp_console_read_state()
 
 
+@router.post(
+    "/providers/netapp-ontap/console-login-state",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_console_login_state_route() -> ProviderProbeResultRead:
+    return run_netapp_console_login_state()
+
+
 @router.get(
     "/providers/netapp-ontap/live-state",
     response_model=ProviderProbeResultRead,
@@ -1177,6 +1816,14 @@ def run_netapp_live_state_route() -> ProviderProbeResultRead:
 )
 def run_netapp_setup_validation_route() -> ProviderProbeResultRead:
     return run_netapp_setup_validation()
+
+
+@router.post(
+    "/providers/netapp-ontap/post-setup-validation",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_post_setup_validation_route() -> ProviderProbeResultRead:
+    return run_netapp_post_setup_validation()
 
 
 @router.get(
@@ -1225,6 +1872,14 @@ def run_netapp_address_apply_route() -> ProviderProbeResultRead:
 )
 def run_netapp_address_validate_route() -> ProviderProbeResultRead:
     return validate_netapp_address_remediation()
+
+
+@router.post(
+    "/providers/netapp-ontap/ha-node-diagnose",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_ha_node_diagnose_route() -> ProviderProbeResultRead:
+    return diagnose_netapp_ha_node_warning()
 
 
 @router.get(
@@ -1289,6 +1944,30 @@ def run_netapp_nfs_setup_apply_route() -> ProviderProbeResultRead:
 )
 def run_netapp_nfs_setup_validate_route() -> ProviderProbeResultRead:
     return validate_netapp_nfs_setup()
+
+
+@router.get(
+    "/providers/netapp-ontap/iscsi-setup-preview",
+    response_model=ProviderProbeResultRead,
+)
+def read_netapp_iscsi_setup_preview() -> ProviderProbeResultRead:
+    return build_netapp_iscsi_setup_preview(write_report=False)
+
+
+@router.post(
+    "/providers/netapp-ontap/iscsi-setup-apply",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_iscsi_setup_apply_route() -> ProviderProbeResultRead:
+    return apply_netapp_iscsi_setup()
+
+
+@router.post(
+    "/providers/netapp-ontap/iscsi-setup-validate",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_iscsi_setup_validate_route() -> ProviderProbeResultRead:
+    return validate_netapp_iscsi_setup()
 
 
 @router.get(

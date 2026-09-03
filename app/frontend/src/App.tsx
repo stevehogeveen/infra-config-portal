@@ -7,11 +7,9 @@ import {
   Copy,
   FileText,
   Pencil,
-  Gauge,
   HardDrive,
   History,
   Layers,
-  Menu,
   Play,
   Plus,
   RefreshCw,
@@ -28,23 +26,26 @@ import {
 } from "lucide-react";
 import { createContext, FormEvent, ReactNode, SetStateAction, useContext, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link, Navigate, NavLink, Route as RouterRoute, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, Route as RouterRoute, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { api } from "./api";
+import { LabBuildJourney } from "./components/operator/LabBuildJourney";
 import {
   OperatorFirmwareUpgradesPage,
+  OperatorLabDefaultsPage,
   OperatorNetworkPage,
-  OperatorOverviewPage,
+
   OperatorServerPage,
-  OperatorSettingsPage,
   OperatorStoragePage,
   OperatorTabStateProvider,
   OperatorValidationPage,
   OperatorVirtualizationPage
 } from "./operatorPages";
+import { RackRail, SimpleLabPage, SimpleStepsPage } from "./simplePages";
 import type {
   ArtifactRecord,
   AuditEvent,
+  AiChangeRequest,
   Catalog,
   CiscoBootstrapRequirements,
   CiscoBootstrapRequirementsUpdate,
@@ -74,6 +75,8 @@ import type {
   IloSetupIntentWrite,
   IloSetupPlanPreview,
   IloUpgradeReadiness,
+  LabBuildPlan,
+  LabBuildRun,
   LabValidationItem,
   LabValidationSummary,
   LabAddressPlan,
@@ -92,6 +95,7 @@ import type {
   NetAppPlanPreview,
   NetAppReadinessComparison,
   NetAppUpgradeReadiness,
+  OperatorIssuePacket,
   ProviderModeSettings,
   ProviderModeSettingsWrite,
   ProviderAction,
@@ -106,6 +110,8 @@ import type {
   RequestRecord,
   RequestStatus,
   UiDisplayMode,
+  UiIntentRegion,
+  UiIntentRegionLayout,
   VMDeploymentCreate,
   VMDeploymentUpdate,
   WorkflowAction,
@@ -253,6 +259,8 @@ type HealthStatus = {
   provider_mode: string;
   operator_runtime_mode?: string;
   expected_runtime_mode?: string;
+  lab_subnet_cidr?: string | null;
+  host_ipv4_addresses?: string[];
   dev_test_banner?: string | null;
   status: string;
 };
@@ -403,9 +411,12 @@ type LabGlobalSettingsFormState = {
   enableDns: boolean;
 };
 
+type LabDeploymentMode = "shared" | "local";
+
 type LabProfileFormState = {
   name: string;
   description: string;
+  deploymentMode: LabDeploymentMode;
   profileTopology: string;
   addresses: Record<LabAddressScalarKey, string>;
   globalSettings: LabGlobalSettingsFormState;
@@ -455,7 +466,7 @@ type ControlProfileEditField =
       label: string;
     };
 
-const labSubnetField: { key: "subnet"; label: string } = { key: "subnet", label: "Subnet CIDR" };
+const labSubnetField: { key: "subnet"; label: string } = { key: "subnet", label: "Subnet network" };
 
 const labCoreAddressFields: Array<{ key: LabAddressInputKey; label: string }> = [
   { key: "ilo", label: "Permanent iLO IP" },
@@ -484,6 +495,8 @@ const labAddressFields: Array<{ key: LabAddressScalarKey; label: string }> = [
 const defaultLabSubnet = "192.168.1.0/24";
 const netappDisabledForSubnetReason =
   "NetApp and vCenter are outside the normal scope for compact lab setups. Use a /24 high-address setup, or manually enable them with custom in-subnet addresses.";
+const netappDisabledForLocalStorageReason =
+  "Single-server kits use local server disks, so NetApp and vCenter are not included.";
 const labBuilderCoreOffsets: Partial<Record<LabAddressInputKey, number>> = {
   ilo: 201,
   server_embedded_nic: 202,
@@ -678,22 +691,34 @@ function App() {
     }
   }
 
-  useEffect(() => {
-    loadLabProfileState();
-    loadReportIssues();
-  }, []);
+  async function loadHealth() {
+    try {
+      const nextHealth = await api.health();
+      setHealth(nextHealth);
+      setHealthError("");
+    } catch (err) {
+      setHealth(null);
+      setHealthError((err as Error).message);
+    }
+  }
 
   useEffect(() => {
-    api
-      .health()
-      .then((nextHealth) => {
-        setHealth(nextHealth);
-        setHealthError("");
-      })
-      .catch((err: Error) => {
-        setHealth(null);
-        setHealthError(err.message);
-      });
+    let ignore = false;
+    async function loadStartup() {
+      await loadLabProfileState();
+      if (ignore) return;
+      await loadHealth();
+      if (ignore) return;
+      window.setTimeout(() => {
+        if (!ignore) {
+          void loadReportIssues();
+        }
+      }, 500);
+    }
+    void loadStartup();
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -721,59 +746,58 @@ function App() {
       >
         <AppShell
           health={health}
-          healthError={healthError}
-          labProfileError={labProfileError}
-          labProfileLoading={labProfileLoading}
-          labProfileState={labProfileState}
         >
           <OperatorTabStateProvider>
             <Routes>
-              <RouterRoute path="/" element={<Navigate to="/overview" replace />} />
-              <RouterRoute
-                path="/overview"
-                element={
-                  <OperatorOverviewPage
-                    health={health}
-                    labProfileError={labProfileError}
-                    labProfileLoading={labProfileLoading}
-                    labProfileState={labProfileState}
-                  />
-                }
-              />
-              <RouterRoute path="/network" element={<OperatorNetworkPage labProfileState={labProfileState} />} />
-              <RouterRoute path="/server" element={<OperatorServerPage labProfileState={labProfileState} />} />
-              <RouterRoute path="/storage" element={<OperatorStoragePage labProfileState={labProfileState} />} />
-              <RouterRoute path="/virtualization" element={<OperatorVirtualizationPage labProfileState={labProfileState} />} />
+              <RouterRoute path="/" element={<Navigate to="/simple" replace />} />
+              <RouterRoute path="/overview" element={<Navigate to="/simple" replace />} />
+              <RouterRoute path="/simple" element={<SimpleLabPage />} />
+              <RouterRoute path="/rack" element={<Navigate to="/simple" replace />} />
+              <RouterRoute path="/simple-steps" element={<SimpleStepsPage />} />
+              <RouterRoute path="/network" element={<OperatorNetworkPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/server" element={<OperatorServerPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/storage" element={<OperatorStoragePage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/virtualization" element={<OperatorVirtualizationPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/defaults" element={<OperatorLabDefaultsPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/global" element={<Navigate to="/setup/defaults" replace />} />
+              <RouterRoute path="/setup/cisco" element={<OperatorNetworkPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/ilo" element={<OperatorServerPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/server" element={<OperatorServerPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/esxi" element={<OperatorVirtualizationPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/storage" element={<OperatorStoragePage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/netapp" element={<OperatorStoragePage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/firmware" element={<OperatorFirmwareUpgradesPage labProfileState={labProfileState} />} />
+              <RouterRoute path="/setup/media" element={<MediaInventoryPage />} />
+              <RouterRoute path="/setup/ovf" element={<MediaInventoryPage />} />
+              <RouterRoute path="/setup/windows" element={<OperatorVirtualizationPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/lab-defaults" element={<Navigate to="/setup/defaults" replace />} />
               <RouterRoute path="/firmware-upgrades" element={<OperatorFirmwareUpgradesPage labProfileState={labProfileState} />} />
-              <RouterRoute path="/validation" element={<OperatorValidationPage labProfileState={labProfileState} />} />
-              <RouterRoute path="/config" element={<ActiveLabConfigDrawer embedded />} />
-              <RouterRoute path="/dashboard" element={<Navigate to="/overview" replace />} />
-              <RouterRoute path="/lab-setup" element={<Navigate to="/overview" replace />} />
-              <RouterRoute path="/hardware" element={<Navigate to="/overview" replace />} />
-              <RouterRoute path="/run-center" element={<Navigate to="/overview" replace />} />
-              <RouterRoute path="/control-center" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/validation" element={<OperatorValidationPage isAdvancedMode={uiMode === "advanced"} labProfileState={labProfileState} />} />
+              <RouterRoute path="/config" element={<Navigate to="/simple" replace />} />
+              <RouterRoute path="/dashboard" element={<Navigate to="/simple" replace />} />
+              <RouterRoute path="/lab-setup" element={<Navigate to="/simple" replace />} />
+              <RouterRoute path="/hardware" element={<Navigate to="/simple" replace />} />
+              <RouterRoute path="/run-center" element={<RunCenter />} />
+              <RouterRoute path="/run" element={<RunCenter />} />
+              <RouterRoute path="/control-center" element={<Navigate to="/simple" replace />} />
               <RouterRoute path="/firmware" element={<Navigate to="/firmware-upgrades" replace />} />
               <RouterRoute path="/golden-state" element={<Navigate to="/validation" replace />} />
               <RouterRoute path="/validation-reports" element={<Navigate to="/validation" replace />} />
               <RouterRoute path="/verification" element={<Navigate to="/validation" replace />} />
               <RouterRoute path="/lab-validation" element={<Navigate to="/validation" replace />} />
               <RouterRoute path="/reports" element={<Navigate to="/validation" replace />} />
-              <RouterRoute
-                path="/settings"
-                element={
-                  <OperatorSettingsPage
-                    health={health}
-                    labProfileError={labProfileError}
-                    labProfileLoading={labProfileLoading}
-                    labProfileState={labProfileState}
-                    onReloadLabProfile={loadLabProfileState}
-                  />
-                }
-              />
+              <RouterRoute path="/settings" element={<Navigate to="/simple" replace />} />
               <RouterRoute path="/requests" element={<RequestListPage />} />
               <RouterRoute path="/requests/new" element={<NewRequest />} />
               <RouterRoute path="/requests/:id" element={<RequestDetail />} />
-              <RouterRoute path="/workflow-runs/:id" element={<WorkflowRunDetail />} />
+              <RouterRoute
+                path="/workflow-runs/:id"
+                element={
+                  <AdvancedRouteGate>
+                    <WorkflowRunDetail />
+                  </AdvancedRouteGate>
+                }
+              />
               <RouterRoute
                 path="/lab-profiles"
                 element={
@@ -786,10 +810,17 @@ function App() {
                   />
                 }
               />
-              <RouterRoute path="/audit-events" element={<AuditEvents />} />
+              <RouterRoute
+                path="/audit-events"
+                element={
+                  <AdvancedRouteGate>
+                    <AuditEvents />
+                  </AdvancedRouteGate>
+                }
+              />
               <RouterRoute path="/artifacts" element={<Navigate to="/validation" replace />} />
               <RouterRoute path="/media" element={<MediaInventoryPage />} />
-              <RouterRoute path="/providers" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/providers" element={<Navigate to="/simple" replace />} />
             </Routes>
           </OperatorTabStateProvider>
         </AppShell>
@@ -799,56 +830,29 @@ function App() {
   );
 }
 
+function AdvancedRouteGate({ children }: { children: ReactNode }) {
+  const { isAdvancedMode } = useUiMode();
+  return isAdvancedMode ? <>{children}</> : <Navigate to="/validation" replace />;
+}
+
 function AppShell({
   children,
-  health,
-  healthError,
-  labProfileError,
-  labProfileLoading,
-  labProfileState
+  health
 }: {
   children: ReactNode;
   health: HealthStatus | null;
-  healthError: string;
-  labProfileError: string;
-  labProfileLoading: boolean;
-  labProfileState: LabProfileList | null;
 }) {
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const { uiMode } = useUiMode();
   const location = useLocation();
-
-  useEffect(() => {
-    setDrawerOpen(false);
-  }, [location.pathname, location.search]);
-
+  const isRackWorkspace = location.pathname === "/simple";
   return (
-    <div className="app-shell">
-      <SidebarNav
-        drawerOpen={drawerOpen}
-        health={health}
-        healthError={healthError}
-        labProfileError={labProfileError}
-        labProfileLoading={labProfileLoading}
-        labProfileState={labProfileState}
-        onClose={() => setDrawerOpen(false)}
-      />
-      {drawerOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setDrawerOpen(false)} type="button" />}
-      <main className="content">
-        <div className="mobile-shell-bar">
-          <button aria-label="Open navigation" onClick={() => setDrawerOpen(true)} type="button">
-            <Menu size={18} />
-            Menu
-          </button>
-          <span>Lab Builder</span>
-        </div>
+    <div className={`app-shell app-shell-${uiMode}`}>
+      <RackRail />
+      <main className={`content ${isRackWorkspace ? "content-rack" : ""}`}>
         {health?.dev_test_banner && <DevTestBanner message={health.dev_test_banner} />}
-        <div className="operator-mode-bar">
-          <div className="shell-action-row">
-            <ModeToggle />
-          </div>
-        </div>
         {children}
       </main>
+      <OperatorIssueReporter />
     </div>
   );
 }
@@ -872,134 +876,318 @@ function humanizeDevTestBanner(message: string): string {
   return humanizeAction(message);
 }
 
-function ModeToggle() {
-  const { setUiMode, uiMode } = useUiMode();
+function OperatorIssueReporter() {
+  const location = useLocation();
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [targetRegionId, setTargetRegionId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const [error, setError] = useState("");
+  const [packet, setPacket] = useState<OperatorIssuePacket | null>(null);
+  const [queued, setQueued] = useState<AiChangeRequest | null>(null);
+  const route = `${location.pathname}${location.search}`;
+  const pageTitle = pageTitleForRoute(location.pathname);
+  const regions = issueReporterRegionsForRoute(location.pathname);
+  const selectedRegion = regions.find((region) => region.id === targetRegionId) ?? null;
+
+  useEffect(() => {
+    setOpen(false);
+    setError("");
+    setPacket(null);
+    setQueued(null);
+    setTargetRegionId("");
+  }, [route]);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const trimmed = note.trim();
+    if (!trimmed || submitting) return;
+    setSubmitting(true);
+    setError("");
+    setPacket(null);
+    setQueued(null);
+    const selectedRegions = selectedRegion ? [selectedRegion] : regions;
+    const currentLayout = issueReporterLayoutForRegions(regions);
+    const targetLabel = selectedRegion ? `${selectedRegion.label} (${selectedRegion.id})` : regions.length ? "This whole page" : null;
+    try {
+      const nextPacket = await api.createOperatorIssuePacket({
+        operator_note: trimmed,
+        page_title: pageTitle,
+        route,
+        ui_context: {
+          page: pageTitle,
+          path: location.pathname,
+          query: location.search || "none",
+          target: targetLabel || "none",
+          viewport: `${window.innerWidth}x${window.innerHeight}`
+        }
+      });
+      const changeRequest = await api.createAiChangeRequest({
+        current_layout: currentLayout,
+        page: pageTitle,
+        regions: selectedRegions.map(({ id, kind, label }) => ({ id, kind, label })),
+        request: trimmed,
+        route,
+        screenshot_path: null,
+        target: targetLabel
+      });
+      setPacket(nextPacket);
+      setQueued(changeRequest);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function copyPrompt() {
+    if (!packet) return;
+    setCopying(true);
+    try {
+      await navigator.clipboard.writeText(packet.copy_prompt);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      window.setTimeout(() => setCopying(false), 600);
+    }
+  }
+
   return (
-    <div className="mode-toggle" role="group" aria-label="Display mode">
-      <button
-        aria-pressed={uiMode === "simple"}
-        className={uiMode === "simple" ? "active" : ""}
-        onClick={() => setUiMode("simple")}
-        type="button"
-      >
-        <ClipboardList size={16} />
-        Operator
+    <>
+      <button className="operator-issue-trigger" onClick={() => setOpen(true)} type="button">
+        <AlertTriangle size={16} />
+        Report issue
       </button>
-      <button
-        aria-pressed={uiMode === "advanced"}
-        className={uiMode === "advanced" ? "active" : ""}
-        onClick={() => setUiMode("advanced")}
-        type="button"
-      >
-        <Wrench size={16} />
-        Advanced
-      </button>
-    </div>
+      {open && createPortal(
+        <div className="operator-issue-overlay" role="dialog" aria-modal="true" aria-label="Testing Assistant">
+          <form className="operator-issue-panel" onSubmit={submit}>
+            <div className="operator-issue-head">
+              <div>
+                <p className="operator-kicker">Testing feedback</p>
+                <h2>Testing Assistant</h2>
+              </div>
+              <button aria-label="Close issue reporter" onClick={() => setOpen(false)} type="button">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="operator-issue-route">
+              <span>{pageTitle}</span>
+              <strong>{route}</strong>
+            </div>
+            <label className="operator-issue-note">
+              <span>What went wrong?</span>
+              <textarea
+                maxLength={1600}
+                onChange={(event) => setNote(event.target.value)}
+                placeholder="Example: I clicked Run Validation, it said done, but the storage check still looks blocked."
+                value={note}
+              />
+            </label>
+            {regions.length > 0 && (
+              <fieldset className="operator-issue-target">
+                <legend>Where did it happen?</legend>
+                <label>
+                  <input
+                    checked={!targetRegionId}
+                    name="operator-issue-target"
+                    onChange={() => setTargetRegionId("")}
+                    type="radio"
+                  />
+                  This whole page
+                </label>
+                {regions.map((region) => (
+                  <label key={region.id}>
+                    <input
+                      checked={targetRegionId === region.id}
+                      name="operator-issue-target"
+                      onChange={() => setTargetRegionId(region.id)}
+                      type="radio"
+                    />
+                    {region.label}
+                  </label>
+                ))}
+              </fieldset>
+            )}
+            <p className="operator-issue-boundary">No hardware action is run from this report.</p>
+            {error && <p className="operator-feedback error">{error}</p>}
+            {packet && queued && (
+              <div className="operator-issue-result" aria-label="Feedback queued">
+                <strong>Feedback queued</strong>
+                <span>{packet.summary}</span>
+                <span>Codex and Claude can review this from the mailbox.</span>
+                <details className="operator-issue-details">
+                  <summary>Open feedback details</summary>
+                  <ul>
+                    {packet.suggested_next_steps.slice(0, 3).map((step) => (
+                      <li key={step}>{step}</li>
+                    ))}
+                  </ul>
+                  <span>Review note: {queued.artifact}</span>
+                  <span>{queued.next_action}</span>
+                </details>
+                <details className="operator-issue-details operator-issue-advanced">
+                  <summary>Advanced request data</summary>
+                  <dl>
+                    <dt>Packet ID</dt>
+                    <dd>{packet.packet_id}</dd>
+                    <dt>Request ID</dt>
+                    <dd>{queued.request_id}</dd>
+                    <dt>Packet artifact</dt>
+                    <dd>{packet.artifact}</dd>
+                    <dt>Markdown artifact</dt>
+                    <dd>{packet.markdown_artifact}</dd>
+                    <dt>Target</dt>
+                    <dd>{targetLabelForIssueReporter(packet.ui_context.target)}</dd>
+                  </dl>
+                  {packet.recent_problem_runs.length > 0 && (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Run</th>
+                          <th>Status</th>
+                          <th>Command</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {packet.recent_problem_runs.map((run) => (
+                          <tr key={run.run_id}>
+                            <td>{run.run_id}</td>
+                            <td>{run.status}</td>
+                            <td>{run.command || "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                  <button className="secondary-button" onClick={() => void copyPrompt()} type="button">
+                    <Copy size={15} />
+                    {copying ? "Copied" : "Copy handoff"}
+                  </button>
+                </details>
+              </div>
+            )}
+            <div className="operator-issue-actions">
+              <button className="secondary-button" onClick={() => setOpen(false)} type="button">
+                Cancel
+              </button>
+              <button disabled={submitting || !note.trim()} type="submit">
+                <Send size={15} />
+                {submitting ? "Queueing" : "Queue fix request"}
+              </button>
+            </div>
+          </form>
+        </div>,
+        document.body
+      )}
+    </>
   );
 }
 
-function SidebarNav({
-  drawerOpen,
-  health,
-  healthError,
-  labProfileError,
-  labProfileLoading,
-  labProfileState,
-  onClose
-}: {
-  drawerOpen: boolean;
-  health: HealthStatus | null;
-  healthError: string;
-  labProfileError: string;
-  labProfileLoading: boolean;
-  labProfileState: LabProfileList | null;
-  onClose: () => void;
-}) {
-  const activeProfile = labProfileState?.active_profile ?? null;
-  const providerMode = health?.provider_mode ?? (healthError ? "unverified" : "checking");
-  const modeLabel = displayModeLabel(providerMode);
-  const modeStatus = providerMode === "mock" ? "test_fixture" : healthError ? "unavailable" : providerMode;
+function issueReporterRegionsForRoute(pathname: string): UiIntentRegion[] {
+  const segment = pathname.startsWith("/setup/defaults")
+    ? "lab-defaults"
+    : pathname.split("/").filter(Boolean)[0] || "overview";
+  const routeRegions: Record<string, UiIntentRegion[]> = {
+    "firmware-upgrades": [
+      { id: "firmware-table", label: "Firmware table", kind: "section" },
+      { id: "firmware-actions", label: "Upgrade or bypass actions", kind: "section" }
+    ],
+    "lab-defaults": [
+      { id: "network-defaults", label: "Network and service defaults", kind: "section" },
+      { id: "shared-sign-in", label: "Shared sign-in", kind: "section" }
+    ],
+    "lab-profiles": [
+      { id: "saved-kit", label: "Saved kit", kind: "section" },
+      { id: "new-kit", label: "New kit", kind: "section" },
+      { id: "address-preview", label: "Address preview", kind: "section" }
+    ],
+    media: [
+      { id: "software-media", label: "Software Media card", kind: "section" },
+      { id: "media-details", label: "Media details", kind: "drawer", collapsible: true }
+    ],
+    network: [
+      { id: "network-check", label: "Cisco switch check", kind: "section" },
+      { id: "network-details", label: "Network details", kind: "drawer", collapsible: true }
+    ],
+    overview: [
+      { id: "topology", label: "Lab topology map", kind: "section" },
+      { id: "current-state", label: "Current state", kind: "section" },
+      { id: "next-action", label: "Next action", kind: "section" }
+    ],
+    "run-center": [
+      { id: "build-plan", label: "Build plan", kind: "section" },
+      { id: "run-console", label: "Run console", kind: "section" },
+      { id: "completion-report", label: "Completion report", kind: "section" }
+    ],
+    server: [
+      { id: "compute-sign-in", label: "Compute sign-in", kind: "section" },
+      { id: "server-checks", label: "Server checks", kind: "section" },
+      { id: "server-details", label: "Server details", kind: "drawer", collapsible: true }
+    ],
+    storage: [
+      { id: "storage-scenario", label: "Storage scenario", kind: "section" },
+      { id: "storage-checks", label: "Storage checks", kind: "section" },
+      { id: "storage-details", label: "Storage details", kind: "drawer", collapsible: true }
+    ],
+    validation: [
+      { id: "readiness-check", label: "Readiness check", kind: "section" },
+      { id: "handoff-details", label: "Handoff details", kind: "drawer", collapsible: true },
+      { id: "danger-zone", label: "Protected reset area", kind: "drawer", collapsible: true }
+    ],
+    virtualization: [
+      { id: "virtualization-check", label: "Virtualization check", kind: "section" },
+      { id: "datastore-path", label: "Datastore path", kind: "section" },
+      { id: "virtualization-details", label: "Virtualization details", kind: "drawer", collapsible: true }
+    ]
+  };
+  return routeRegions[segment] ?? [];
+}
 
-  return (
-    <aside className={drawerOpen ? "sidebar open" : "sidebar"} aria-label="Primary navigation">
-      <div className="sidebar-top">
-        <Link className="brand" to="/overview">
-          <Server size={22} />
-          <span>
-            Lab Builder
-            <small>Infra Config Portal</small>
-          </span>
-        </Link>
-        <button className="sidebar-close" aria-label="Close navigation" onClick={onClose} type="button">
-          <X size={18} />
-        </button>
-      </div>
-      <nav>
-        <NavItem to="/overview" icon={<Gauge size={18} />} label="Overview" />
-        <NavItem to="/network" icon={<Route size={18} />} label="Network" />
-        <NavItem to="/server" icon={<Server size={18} />} label="Server" />
-        <NavItem to="/storage" icon={<HardDrive size={18} />} label="Storage" />
-        <NavItem to="/virtualization" icon={<Layers size={18} />} label="Virtualization" />
-        <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={18} />} label="Firmware Upgrades" />
-        <NavItem to="/validation" icon={<CheckCircle2 size={18} />} label="Validation" />
-        <NavItem to="/config" icon={<Pencil size={18} />} label="Edit Config" />
-        <NavItem to="/settings" icon={<Settings size={18} />} label="Settings" />
-      </nav>
-      <div className="sidebar-profile">
-        <div className="sidebar-profile-head">
-          <span>{modeLabel}</span>
-          <StatusBadge status={modeStatus} />
-        </div>
-        <strong>{activeProfile?.name ?? (labProfileLoading ? "Loading setup" : "No active setup")}</strong>
-        <dl>
-          <div>
-            <dt>Subnet</dt>
-            <dd>{displayAddress(activeProfile?.address_plan.subnet)}</dd>
-          </div>
-          <div>
-            <dt>Source</dt>
-            <dd>{activeProfile ? labelize(activeProfile.source) : "Unavailable"}</dd>
-          </div>
-        </dl>
-        {(labProfileError || healthError) && (
-          <p>{labProfileError ? "Profile status unavailable." : "Backend health unavailable."}</p>
-        )}
-      </div>
-    </aside>
+function issueReporterLayoutForRegions(regions: UiIntentRegion[]): Record<string, UiIntentRegionLayout> {
+  return Object.fromEntries(
+    regions.map((region, index) => [
+      region.id,
+      {
+        collapsed: Boolean(region.collapsible),
+        order: index,
+        visible: region.defaultVisible ?? true
+      }
+    ])
   );
 }
 
-function NavItem({
-  to,
-  icon,
-  label,
-  issueBadge
-}: {
-  to: string;
-  icon: ReactNode;
-  label: string;
-  issueBadge?: ReportPageBadge;
-}) {
-  return (
-    <NavLink to={to} className={({ isActive }) => (isActive ? "nav-item active" : "nav-item")}>
-      {icon}
-      <span className="nav-item-label">{label}</span>
-      <IssueNavBadge badge={issueBadge} />
-    </NavLink>
-  );
+function targetLabelForIssueReporter(value: string | undefined): string {
+  if (!value || value === "none") return "No target selected";
+  return value;
 }
 
-function IssueNavBadge({ badge }: { badge?: ReportPageBadge }) {
-  if (!badge) return null;
-  if (badge.status === "success" || badge.status === "warning") return null;
-  const className = `issue-nav-badge issue-tone-${badge.status}`;
-  const label =
-    badge.status === "critical"
-      ? `Blocked ${badge.critical || badge.count}`
-      : badge.status === "not_configured_yet"
-        ? "Not configured"
-        : badge.label;
-  return <span className={className}>{label}</span>;
+function pageTitleForRoute(pathname: string) {
+  const segment = pathname.split("/").filter(Boolean)[0] || "overview";
+  const labels: Record<string, string> = {
+    "firmware-upgrades": "Firmware Upgrades",
+    "lab-profiles": "Lab Profiles",
+    "audit-events": "Audit Events",
+    media: "Media",
+    network: "Network",
+    overview: "Overview",
+    requests: "Requests",
+    server: "Server",
+    storage: "Storage",
+    validation: "Validation",
+    virtualization: "Virtualization"
+  };
+  return labels[segment] ?? labelize(segment);
+}
+
+
+function displayKitName(profile: LabProfile | null | undefined): string {
+  const name = profile?.name?.trim() || "";
+  if (!name) return "No kit selected";
+  if (profile?.source === "runtime_env" || /^runtime environment$/i.test(name) || /^runtime lab$/i.test(name)) {
+    return "Current Lab";
+  }
+  return name;
 }
 
 function ActiveLabSelector({
@@ -1043,7 +1231,7 @@ function ActiveLabSelector({
         >
           {options.map((profile) => (
             <option key={profile.id} value={profile.id}>
-              {profile.name}{profile.source === "runtime_env" ? " (runtime)" : ` v${profile.version}`}
+              {displayKitName(profile)}{profile.source === "runtime_env" ? "" : ` v${profile.version}`}
             </option>
           ))}
         </select>
@@ -1072,549 +1260,6 @@ function ActiveLabSelector({
       {error && <p className="active-lab-error">{error}</p>}
       {runtimeApplyMessage && <p className="active-lab-success">{runtimeApplyMessage}</p>}
     </section>
-  );
-}
-
-function ActiveLabConfigDrawer({
-  embedded = false,
-  onClose
-}: {
-  embedded?: boolean;
-  onClose?: () => void;
-}) {
-  const { activeProfile, loading, onActivate, onReload } = useLabProfileContext();
-  const [form, setForm] = useState<LabProfileFormState>(() =>
-    activeProfile ? labProfileFormFrom(activeProfile) : blankLabProfileForm()
-  );
-  const [configIpMode, setConfigIpMode] = useState<"ipv4" | "ipv6" | "both">(() =>
-    form.globalSettings.disableIpv6 ? "ipv4" : "both"
-  );
-  const [configSettingsOpen, setConfigSettingsOpen] = useState(false);
-  const [configSection, setConfigSection] = useState<ConfigEditorSectionId>("setup");
-  const [configSnmpVersion, setConfigSnmpVersion] = useState<"v2" | "v3">("v2");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const profileKey = `${activeProfile?.id ?? "none"}:${activeProfile?.version ?? "0"}`;
-  const subnetPrefix = parseSubnetPrefix(form.globalSettings.subnetPrefix);
-  const netappEnabled = labNetAppSupported(subnetPrefix);
-  const configFormId = embedded ? "active-lab-config-form" : undefined;
-
-  useEffect(() => {
-    const nextForm = activeProfile ? labProfileFormFrom(activeProfile) : blankLabProfileForm();
-    setForm(nextForm);
-    setConfigIpMode(nextForm.globalSettings.disableIpv6 ? "ipv4" : "both");
-    setConfigSnmpVersion("v2");
-    setConfigSection("setup");
-    setMessage("");
-    setError("");
-  }, [profileKey, activeProfile]);
-
-  function updateGlobal<K extends keyof LabGlobalSettingsFormState>(key: K, value: LabGlobalSettingsFormState[K]) {
-    setForm((current) => ({ ...current, globalSettings: { ...current.globalSettings, [key]: value } }));
-  }
-
-  function updateAddress(key: LabAddressScalarKey, value: string) {
-    if (key === "subnet") {
-      setForm((current) => applyLabSubnetChoice(current, value, current.globalSettings.subnetPrefix));
-      return;
-    }
-    setForm((current) => ({
-      ...current,
-      addresses: {
-        ...current.addresses,
-        [key]: value
-      }
-    }));
-  }
-
-  function updatePrefix(value: string) {
-    setForm((current) => applyLabSubnetChoice(current, current.addresses.subnet || defaultLabSubnet, value));
-  }
-
-  function updateConfigIpMode(value: "ipv4" | "ipv6" | "both") {
-    setConfigIpMode(value);
-    updateGlobal("disableIpv6", value === "ipv4");
-  }
-
-  function updateConfigSnmpVersion(value: "v2" | "v3") {
-    setConfigSnmpVersion(value);
-    updateGlobal("enableSnmp", true);
-  }
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setMessage("");
-    setError("");
-    try {
-      const payload = labProfilePayload(form);
-      if (activeProfile?.source === "saved") {
-        await api.updateLabProfile(activeProfile.id, payload);
-      } else {
-        const saved = await api.createLabProfile({
-          ...payload,
-          name: payload.name || "Saved lab setup"
-        });
-        await onActivate(saved.id);
-      }
-      await onReload();
-      setMessage("Active lab setup saved.");
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const configSections: Array<{
-    description: string;
-    detail: string;
-    id: ConfigEditorSectionId;
-    label: string;
-    status: string;
-  }> = [
-    {
-      description: "Name, subnet, gateway, and profile description.",
-      detail: `${displayAddress(form.addresses.subnet)} / ${form.globalSettings.subnetPrefix ? `/${form.globalSettings.subnetPrefix}` : "subnet size missing"}`,
-      id: "setup",
-      label: "Setup",
-      status: form.name && form.addresses.subnet ? "ready" : "not_configured_yet"
-    },
-    {
-      description: "DNS, NTP, domain, VLAN, MTU, storage protocol, and toggles.",
-      detail: `${form.globalSettings.enableDns ? "DNS" : "DNS off"} / ${form.globalSettings.enableNtp ? "NTP" : "NTP off"} / ${form.globalSettings.enableSnmp ? "SNMP" : "SNMP off"}`,
-      id: "network",
-      label: "Network Defaults",
-      status: form.globalSettings.gateway ? "ready" : "not_configured_yet"
-    },
-    {
-      description: "Management addresses for iLO, ESXi, Cisco, and the control host.",
-      detail: `${displayAddress(form.addresses.ilo)} / ${displayAddress(form.addresses.cisco_management)}`,
-      id: "devices",
-      label: "Devices",
-      status: labCoreAddressFields
-        .filter((field) => field.key !== "ilo_initial")
-        .every((field) => form.addresses[field.key])
-        ? "ready"
-        : "not_configured_yet"
-    },
-    {
-      description: "NetApp controller, cluster, SVM, NFS, and iSCSI addresses.",
-      detail: netappEnabled ? displayAddress(form.addresses.netapp_cluster_mgmt) : "Not in current subnet scope",
-      id: "netapp",
-      label: "NetApp",
-      status: netappEnabled ? (form.addresses.netapp_cluster_mgmt ? "ready" : "not_configured_yet") : "disabled"
-    }
-  ];
-  const activeConfigSection = configSections.find((section) => section.id === configSection) ?? configSections[0];
-  const saveActionText = activeProfile?.source === "saved" ? "Run Save Config" : "Run Save As Lab Setup";
-  const drawerSaveActionText = activeProfile?.source === "saved" ? "Save Config" : "Save As Lab Setup";
-  const saveState = busy ? "running" : error ? "failed" : message ? "completed" : activeProfile ? "ready" : "not_configured_yet";
-  const resultText = busy ? "Saving config" : error || message || "Not run yet";
-
-  const editor = (
-    <aside className={embedded ? "config-drawer config-drawer-page" : "config-drawer"} aria-label="Edit active lab setup">
-      {!embedded && (
-        <div className="config-drawer-head">
-          <div>
-            <p className="eyebrow">Active Lab Setup</p>
-            <h2>Edit Config</h2>
-          </div>
-          <button className="icon-button" aria-label="Close config editor" onClick={onClose} type="button">
-            <X size={18} />
-          </button>
-        </div>
-      )}
-      <form className="config-drawer-form config-editor-form" id={configFormId} onSubmit={submit}>
-        <section className="config-current-strip" aria-label="Current view">
-          <div>
-            <span>Active setup</span>
-            <strong>{activeProfile?.name ?? "No active setup"}</strong>
-            <small>{activeProfile ? labelize(activeProfile.source) : "Create or save a setup"}</small>
-          </div>
-          <div>
-            <span>Subnet</span>
-            <strong>{displayAddress(form.addresses.subnet)}</strong>
-            <small>/{form.globalSettings.subnetPrefix || "?"}</small>
-          </div>
-          <div>
-            <span>IP mode</span>
-            <strong>{configIpMode === "ipv4" ? "IPv4" : configIpMode === "ipv6" ? "IPv6" : "Both"}</strong>
-            <small>Tab setting</small>
-          </div>
-          <div>
-            <span>SNMP</span>
-            <strong>{form.globalSettings.enableSnmp ? (configSnmpVersion === "v2" ? "SNMPv2" : "SNMPv3") : "Disabled"}</strong>
-            <small>Network default</small>
-          </div>
-          <div>
-            <span>Last result</span>
-            <strong>{resultText}</strong>
-            <small>{busy ? "Run in progress" : "Run Save Config when ready"}</small>
-          </div>
-          <StatusBadge status={saveState} />
-        </section>
-        <div className="config-editor-workspace">
-          <nav className="config-section-list" aria-label="Config sections">
-            {configSections.map((section) => (
-              <button
-                aria-current={configSection === section.id ? "page" : undefined}
-                className={configSection === section.id ? "config-section-tab active" : "config-section-tab"}
-                key={section.id}
-                onClick={() => setConfigSection(section.id)}
-                type="button"
-              >
-                <span>
-                  <strong>{section.label}</strong>
-                  <small>{section.description}</small>
-                </span>
-                <span>
-                  <em>{section.detail}</em>
-                  <StatusBadge status={section.status} />
-                </span>
-              </button>
-            ))}
-          </nav>
-          <section className="config-section-panel" aria-label="Config section editor">
-            <div className="config-section-panel-head">
-              <div>
-                <p className="operator-kicker">Edit Section</p>
-                <h3>{activeConfigSection.label}</h3>
-                <p>{activeConfigSection.description}</p>
-              </div>
-              <StatusBadge status={activeConfigSection.status} />
-            </div>
-            {configSection === "setup" && (
-              <div className="config-drawer-grid">
-                <Field label="Name">
-                  <input
-                    disabled={loading || busy}
-                    onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                    value={form.name}
-                  />
-                </Field>
-                <Field label="Description">
-                  <textarea
-                    disabled={loading || busy}
-                    onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-                    value={form.description}
-                  />
-                </Field>
-                <Field label="Subnet">
-                  <input
-                    disabled={loading || busy}
-                    onChange={(event) => updateAddress("subnet", event.target.value)}
-                    value={form.addresses.subnet}
-                  />
-                </Field>
-                <Field label="Subnet size">
-                  <select
-                    disabled={loading || busy}
-                    onChange={(event) => updatePrefix(event.target.value)}
-                    value={form.globalSettings.subnetPrefix}
-                  >
-                    {defaultLabSubnetOptions().map((option) => (
-                      <option key={option.prefix} value={option.prefix}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Gateway">
-                  <input
-                    disabled={loading || busy}
-                    onChange={(event) => updateGlobal("gateway", event.target.value)}
-                    value={form.globalSettings.gateway}
-                  />
-                </Field>
-              </div>
-            )}
-            {configSection === "network" && (
-              <>
-                <div className="config-drawer-grid">
-                  <Field label="DNS">
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("dnsServers", event.target.value)}
-                      value={form.globalSettings.dnsServers}
-                    />
-                  </Field>
-                  <Field label="NTP">
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("ntpServers", event.target.value)}
-                      value={form.globalSettings.ntpServers}
-                    />
-                  </Field>
-                  <Field label="Domain">
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("domainName", event.target.value)}
-                      value={form.globalSettings.domainName}
-                    />
-                  </Field>
-                  <Field label="Timezone">
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("timezone", event.target.value)}
-                      value={form.globalSettings.timezone}
-                    />
-                  </Field>
-                  <Field label="VLAN">
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("vlanId", event.target.value)}
-                      value={form.globalSettings.vlanId}
-                    />
-                  </Field>
-                  <Field label="MTU">
-                    <input
-                      disabled={loading || busy}
-                      inputMode="numeric"
-                      onChange={(event) => updateGlobal("mtu", event.target.value)}
-                      value={form.globalSettings.mtu}
-                    />
-                  </Field>
-                  <Field label="Storage protocol">
-                    <select
-                      disabled={loading || busy || !netappEnabled}
-                      onChange={(event) => updateGlobal("storageProtocol", event.target.value)}
-                      value={form.globalSettings.storageProtocol}
-                    >
-                      <option value="nfs">NFS</option>
-                      <option value="iscsi">iSCSI</option>
-                      <option value="none">Local only</option>
-                    </select>
-                  </Field>
-                </div>
-                <div className="config-toggle-grid">
-                  <label className="checkbox-line">
-                    <input
-                      checked={form.globalSettings.enableDns}
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("enableDns", event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>DNS</span>
-                  </label>
-                  <label className="checkbox-line">
-                    <input
-                      checked={form.globalSettings.enableNtp}
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("enableNtp", event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>NTP</span>
-                  </label>
-                  <label className="checkbox-line">
-                    <input
-                      checked={form.globalSettings.enableSnmp}
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("enableSnmp", event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>SNMP</span>
-                  </label>
-                  <label className="checkbox-line">
-                    <input
-                      checked={!form.globalSettings.disableIpv6}
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("disableIpv6", !event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>Allow IPv6</span>
-                  </label>
-                  <label className="checkbox-line">
-                    <input
-                      checked={form.globalSettings.blockLegacyProtocols}
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("blockLegacyProtocols", event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>Block legacy protocols</span>
-                  </label>
-                  <label className="checkbox-line">
-                    <input
-                      checked={form.globalSettings.vcenterEnabled}
-                      disabled={loading || busy || !netappEnabled}
-                      onChange={(event) => updateGlobal("vcenterEnabled", event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>vCenter</span>
-                  </label>
-                </div>
-              </>
-            )}
-            {configSection === "devices" && (
-              <div className="config-drawer-grid">
-                {labCoreAddressFields.map((field) => (
-                  <Field key={`drawer-${field.key}`} label={field.label}>
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => updateAddress(field.key, event.target.value)}
-                      value={form.addresses[field.key]}
-                    />
-                  </Field>
-                ))}
-              </div>
-            )}
-            {configSection === "netapp" && (
-              netappEnabled ? (
-                <div className="config-drawer-grid">
-                  {labNetAppAddressFields.map((field) => (
-                    <Field key={`drawer-${field.key}`} label={field.label}>
-                      <input
-                        disabled={loading || busy}
-                        onChange={(event) => updateAddress(field.key, event.target.value)}
-                        value={form.addresses[field.key]}
-                      />
-                    </Field>
-                  ))}
-                  <Field label="NFS LIFs">
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => setForm((current) => ({ ...current, netappNfsLifs: event.target.value }))}
-                      value={form.netappNfsLifs}
-                    />
-                  </Field>
-                  <Field label="iSCSI LIFs">
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => setForm((current) => ({ ...current, netappIscsiLifs: event.target.value }))}
-                      value={form.netappIscsiLifs}
-                    />
-                  </Field>
-                </div>
-              ) : (
-                <div className="config-section-empty">
-                  <strong>NetApp is outside the selected subnet scope.</strong>
-                  <p>{netappDisabledForSubnetReason}</p>
-                  <button onClick={() => setConfigSection("setup")} type="button">
-                    Edit subnet size
-                  </button>
-                </div>
-              )
-            )}
-          </section>
-        </div>
-        {(message || error) && <p className={error ? "form-error" : "active-lab-success"}>{error || message}</p>}
-        {!embedded && (
-          <div className="config-drawer-actions">
-            <button disabled={busy || loading} type="submit" className="primary">
-              <Save size={16} />
-              {busy ? "Saving" : drawerSaveActionText}
-            </button>
-            <button disabled={busy} onClick={onClose} type="button">
-              Close
-            </button>
-          </div>
-        )}
-      </form>
-    </aside>
-  );
-
-  if (embedded) {
-    return (
-      <div className="operator-page config-route-page" data-page-title="Edit Config">
-        <header className="operator-status-header">
-          <div className="operator-status-icon"><Pencil size={26} /></div>
-          <div className="operator-status-main">
-            <p className="operator-kicker">Lab Builder</p>
-            <h1>Edit Config</h1>
-            <p>Change the active lab setup, network defaults, device addresses, and scoped feature toggles.</p>
-            <span>Saved values drive every side tab. Secret values are not shown here.</span>
-          </div>
-          <div className="operator-status-side">
-            <div>
-              <span>Status</span>
-              <strong>{activeProfile ? "Active setup loaded" : "No active setup"}</strong>
-            </div>
-            <div className="operator-header-actions">
-              <button
-                aria-controls="settings-drawer-config"
-                aria-expanded={configSettingsOpen}
-                onClick={() => setConfigSettingsOpen(true)}
-                type="button"
-              >
-                <Settings size={16} />
-                Settings
-              </button>
-              <button className="primary" disabled={busy || loading} form={configFormId} type="submit">
-                <Play size={16} />
-                {busy ? "Running" : saveActionText}
-              </button>
-            </div>
-          </div>
-        </header>
-        {configSettingsOpen && (
-          <section className="tab-settings-drawer" id="settings-drawer-config" aria-label="Edit Config settings">
-            <div className="tab-settings-drawer-head">
-              <div>
-                <p className="operator-kicker">Tab Settings</p>
-                <h2>Edit Config Settings</h2>
-                <p className="operator-muted">These settings affect config editing and the next save from this tab.</p>
-              </div>
-              <button className="icon-button" aria-label="Close settings" onClick={() => setConfigSettingsOpen(false)} type="button">
-                <X size={18} />
-              </button>
-            </div>
-            <div className="tab-settings-controls">
-              <Field label="IP mode">
-                <select aria-label="IP mode" onChange={(event) => updateConfigIpMode(event.target.value as "ipv4" | "ipv6" | "both")} value={configIpMode}>
-                  <option value="ipv4">IPv4</option>
-                  <option value="ipv6">IPv6</option>
-                  <option value="both">Both</option>
-                </select>
-              </Field>
-              <Field label="SNMP version">
-                <select aria-label="SNMP version" onChange={(event) => updateConfigSnmpVersion(event.target.value as "v2" | "v3")} value={configSnmpVersion}>
-                  <option value="v2">SNMPv2</option>
-                  <option value="v3">SNMPv3</option>
-                </select>
-              </Field>
-            </div>
-            <div className="tab-settings-advanced">
-              <label className="checkbox-line">
-                <input
-                  checked={form.globalSettings.blockLegacyProtocols}
-                  disabled={loading || busy}
-                  onChange={(event) => updateGlobal("blockLegacyProtocols", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>
-                  <strong>Block legacy protocols</strong>
-                  <small>Keep insecure fallback protocols disabled in generated config.</small>
-                </span>
-              </label>
-              <label className="checkbox-line">
-                <input
-                  checked={form.globalSettings.enableSnmp}
-                  disabled={loading || busy}
-                  onChange={(event) => updateGlobal("enableSnmp", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>
-                  <strong>Enable SNMP</strong>
-                  <small>Selected protocol version is held as UI state until backend persistence exists.</small>
-                </span>
-              </label>
-            </div>
-            <p className="tab-settings-note">
-              TODO: persist IPv6-only mode and SNMP version after the lab profile schema accepts those fields. Saving now preserves the existing IPv6 allowed/disabled flag and SNMP enabled flag.
-            </p>
-          </section>
-        )}
-        {editor}
-      </div>
-    );
-  }
-
-  return (
-    <div className="config-drawer-layer" role="presentation">
-      <button className="config-drawer-scrim" aria-label="Close config editor" onClick={onClose} type="button" />
-      {editor}
-    </div>
   );
 }
 
@@ -1716,7 +1361,7 @@ function ProfileMismatchWarning({ state }: { state: LabProfileList | null }) {
         <strong>Setup mismatch: live runtime uses different values</strong>
         <p>
           Normal setup switching does not require editing `.env`. For live checks only, align the runtime
-          values with the selected lab setup from Settings, then restart the backend.
+          values with the selected lab setup, then restart the backend.
         </p>
         <ul>
           {mismatches.slice(0, 4).map((item) => (
@@ -1727,9 +1372,9 @@ function ProfileMismatchWarning({ state }: { state: LabProfileList | null }) {
             </li>
           ))}
         </ul>
-        <Link className="button-link" to="/settings">
+        <Link className="button-link" to="/lab-profiles">
           <Layers size={16} />
-          Open Settings
+          Open Saved Setups
         </Link>
       </div>
     </section>
@@ -1834,7 +1479,7 @@ function Dashboard() {
       description="A quiet operating summary for the current lab and workflow queue."
       issueArea="dashboard"
       onSectionChange={(sectionId) => setActiveSection(sectionId as DashboardSectionId)}
-      primaryAction={{ icon: <Layers size={16} />, label: "Open Overview", to: "/overview" }}
+      primaryAction={{ icon: <Layers size={16} />, label: "Open rack", to: "/simple" }}
       sections={dashboardSections}
       title="Dashboard"
       actions={<ButtonLink to="/requests/new" icon={<Plus size={16} />} label="New VM" />}
@@ -1869,8 +1514,8 @@ function Dashboard() {
             ]}
           />
           <NextActionCard
-            detail={nextActionItems[0]?.actionLabel ?? "Open Overview to review the active lab values."}
-            to="/overview"
+            detail={nextActionItems[0]?.actionLabel ?? "Open the rack to review the active lab values."}
+            to="/simple"
           />
           <BlockerSummary blockers={blockerMessages} />
         </div>
@@ -2337,6 +1982,131 @@ function ActiveLabSetupOverview({ state }: { state: LabProfileList | null }) {
 }
 
 function RunCenter() {
+  const navigate = useNavigate();
+  const [plan, setPlan] = useState<LabBuildPlan | null>(null);
+  const [run, setRun] = useState<LabBuildRun | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function loadBuildJourney() {
+    setLoading(true);
+    setError("");
+    setPlan(null);
+    setRun(null);
+    try {
+      const nextPlan = await api.labBuildPlan();
+      const latestRun = await api.latestLabBuildRun(nextPlan.kit_id);
+      setPlan(nextPlan);
+      setRun(latestRun && ["running", "waiting", "failed"].includes(latestRun.status) ? latestRun : null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function startBuild() {
+    setLoading(true);
+    setError("");
+    try {
+      setRun(await api.startLabBuild());
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function resumeBuild() {
+    if (!run) return;
+    setLoading(true);
+    setError("");
+    try {
+      const step = run.steps.find((candidate) => candidate.step_id === run.current_step_id);
+      if (!step) throw new Error("The current build step is unavailable. Refresh the build status.");
+      if (step.status === "not_started" && ["read_only", "report_only"].includes(step.action_mode)) {
+        setRun(await api.resumeLabBuild(run.run_id, { run_revision: run.revision }));
+        return;
+      }
+      if (step.status !== "waiting" || !step.waiting_nonce) {
+        throw new Error("This build is not waiting for a completed guarded action.");
+      }
+      const evidence = (await api.workflowActionRuns(step.action_id)).find((trace) => {
+        const finished = new Date(trace.finished_at || trace.started_at).getTime();
+        const waiting = new Date(step.started_at || "").getTime();
+        return Number.isFinite(finished) && Number.isFinite(waiting) && finished >= waiting;
+      });
+      if (!evidence) {
+        throw new Error("Open the lab map and complete the guarded action, then continue this build.");
+      }
+      setRun(await api.resumeLabBuild(run.run_id, {
+        action_run_id: evidence.run_id,
+        run_revision: run.revision,
+        waiting_nonce: step.waiting_nonce
+      }));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function retryBuildStep(stepId: string) {
+    if (!run) return;
+    setLoading(true);
+    setError("");
+    try {
+      const reset = await api.retryLabBuildStep(run.run_id, stepId);
+      setRun(await api.resumeLabBuild(reset.run_id, { run_revision: reset.revision }));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function refreshBuild() {
+    if (!run) return;
+    setLoading(true);
+    setError("");
+    try {
+      setRun(await api.labBuildRun(run.run_id));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadBuildJourney();
+  }, []);
+
+  return (
+    <Page
+      description="Follow this kit's ordered build plan, continue safe checks, and review the completion report."
+      eyebrow="Run"
+      title="Run Center"
+    >
+      <LabBuildJourney
+        error={error}
+        loading={loading}
+        onClose={() => navigate("/simple")}
+        onOpenDetails={() => navigate("/simple")}
+        onRefresh={() => void refreshBuild()}
+        onReload={() => void loadBuildJourney()}
+        onResume={() => void resumeBuild()}
+        onRetry={(stepId) => void retryBuildStep(stepId)}
+        onStart={() => void startBuild()}
+        plan={plan}
+        run={run}
+        showHeaderClose={false}
+      />
+    </Page>
+  );
+}
+
+function LegacyWorkflowRunCenter() {
   const { isAdvancedMode } = useUiMode();
   const { activeContext, activeProfile } = useLabProfileContext();
   const netappInScope = activeContext?.enabled_features.netapp_enabled ?? activeProfile?.features.netapp_enabled ?? true;
@@ -2806,7 +2576,7 @@ function RunCenter() {
         <>
           <div className="calm-section-grid">
             <StatusSummaryCard
-              message={`${selectedChoices.length} build step${selectedChoices.length === 1 ? "" : "s"} selected. ${totalActiveWork} queue item${totalActiveWork === 1 ? "" : "s"} need attention.`}
+              message={`${selectedChoices.length} build step${selectedChoices.length === 1 ? "" : "s"} selected. ${totalActiveWork} queue item${totalActiveWork === 1 ? " needs" : "s need"} attention.`}
               status={selectedBlockers.length ? "blocked" : totalActiveWork ? "ready" : "not_run"}
               title="Guided build"
               items={[
@@ -6297,6 +6067,7 @@ function RequestDetail() {
     >
       <Feedback error={error} />
       <ReadinessPanel readiness={readiness} />
+      <LifecycleGuardrails readiness={readiness} request={request} />
       <section className="detail-grid">
         <Info label="Request ID" value={request.id} />
         <Info label="Requester" value={request.requester} />
@@ -6416,6 +6187,73 @@ function ReadinessPanel({ readiness }: { readiness: RequestReadiness | null }) {
       <div className="issue-grid">
         <IssueList empty="No blockers." issues={readiness.blockers} title="Blockers" />
         <IssueList empty="No warnings." issues={readiness.warnings} title="Warnings" />
+      </div>
+    </section>
+  );
+}
+
+function LifecycleGuardrails({
+  readiness,
+  request
+}: {
+  readiness: RequestReadiness | null;
+  request: RequestRecord;
+}) {
+  const nextAction = readiness?.next_action && readiness.next_action !== "none"
+    ? readiness.next_action
+    : nextActionForStatus(request.status);
+  const gates = [
+    {
+      detail: "Locks the draft intent for lifecycle validation.",
+      label: "Submit",
+      ready: Boolean(readiness?.ready_for_submit)
+    },
+    {
+      detail: "Records a human approval decision before planning.",
+      label: "Approval",
+      ready: Boolean(readiness?.ready_for_approval)
+    },
+    {
+      detail: "Creates a mock-only dry-run plan for operator review.",
+      label: "Plan",
+      ready: Boolean(readiness?.ready_for_plan)
+    },
+    {
+      detail: "Requires a persisted preview plan that still matches the request.",
+      label: "Execute",
+      ready: Boolean(readiness?.ready_for_execute)
+    }
+  ];
+
+  return (
+    <section className="panel lifecycle-guardrail-panel" aria-label="VM request lifecycle guardrails">
+      <PanelTitle icon={<ShieldCheck size={18} />} title="Lifecycle Guardrails" />
+      <div className="lifecycle-guardrail-summary">
+        <div>
+          <span>Current state</span>
+          <strong>{labelize(request.status)}</strong>
+        </div>
+        <div>
+          <span>Next safe action</span>
+          <strong>{labelize(nextAction)}</strong>
+        </div>
+        <div>
+          <span>Mock-only boundary</span>
+          <strong>No provider changes</strong>
+        </div>
+      </div>
+      <p>
+        VM requests must move through submit, approval, and mock dry-run planning before execute is available.
+        These controls stay on the mocked lifecycle API and do not call vCenter, ESXi, storage, network, IPAM, or provider endpoints.
+      </p>
+      <div className="lifecycle-guardrail-steps">
+        {gates.map((gate) => (
+          <article className={gate.ready ? "ready" : ""} key={gate.label}>
+            <span>{gate.label}</span>
+            <strong>{gate.ready ? "Ready" : "Waiting"}</strong>
+            <small>{gate.detail}</small>
+          </article>
+        ))}
       </div>
     </section>
   );
@@ -6951,84 +6789,206 @@ function ProviderArtifactCard({ artifact }: { artifact: NetAppProviderArtifact }
 }
 
 function MediaInventoryPage() {
+  const { isAdvancedMode } = useUiMode();
   const [inventory, setInventory] = useState<MediaInventory | null>(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.mediaInventory().then(setInventory).catch((err: Error) => setError(err.message));
+    void checkMedia();
   }, []);
 
+  async function checkMedia() {
+    setLoading(true);
+    setError("");
+    try {
+      setInventory(await api.mediaInventory());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Media check failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const items = inventory?.items ?? [];
+  const state = inventory ? softwareMediaState(inventory) : { label: loading ? "Checking" : "Not checked", tone: "neutral" };
+  const warnings = inventory?.warnings ?? [];
+  const folder = inventory ? softwareMediaFolder(inventory) : "Not checked";
+  const presentLabel = inventory ? `${items.length} ${items.length === 1 ? "file" : "files"}` : "Not checked";
+  const attentionLabel = inventory
+    ? warnings.length
+      ? `${warnings.length} ${warnings.length === 1 ? "item needs" : "items need"} attention`
+      : items.length
+        ? "None"
+        : "No files found"
+    : "Run check";
 
   return (
-    <Page title="Media Inventory" actions={inventory ? <StatusBadge status={inventory.mode} /> : null}>
-      <Feedback loading={!inventory && !error} error={error} />
+    <Page
+      title="Software Media"
+      eyebrow="Setup"
+      description="Files this kit can use, checked without copying, mounting, or deploying them."
+      primaryAction={{
+        disabled: loading,
+        icon: <RefreshCw size={16} />,
+        label: loading ? "Checking" : "Check media",
+        onClick: checkMedia
+      }}
+    >
+      <Feedback loading={false} error={error} />
+      <section className="panel software-media-home" data-testid="software-media-home">
+        <div className="software-media-heading">
+          <PanelTitle icon={<HardDrive size={18} />} title="Software Media" />
+          <span className={`simple-status-pill ${state.tone}`}>{state.label}</span>
+        </div>
+        <div className="software-media-summary" aria-label="Software media summary">
+          <div className="software-media-location">
+            <span>Place files here</span>
+            <strong>{folder}</strong>
+          </div>
+          <div>
+            <span>Present</span>
+            <strong>{presentLabel}</strong>
+          </div>
+          <div>
+            <span>Missing/needs attention</span>
+            <strong>{attentionLabel}</strong>
+          </div>
+        </div>
+        <p className="software-media-boundary">Check media reads filenames only. Upgrade, mount, copy, and deploy actions stay behind their own protected flows.</p>
+      </section>
       {inventory && (
         <>
-          <section className="metric-grid">
-            <Metric label="Items" value={items.length} icon={<HardDrive size={18} />} />
-            <Metric label="ISO" value={items.filter((item) => item.category === "iso").length} icon={<ClipboardList size={18} />} />
-            <Metric label="OVF/OVA" value={items.filter((item) => ["ovf", "ova"].includes(item.category)).length} icon={<Layers size={18} />} />
-            <Metric label="Firmware" value={items.filter((item) => item.category === "firmware").length} icon={<ShieldCheck size={18} />} />
-          </section>
-          <section className="panel safety-note">
-            <PanelTitle icon={<ShieldCheck size={18} />} title="Metadata-Only Safety" />
-            <p>
-              Media inventory shows local media filenames when the backend can safely expose them, and redacts names for
-              sources that require privacy. It does not copy, mount, parse, or deploy local media.
-            </p>
-          </section>
-          {inventory.warnings.length > 0 && (
-            <section className="panel">
-              <PanelTitle icon={<AlertTriangle size={18} />} title="Warnings" />
-              <div className="issue-list">
-                {inventory.warnings.map((warning) => (
-                  <article className="issue issue-warning" key={warning}>
-                    <div>
-                      <AlertTriangle size={16} />
-                      <strong>media_inventory</strong>
-                    </div>
-                    <p>{warning}</p>
-                  </article>
-                ))}
-              </div>
-            </section>
-          )}
-          <section className="panel">
-            <PanelTitle icon={<HardDrive size={18} />} title="Local Metadata" />
+          <AdvancedDetails
+            className="section-details software-media-details"
+            summary="Actual filenames and media attention items"
+            title="Open media files"
+          >
+            {warnings.length > 0 && (
+              <section className="software-media-attention" aria-label="Media attention items">
+                <h3>Needs attention</h3>
+                <div className="issue-list">
+                  {warnings.map((warning) => (
+                    <article className="issue issue-warning" key={warning}>
+                      <div>
+                        <AlertTriangle size={16} />
+                        <strong>Media folder</strong>
+                      </div>
+                      <p>{plainMediaWarning(warning)}</p>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
             {items.length ? (
               <table>
                 <thead>
                   <tr>
                     <th>File</th>
-                    <th>Category</th>
-                    <th>Extension</th>
+                    <th>What it is</th>
+                    <th>Version</th>
                     <th>Size</th>
-                    <th>Source</th>
-                    <th>Redacted</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((item) => (
                     <tr key={`${mediaInventoryItemName(item)}-${item.placeholder_name}-${item.source}`}>
                       <td>{mediaInventoryItemName(item)}</td>
+                      <td>{mediaItemOperatorType(item)}</td>
+                      <td>{item.detected_version || item.version_hint || "-"}</td>
+                      <td>{formatBytes(item.size_bytes)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="muted">No software media files were found in the selected folder.</p>
+            )}
+          </AdvancedDetails>
+          {isAdvancedMode && (
+            <AdvancedDetails
+              className="section-details software-media-advanced"
+              defaultOpenInAdvanced={false}
+              summary="Raw media inventory fields for diagnostics"
+              title="Advanced media metadata"
+            >
+              <div className="software-media-raw-grid">
+                <ProviderFact label="Inventory mode" value={labelize(inventory.mode)} />
+                <ProviderFact label="Configured folders" value={String(inventory.configured_directories.length)} />
+                <ProviderFact label="Items" value={String(items.length)} />
+                <ProviderFact label="Warnings" value={String(warnings.length)} />
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>File</th>
+                    <th>Category</th>
+                    <th>Extension</th>
+                    <th>Source</th>
+                    <th>Redacted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <tr key={`advanced-${mediaInventoryItemName(item)}-${item.placeholder_name}-${item.source}`}>
+                      <td>{mediaInventoryItemName(item)}</td>
                       <td>{item.category}</td>
                       <td>{item.extension || "-"}</td>
-                      <td>{formatBytes(item.size_bytes)}</td>
                       <td>{item.source}</td>
                       <td>{yesNo(item.actual_name_redacted)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            ) : (
-              <p className="muted">No media metadata found.</p>
-            )}
-          </section>
+            </AdvancedDetails>
+          )}
         </>
       )}
     </Page>
   );
+}
+
+function softwareMediaFolder(inventory: MediaInventory): string {
+  return inventory.configured_directories[0] || inventory.configured_directory_paths[0] || "Not set";
+}
+
+function softwareMediaState(inventory: MediaInventory): { label: string; tone: "blocked" | "neutral" | "ready" | "warning" } {
+  if (inventory.warnings.length > 0) return { label: "Needs attention", tone: "warning" };
+  if (!inventory.items.length) return { label: "Needs media", tone: "blocked" };
+  return { label: "Ready", tone: "ready" };
+}
+
+function mediaItemOperatorType(item: MediaInventory["items"][number]): string {
+  const vendor = item.detected_vendor || "";
+  const product = item.detected_product ? mediaProductLabel(item.detected_product) : "";
+  const vendorPrefix = `${vendor} `;
+  const productWithoutRepeatedVendor = vendor && product.toLowerCase().startsWith(vendorPrefix.toLowerCase())
+    ? product.slice(vendorPrefix.length).trim()
+    : product;
+  const kind = labelize(item.category || "software");
+  return [vendor, productWithoutRepeatedVendor, kind].filter(Boolean).join(" ") || "Software file";
+}
+
+function mediaProductLabel(value: string): string {
+  return labelize(value)
+    .replace(/\bcisco\b/gi, "Cisco")
+    .replace(/\bios xe\b/gi, "IOS XE")
+    .replace(/\bontap\b/gi, "ONTAP")
+    .replace(/\besxi\b/gi, "ESXi")
+    .replace(/\bilo\b/gi, "iLO")
+    .replace(/\bbios\b/gi, "BIOS")
+    .replace(/\brommon\b/gi, "ROMMON")
+    .trim();
+}
+
+function plainMediaWarning(warning: string): string {
+  const stripped = warning
+    .replace(/media[_ -]?inventory:?/gi, "Media folder")
+    .replace(/configured[_ -]?director(?:y|ies)/gi, "media folder")
+    .replace(/source/gi, "folder")
+    .replace(/_/g, " ")
+    .trim();
+  return stripped || "Media folder needs attention.";
 }
 
 function LabProfilesPage({
@@ -7050,7 +7010,7 @@ function LabProfilesPage({
 
   return (
     <Page
-      title="Saved Lab Setups"
+      title="Saved Kits"
       actions={
         <>
           <button onClick={onReload} disabled={loading}>
@@ -7064,7 +7024,6 @@ function LabProfilesPage({
         error={error}
         loading={loading}
         onActivateProfile={activateProfile}
-        onReload={onReload}
         state={state}
       />
     </Page>
@@ -7075,15 +7034,11 @@ function LabProfileManager({
   error,
   loading,
   onActivateProfile,
-  onReload,
-  showMetrics = true,
   state
 }: {
   error: string;
   loading: boolean;
   onActivateProfile: (profileId: string) => Promise<void>;
-  onReload: () => Promise<void>;
-  showMetrics?: boolean;
   state: LabProfileList | null;
 }) {
   const [selectedProfileId, setSelectedProfileId] = useState("");
@@ -7091,30 +7046,57 @@ function LabProfileManager({
   const [form, setForm] = useState<LabProfileFormState>(() => blankLabProfileForm());
   const [saveError, setSaveError] = useState("");
   const [busyAction, setBusyAction] = useState("");
+  const [changeKitOpen, setChangeKitOpen] = useState(false);
+  const [createKitOpen, setCreateKitOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
   const activeProfile = state?.active_profile ?? null;
   const selectedProfile =
     state?.profiles.find((profile) => profile.id === selectedProfileId) ?? null;
   const subnetOptions = state?.subnet_options.length
     ? state.subnet_options
     : defaultLabSubnetOptions();
+  const createMode = deploymentModeForForm(form);
+  const createSubnetOptions = subnetOptions.filter(
+    (option) => createMode === "local" || option.netapp_supported
+  );
   const selectedSubnetPrefix = parseSubnetPrefix(form.globalSettings.subnetPrefix);
   const selectedSubnetOption =
     subnetOptions.find((option) => option.prefix === selectedSubnetPrefix) ?? null;
-  const netappSupported = labNetAppSupported(selectedSubnetPrefix);
+  const netappInScope = createMode === "shared" && labNetAppSupported(selectedSubnetPrefix);
   const netappDisabledReason =
-    selectedSubnetOption?.netapp_disabled_reason ??
-    "NetApp capabilities are disabled for this subnet size.";
+    createMode === "local"
+      ? netappDisabledForLocalStorageReason
+      : selectedSubnetOption?.netapp_disabled_reason ?? netappDisabledForSubnetReason;
+  const detailProfile = selectedProfile ?? activeProfile;
+  const draftPayload = labProfilePayload({
+    ...form,
+    name: form.name.trim() || "New kit"
+  });
+  const draftPlan = draftPayload.address_plan;
+  const activeKitName = activeProfile?.source === "runtime_env" ? "Current Lab" : activeProfile?.name ?? "";
+  const activeKitState = activeProfile?.source === "saved" ? "Saved and active" : "Current app values";
+  const latestRevision = detailProfile?.history.length
+    ? detailProfile.history[detailProfile.history.length - 1]
+    : null;
+  const changeKitCanActivate = Boolean(changeKitOpen && selectedProfile && !selectedProfile.active);
+  const createKitIsPrimary = createKitOpen;
+  const continueKitIsPrimary = !changeKitCanActivate && !createKitIsPrimary;
 
   useEffect(() => {
     if (!state || formInitialized) return;
-    const initialProfile =
-      state.active_profile.source === "saved" ? state.active_profile : state.profiles[0] ?? null;
-    if (initialProfile) {
-      setSelectedProfileId(initialProfile.id);
-      setForm(labProfileFormFrom(initialProfile));
-    }
+    const initialProfile = state.profiles.find((profile) => profile.active) ?? state.profiles[0] ?? null;
+    setSelectedProfileId(initialProfile?.id ?? "");
+    setForm(blankLabProfileForm());
     setFormInitialized(true);
   }, [formInitialized, state]);
+
+  useEffect(() => {
+    if (!state) return;
+    const hasSavedKits = state.profiles.length > 0;
+    setCreateKitOpen(location.hash === "#new" || !hasSavedKits);
+    setChangeKitOpen(!activeProfile && hasSavedKits);
+  }, [activeProfile, location.hash, state]);
 
   function startNewProfile() {
     setSelectedProfileId("");
@@ -7123,82 +7105,50 @@ function LabProfileManager({
     setSaveError("");
   }
 
-  function loadProfile(profile: LabProfile) {
-    setSelectedProfileId(profile.id);
-    setForm(labProfileFormFrom(profile));
-    setFormInitialized(true);
-    setSaveError("");
-  }
-
-  function loadRuntimeProfile() {
-    if (!state) return;
-    setSelectedProfileId("");
-    setForm(labProfileFormFrom(state.runtime_profile));
-    setFormInitialized(true);
-    setSaveError("");
-  }
-
   function updateSubnetPrefix(prefix: string) {
-    setForm((current) => applyLabSubnetChoice(current, current.addresses.subnet, prefix));
+    setForm((current) =>
+      withLabDeploymentMode(
+        applyLabSubnetChoice(current, current.addresses.subnet, prefix),
+        current.deploymentMode
+      )
+    );
   }
 
   function updateSubnetNetwork(subnet: string) {
-    setForm((current) => applyLabSubnetChoice(current, subnet, current.globalSettings.subnetPrefix));
+    setForm((current) =>
+      withLabDeploymentMode(
+        applyLabSubnetChoice(current, subnet, current.globalSettings.subnetPrefix, {
+          preserveSubnetInput: true
+        }),
+        current.deploymentMode
+      )
+    );
   }
 
-  function updateGlobalSetting<K extends keyof LabGlobalSettingsFormState>(
-    key: K,
-    value: LabGlobalSettingsFormState[K]
-  ) {
-    setForm((current) => ({
-      ...current,
-      globalSettings: {
-        ...current.globalSettings,
-        [key]: value
-      }
-    }));
+  function normalizeSubnetNetwork() {
+    setForm((current) =>
+      withLabDeploymentMode(
+        applyLabSubnetChoice(current, current.addresses.subnet, current.globalSettings.subnetPrefix),
+        current.deploymentMode
+      )
+    );
   }
 
-  function updateAddress(key: LabAddressInputKey, value: string) {
-    setForm((current) => ({
-      ...current,
-      addresses: {
-        ...current.addresses,
-        [key]: value
-      }
-    }));
+  function updateDeploymentMode(mode: LabDeploymentMode) {
+    setForm((current) => applyLabDeploymentMode(current, mode));
   }
 
-  async function saveProfile(event: FormEvent) {
+  async function createKit(event: FormEvent) {
     event.preventDefault();
     setSaveError("");
-    const action = selectedProfile ? "update" : "create";
-    setBusyAction(action);
-    try {
-      const payload = labProfilePayload(form);
-      const saved = selectedProfile
-        ? await api.updateLabProfile(selectedProfile.id, payload)
-        : await api.createLabProfile(payload);
-      setSelectedProfileId(saved.id);
-      setForm(labProfileFormFrom(saved));
-      setFormInitialized(true);
-      await onReload();
-    } catch (err) {
-      setSaveError((err as Error).message);
-    } finally {
-      setBusyAction("");
-    }
-  }
-
-  async function saveAsNew() {
-    setSaveError("");
-    setBusyAction("create");
+    setBusyAction("create-kit");
     try {
       const saved = await api.createLabProfile(labProfilePayload(form));
       setSelectedProfileId(saved.id);
-      setForm(labProfileFormFrom(saved));
+      setForm(blankLabProfileForm());
       setFormInitialized(true);
-      await onReload();
+      await onActivateProfile(saved.id);
+      navigate("/simple");
     } catch (err) {
       setSaveError((err as Error).message);
     } finally {
@@ -7211,6 +7161,7 @@ function LabProfileManager({
     setBusyAction(`activate-${profileId}`);
     try {
       await onActivateProfile(profileId);
+      navigate("/simple");
     } catch (err) {
       setSaveError((err as Error).message);
     } finally {
@@ -7223,394 +7174,295 @@ function LabProfileManager({
       <Feedback loading={loading && !state} error={error} />
       {state && activeProfile && (
         <>
-          {showMetrics && (
-            <section className="metric-grid lab-profile-metrics">
-              <Metric label="Saved Labs" value={state.profiles.length} icon={<Layers size={18} />} />
-              <Metric
-                label="Active Version"
-                value={activeProfile.version}
-                icon={<History size={18} />}
-              />
-              <Metric
-                label="Active History"
-                value={activeProfile.history.length}
-                icon={<ClipboardList size={18} />}
-              />
-              <Metric
-                label="Address Fields"
-                value={labAddressFields.length + 1}
-                icon={<Route size={18} />}
-              />
-              <Metric label="Subnet Sizes" value={subnetOptions.length} icon={<Route size={18} />} />
-            </section>
-          )}
-
-          <section className="panel active-lab-panel">
+          <section className="panel saved-kits-home" data-testid="saved-kits-home">
             <div className="readiness-head">
-              <PanelTitle icon={<Layers size={18} />} title="Active Lab" />
-              <StatusBadge status={activeProfile.source === "runtime_env" ? "local" : "current"} />
+              <div>
+                <PanelTitle icon={<Layers size={18} />} title="Selected kit" />
+                <p className="muted">Pick the kit for this lab, or create one from a subnet preview.</p>
+              </div>
+              <StatusBadge status="current" />
             </div>
-            <div className="provider-fact-grid compact">
-              <ProviderFact label="Name" value={activeProfile.name} />
-              <ProviderFact label="Source" value={labelize(activeProfile.source)} />
-              <ProviderFact label="Version" value={`v${activeProfile.version}`} />
-              <ProviderFact label="Store" value={state.store_path} />
+            <div className="saved-kits-summary">
+              <div>
+                <span>Kit</span>
+                <strong>{activeKitName}</strong>
+              </div>
+              <div>
+                <span>Subnet</span>
+                <strong>{displayAddress((activeProfile.resolved_address_plan ?? activeProfile.address_plan).subnet)}</strong>
+              </div>
+              <div>
+                <span>Build type</span>
+                <strong>{deploymentModeForProfile(activeProfile)}</strong>
+              </div>
+              <div>
+                <span>State</span>
+                <strong>{activeKitState}</strong>
+              </div>
             </div>
-            <LabAddressSummary profile={activeProfile} />
-            <div className="action-row">
-              <button
-                disabled={busyAction === "activate-runtime" || activeProfile.id === "runtime"}
-                onClick={() => activateProfile("runtime")}
-                type="button"
-              >
-                <Server size={16} />
-                Runtime
-              </button>
-              <button onClick={loadRuntimeProfile} type="button">
-                <Pencil size={16} />
-                Load Runtime
-              </button>
+            <div className="form-actions saved-kits-home-actions">
+              <Link className={continueKitIsPrimary ? "button-link primary" : "button-link"} to="/simple">
+                <Route size={16} />
+                Continue with this kit
+              </Link>
             </div>
+            <p className="saved-kits-boundary">This page only changes saved kit selection and new-kit values. Live checks and build actions stay in Run Center.</p>
           </section>
 
-          <div className="lab-profile-layout">
-            <section className="panel">
-              <PanelTitle icon={<Layers size={18} />} title="Saved Labs" />
-              <div className="action-row">
-                <button onClick={startNewProfile} type="button">
-                  <Plus size={16} />
-                  New Lab
-                </button>
-              </div>
+          <details
+            aria-label="Change kit"
+            className="advanced-details section-details saved-kits-switch"
+            onToggle={(event) => setChangeKitOpen(event.currentTarget.open)}
+            open={changeKitOpen}
+          >
+            <summary>
+              <span>Change kit</span>
+              <small>Pick another saved kit when you need a different lab.</small>
+            </summary>
+            <div className="advanced-details-body">
               {state.profiles.length ? (
-                <div className="lab-profile-list">
-                  {state.profiles.map((profile) => (
-                    <article
-                      className={
-                        profile.id === selectedProfileId
-                          ? "lab-profile-row selected"
-                          : "lab-profile-row"
-                      }
-                      key={profile.id}
+                <div className="saved-kits-switch-controls">
+                  <Field label="Saved kit">
+                    <select
+                      onChange={(event) => setSelectedProfileId(event.target.value)}
+                      value={selectedProfileId}
                     >
-                      <div>
-                        <strong>{profile.name}</strong>
-                        <span>{labelize(profile.profile_topology)} · {displayAddress(profile.address_plan.subnet)}</span>
-                      </div>
-                      <StatusBadge status={profile.active ? "current" : "available"} />
-                      <div className="lab-profile-row-actions">
-                        <button onClick={() => loadProfile(profile)} type="button">
-                          <Pencil size={16} />
-                          Edit
-                        </button>
+                      {state.profiles.map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.name} - {displayAddress(profile.address_plan.subnet)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <button
+                    className={changeKitCanActivate ? "primary" : undefined}
+                    disabled={!selectedProfile || selectedProfile.active || Boolean(busyAction)}
+                    onClick={() => selectedProfile && activateProfile(selectedProfile.id)}
+                    type="button"
+                  >
+                    <CheckCircle2 size={16} />
+                    Use this kit
+                  </button>
+                </div>
+              ) : (
+                <p className="muted">No saved kits yet. Create one from the subnet preview.</p>
+              )}
+              <p className="muted">Shared DNS, NTP, VLAN, and MTU settings live in <Link to="/setup/defaults">Lab Defaults</Link>.</p>
+            </div>
+          </details>
+
+          <details
+            aria-label="Create a new kit"
+            className="advanced-details section-details saved-kits-create"
+            onToggle={(event) => setCreateKitOpen(event.currentTarget.open)}
+            open={createKitOpen}
+          >
+            <summary>
+              <span>Create a new kit</span>
+              <small>Name a new lab and derive its addresses from one subnet.</small>
+            </summary>
+            <div className="advanced-details-body">
+              <form className="lab-profile-form saved-kits-create-form" onSubmit={createKit}>
+                <div className="lab-profile-form-grid">
+                  <Field label="Kit name">
+                    <input
+                      minLength={2}
+                      onChange={(event) => setForm({ ...form, name: event.target.value })}
+                      required
+                      value={form.name}
+                    />
+                  </Field>
+                  <Field label="Build type">
+                    <select
+                      onChange={(event) => updateDeploymentMode(event.target.value === "local" ? "local" : "shared")}
+                      value={createMode}
+                    >
+                      <option value="shared">Server + NetApp + vCenter</option>
+                      <option value="local">Single server - local RAID</option>
+                    </select>
+                  </Field>
+                  <Field label={labSubnetField.label}>
+                    <input
+                      inputMode="decimal"
+                      onBlur={normalizeSubnetNetwork}
+                      onChange={(event) => updateSubnetNetwork(event.target.value)}
+                      value={subnetNetworkInputValue(form.addresses.subnet)}
+                    />
+                  </Field>
+                  <Field label="Address range">
+                    <select
+                      onChange={(event) => updateSubnetPrefix(event.target.value)}
+                      value={form.globalSettings.subnetPrefix}
+                    >
+                      {createSubnetOptions.map((option) => (
+                        <option key={option.prefix} value={option.prefix}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+                <div className="saved-kits-preview" aria-label="Derived address preview">
+                  <strong>Preview from subnet</strong>
+                  <div>
+                    <span>Cisco Switch</span>
+                    <b>{displayAddress(draftPlan.cisco_management)}</b>
+                  </div>
+                  <div>
+                    <span>HPE iLO</span>
+                    <b>{displayAddress(draftPlan.ilo)}</b>
+                  </div>
+                  <div>
+                    <span>ESXi</span>
+                    <b>{displayAddress(draftPlan.esxi_management)}</b>
+                  </div>
+                  <div>
+                    <span>{netappInScope ? "NetApp" : "Local storage"}</span>
+                    <b>{netappInScope ? displayAddress(draftPlan.netapp_cluster_mgmt) : "Server disks"}</b>
+                  </div>
+                </div>
+                {!netappInScope && <p className="saved-kits-note">{netappDisabledReason}</p>}
+                <Feedback error={saveError} />
+                <div className="form-actions">
+                  <button onClick={startNewProfile} type="button">
+                    <Plus size={16} />
+                    Clear
+                  </button>
+                  <button className={createKitIsPrimary ? "primary" : undefined} disabled={Boolean(busyAction)} type="submit">
+                    <Save size={16} />
+                    Create kit
+                  </button>
+                </div>
+              </form>
+            </div>
+          </details>
+
+          <AdvancedDetails
+            className="section-details saved-kits-details"
+            summary="Saved kit details, history, and address preview"
+            title="Saved kit details"
+          >
+            <section className="saved-kits-detail-grid">
+              <div>
+                <h3>Saved kits</h3>
+                {state.profiles.length ? (
+                  <div className="lab-profile-list">
+                    {state.profiles.map((profile) => (
+                      <article
+                        className={profile.id === selectedProfileId ? "lab-profile-row selected" : "lab-profile-row"}
+                        key={profile.id}
+                      >
+                        <div>
+                          <strong>{profile.name}</strong>
+                          <span>{deploymentModeForProfile(profile)} - {displayAddress(profile.address_plan.subnet)}</span>
+                        </div>
+                        <StatusBadge status={profile.active ? "current" : "available"} />
                         <button
                           disabled={profile.active || busyAction === `activate-${profile.id}`}
                           onClick={() => activateProfile(profile.id)}
                           type="button"
                         >
                           <CheckCircle2 size={16} />
-                          Activate
+                          Use
                         </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <p className="muted">No saved lab setups.</p>
-              )}
-            </section>
-
-            <section className="panel">
-              <PanelTitle
-                icon={<Save size={18} />}
-                title={selectedProfile ? `Edit ${selectedProfile.name}` : "Create Lab"}
-              />
-              <form className="lab-profile-form" onSubmit={saveProfile}>
-                <section className="lab-profile-form-section">
-                  <div className="lab-profile-form-grid">
-                    <Field label="Name">
-                      <input
-                        minLength={2}
-                        onChange={(event) => setForm({ ...form, name: event.target.value })}
-                        required
-                        value={form.name}
-                      />
-                    </Field>
-                    <Field label="Description">
-                      <textarea
-                        onChange={(event) =>
-                          setForm({ ...form, description: event.target.value })
-                        }
-                        value={form.description}
-                      />
-                    </Field>
-                  </div>
-                </section>
-
-                <section className="lab-profile-form-section">
-                  <div className="readiness-head compact-head">
-                    <strong>Global Settings</strong>
-                    <StatusBadge status={netappSupported ? "available" : "blocked"} />
-                  </div>
-                  <div className="lab-profile-form-grid">
-                    <Field label="Subnet Size">
-                      <select
-                        onChange={(event) => updateSubnetPrefix(event.target.value)}
-                        value={form.globalSettings.subnetPrefix}
-                      >
-                        {subnetOptions.map((option) => (
-                          <option key={option.prefix} value={option.prefix}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Topology">
-                      <select
-                        onChange={(event) => setForm({ ...form, profileTopology: event.target.value })}
-                        value={form.profileTopology}
-                      >
-                        <option value="high_address_lab">High-address /24</option>
-                        <option value="compact_edge_lab">Compact edge</option>
-                        <option value="custom">Custom</option>
-                      </select>
-                    </Field>
-                    <Field label={labSubnetField.label}>
-                      <input
-                        inputMode="decimal"
-                        onChange={(event) => updateSubnetNetwork(event.target.value)}
-                        value={form.addresses.subnet}
-                      />
-                    </Field>
-                    <Field label="Gateway">
-                      <input
-                        inputMode="decimal"
-                        onChange={(event) => updateGlobalSetting("gateway", event.target.value)}
-                        value={form.globalSettings.gateway}
-                      />
-                    </Field>
-                    <Field label="Domain">
-                      <input
-                        onChange={(event) => updateGlobalSetting("domainName", event.target.value)}
-                        value={form.globalSettings.domainName}
-                      />
-                    </Field>
-                    <Field label="DNS Servers">
-                      <input
-                        inputMode="decimal"
-                        onChange={(event) => updateGlobalSetting("dnsServers", event.target.value)}
-                        value={form.globalSettings.dnsServers}
-                      />
-                    </Field>
-                    <Field label="NTP Servers">
-                      <input
-                        inputMode="decimal"
-                        onChange={(event) => updateGlobalSetting("ntpServers", event.target.value)}
-                        value={form.globalSettings.ntpServers}
-                      />
-                    </Field>
-                    <Field label="Timezone">
-                      <input
-                        onChange={(event) => updateGlobalSetting("timezone", event.target.value)}
-                        value={form.globalSettings.timezone}
-                      />
-                    </Field>
-                    <Field label="VLAN ID">
-                      <input
-                        inputMode="numeric"
-                        onChange={(event) => updateGlobalSetting("vlanId", event.target.value)}
-                        value={form.globalSettings.vlanId}
-                      />
-                    </Field>
-                    <Field label="MTU">
-                      <input
-                        inputMode="numeric"
-                        onChange={(event) => updateGlobalSetting("mtu", event.target.value)}
-                        value={form.globalSettings.mtu}
-                      />
-                    </Field>
-                    <Field label="vCenter">
-                      <label className="checkbox-line">
-                        <input
-                          checked={form.globalSettings.vcenterEnabled && netappSupported}
-                          disabled={!netappSupported}
-                          onChange={(event) => updateGlobalSetting("vcenterEnabled", event.target.checked)}
-                          type="checkbox"
-                        />
-                        <span>{netappSupported ? "Include vCenter readiness" : "Not in scope for compact profile"}</span>
-                      </label>
-                    </Field>
-                    <Field label="Storage Protocol">
-                      <select
-                        disabled={!netappSupported}
-                        onChange={(event) => updateGlobalSetting("storageProtocol", event.target.value)}
-                        value={form.globalSettings.storageProtocol}
-                      >
-                        <option value="nfs">NFS</option>
-                        <option value="iscsi">iSCSI</option>
-                        <option value="none">Local only</option>
-                      </select>
-                    </Field>
-                  </div>
-                  <div className="global-policy-grid">
-                    <label className="checkbox-line">
-                      <input
-                        checked={form.globalSettings.enableDns}
-                        onChange={(event) => updateGlobalSetting("enableDns", event.target.checked)}
-                        type="checkbox"
-                      />
-                      <span>DNS assigned globally</span>
-                    </label>
-                    <label className="checkbox-line">
-                      <input
-                        checked={form.globalSettings.enableNtp}
-                        onChange={(event) => updateGlobalSetting("enableNtp", event.target.checked)}
-                        type="checkbox"
-                      />
-                      <span>NTP assigned globally</span>
-                    </label>
-                    <label className="checkbox-line">
-                      <input
-                        checked={form.globalSettings.enableSnmp}
-                        onChange={(event) => updateGlobalSetting("enableSnmp", event.target.checked)}
-                        type="checkbox"
-                      />
-                      <span>SNMP assigned globally</span>
-                    </label>
-                    <label className="checkbox-line">
-                      <input
-                        checked={form.globalSettings.disableIpv6}
-                        onChange={(event) => updateGlobalSetting("disableIpv6", event.target.checked)}
-                        type="checkbox"
-                      />
-                      <span>Disable IPv6 globally</span>
-                    </label>
-                  </div>
-                </section>
-
-                <section className="lab-profile-form-section">
-                  <div className="readiness-head compact-head">
-                    <strong>Core Addresses</strong>
-                    <StatusBadge status="intent_only" />
-                  </div>
-                  <div className="lab-profile-form-grid">
-                    {labCoreAddressFields.map((field) => (
-                      <Field key={field.key} label={field.label}>
-                        <input
-                          inputMode="decimal"
-                          onChange={(event) => updateAddress(field.key, event.target.value)}
-                          value={form.addresses[field.key]}
-                        />
-                      </Field>
+                      </article>
                     ))}
                   </div>
-                </section>
-
-                <section className="lab-profile-form-section">
-                  <div className="readiness-head compact-head">
-                    <strong>NetApp Capabilities</strong>
-                    <StatusBadge status={netappSupported ? "available" : "blocked"} />
-                  </div>
-                  {netappSupported ? (
-                    <div className="lab-profile-form-grid">
-                      {labNetAppAddressFields.map((field) => (
-                        <Field key={field.key} label={field.label}>
-                          <input
-                            inputMode="decimal"
-                            onChange={(event) => updateAddress(field.key, event.target.value)}
-                            value={form.addresses[field.key]}
-                          />
-                        </Field>
-                      ))}
-                      <Field label="NetApp NFS LIFs">
-                        <input
-                          inputMode="decimal"
-                          onChange={(event) =>
-                            setForm({ ...form, netappNfsLifs: event.target.value })
-                          }
-                          value={form.netappNfsLifs}
-                        />
-                      </Field>
-                      <Field label="NetApp iSCSI LIFs">
-                        <input
-                          inputMode="decimal"
-                          onChange={(event) =>
-                            setForm({ ...form, netappIscsiLifs: event.target.value })
-                          }
-                          value={form.netappIscsiLifs}
-                        />
-                      </Field>
-                    </div>
-                  ) : (
-                    <div className="provider-callout netapp-capability-disabled">
-                      <StatusBadge status="not_in_scope" />
-                      <strong>NetApp and vCenter not in scope for /{form.globalSettings.subnetPrefix}</strong>
-                      <p>{netappDisabledReason}</p>
-                    </div>
-                  )}
-                </section>
-                <Feedback error={saveError} />
-                <div className="form-actions">
-                  {selectedProfile && (
-                    <button
-                      disabled={Boolean(busyAction)}
-                      onClick={saveAsNew}
-                      type="button"
-                    >
-                      <Plus size={16} />
-                      Save New
-                    </button>
-                  )}
-                  <button className="primary" disabled={Boolean(busyAction)} type="submit">
-                    <Save size={16} />
-                    {selectedProfile ? "Update Profile" : "Create Profile"}
-                  </button>
-                </div>
-              </form>
+                ) : (
+                  <p className="muted">No saved kits yet.</p>
+                )}
+              </div>
+              <div>
+                <h3>Address preview</h3>
+                {detailProfile ? <KitAddressPreview profile={detailProfile} /> : <p className="muted">Select a kit to inspect addresses.</p>}
+              </div>
             </section>
-          </div>
+            <section>
+              <h3>History</h3>
+              {detailProfile && latestRevision ? (
+                <>
+                  <div className="saved-kits-history-latest">
+                    <span>Latest save</span>
+                    <strong>{formatDateTime(latestRevision.saved_at)}</strong>
+                    <small>{latestRevision.name} - {displayAddress(latestRevision.address_plan.subnet)}</small>
+                  </div>
+                  <AdvancedDetails
+                    className="section-details saved-kits-full-history"
+                    defaultOpenInAdvanced={false}
+                    summary={`${detailProfile.history.length} saved versions`}
+                    title="Full history"
+                  >
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Saved</th>
+                          <th>Name</th>
+                          <th>Subnet</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailProfile.history.map((revision) => (
+                          <tr key={`${detailProfile.id}-${revision.version}-${revision.saved_at}`}>
+                            <td>{formatDateTime(revision.saved_at)}</td>
+                            <td>{revision.name}</td>
+                            <td>{displayAddress(revision.address_plan.subnet)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </AdvancedDetails>
+                </>
+              ) : (
+                <p className="muted">No earlier saved versions for this kit.</p>
+              )}
+            </section>
+          </AdvancedDetails>
 
-          <section className="panel">
-            <PanelTitle icon={<History size={18} />} title="Version History" />
-            {selectedProfile && selectedProfile.history.length ? (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Version</th>
-                    <th>Saved</th>
-                    <th>Name</th>
-                    <th>Subnet</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedProfile.history.map((revision) => (
-                    <tr key={`${selectedProfile.id}-${revision.version}-${revision.saved_at}`}>
-                      <td>v{revision.version}</td>
-                      <td>{formatDateTime(revision.saved_at)}</td>
-                      <td>{revision.name}</td>
-                      <td>{displayAddress(revision.address_plan.subnet)}</td>
-                      <td>
-                        <button
-                          className="small-button"
-                          onClick={() => setForm(labProfileFormFrom(revision))}
-                          type="button"
-                        >
-                          Load
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p className="muted">No previous versions for the selected saved lab.</p>
-            )}
-          </section>
+          <AdvancedDetails
+            className="section-details saved-kits-advanced"
+            summary="Internal ID, version, storage path, and save counts"
+            title="Advanced kit metadata"
+          >
+            <div className="provider-fact-grid compact">
+              <ProviderFact label="Active ID" value={activeProfile.id} />
+              <ProviderFact label="Version" value={`v${activeProfile.version}`} />
+              <ProviderFact label="Storage path" value={state.store_path} />
+              <ProviderFact label="Raw origin" value={labelize(activeProfile.source)} />
+              <ProviderFact label="Saved count" value={String(state.profiles.length)} />
+              <ProviderFact label="History count" value={String(activeProfile.history.length)} />
+            </div>
+          </AdvancedDetails>
         </>
       )}
     </>
   );
+
+}
+
+function KitAddressPreview({ profile }: { profile: LabProfile }) {
+  const plan = profile.resolved_address_plan ?? profile.address_plan;
+  return (
+    <div className="provider-fact-grid compact lab-address-summary">
+      <ProviderFact label="Subnet" value={displayAddress(plan.subnet)} />
+      <ProviderFact label="Gateway" value={displayAddress(profile.global_settings.gateway)} />
+      <ProviderFact label="Cisco" value={displayAddress(plan.cisco_management)} />
+      <ProviderFact label="HPE iLO" value={displayAddress(plan.ilo)} />
+      <ProviderFact label="ESXi" value={displayAddress(plan.esxi_management)} />
+      <ProviderFact label="NetApp" value={profile.features.netapp_enabled ? displayAddress(plan.netapp_cluster_mgmt) : "Not included"} />
+      <ProviderFact label="vCenter" value={profile.features.vcenter_enabled ? "Included" : "Not included"} />
+      <ProviderFact label="Storage" value={profile.features.storage_protocol ? String(profile.features.storage_protocol).toUpperCase() : "Local"} />
+    </div>
+  );
+}
+
+function deploymentModeForForm(form: LabProfileFormState): LabDeploymentMode {
+  return form.deploymentMode;
+}
+
+function deploymentModeForProfile(profile: LabProfile): string {
+  return profile.features.netapp_enabled === false || profile.features.storage_protocol === "none"
+    ? "Single server - local RAID"
+    : "Server + NetApp + vCenter";
 }
 
 function LabAddressSummary({ profile }: { profile: LabProfile }) {
@@ -8583,7 +8435,11 @@ function SectionProfileConfigEditor({
 
   function updateAddress(key: LabAddressScalarKey, value: string) {
     if (key === "subnet") {
-      setForm((current) => applyLabSubnetChoice(current, value, current.globalSettings.subnetPrefix));
+      setForm((current) =>
+        applyLabSubnetChoice(current, value, current.globalSettings.subnetPrefix, {
+          preserveSubnetInput: true
+        })
+      );
       return;
     }
     setForm((current) => ({
@@ -8728,9 +8584,9 @@ function SectionProfileConfigEditor({
             <Save size={14} />
             {saving ? "Saving" : activeProfile?.source === "saved" ? "Save setup values" : "Create saved setup"}
           </button>
-          <Link className="button-link small-button" to="/settings">
+          <Link className="button-link small-button" to="/lab-profiles">
             <Pencil size={14} />
-            Settings
+            Saved setups
           </Link>
         </div>
       </form>
@@ -8972,9 +8828,9 @@ function GlobalConfigEditor({
             <Save size={14} />
             {saving ? "Saving" : "Save global config"}
           </button>
-          <Link className="button-link small-button" to="/settings">
+          <Link className="button-link small-button" to="/lab-profiles">
             <Pencil size={14} />
-            Settings
+            Saved setups
           </Link>
         </div>
       </form>
@@ -10067,9 +9923,9 @@ function ControlAccessConfigTile({
               <Save size={16} />
               {busy ? "Saving" : "Save Access & IP Config"}
             </button>
-            <Link className="button-link" to="/settings">
+            <Link className="button-link" to="/lab-profiles">
               <Pencil size={16} />
-              Edit IP Profile
+              Edit saved setup
             </Link>
           </div>
         </div>
@@ -11472,7 +11328,7 @@ function firmwareGuardedControls(actions: WorkflowAction[]): WorkflowAction[] {
 function firmwareRelatedActionLabel(action: WorkflowAction): string {
   const labels: Record<string, string> = {
     "cisco.apply-bootstrap": "Configure",
-    "esxi.rebuild-install": "Rebuild",
+    "esxi.rebuild-install": "Boot Installer",
     "ilo.virtual-media-insert": "Insert Media",
     "netapp.ontap-upgrade-apply": "Upgrade",
     "netapp.setup-apply": "Apply Setup",
@@ -11484,7 +11340,7 @@ function firmwareRelatedActionLabel(action: WorkflowAction): string {
 function firmwareRelatedActionTitle(action: WorkflowAction): string {
   const labels: Record<string, string> = {
     "cisco.apply-bootstrap": "Cisco Configure",
-    "esxi.rebuild-install": "ESXi Rebuild",
+    "esxi.rebuild-install": "ESXi Installer Boot",
     "ilo.virtual-media-insert": "iLO Virtual Media",
     "netapp.ontap-upgrade-apply": "NetApp ONTAP Upgrade",
     "netapp.setup-apply": "NetApp Setup",
@@ -13450,7 +13306,7 @@ function ReportIssueCard({ issue }: { issue: ReportIssue }) {
           <dt>Source stage</dt>
           <dd>
             {issue.source_stage_id ? (
-              <Link to="/overview">
+              <Link to="/simple">
                 {issue.source_stage_label || issue.source_stage_id}
               </Link>
             ) : (
@@ -14044,7 +13900,7 @@ function SettingsPage({
       description="Lab profile, local settings, and safety metadata without repeating provider diagnostics."
       issueArea="settings"
       onSectionChange={(sectionId) => setActiveSection(sectionId as SettingsSectionId)}
-      primaryAction={{ icon: <Layers size={16} />, label: "Open Overview", to: "/overview" }}
+      primaryAction={{ icon: <Layers size={16} />, label: "Open rack", to: "/simple" }}
       sections={sections}
       title="Settings"
       actions={
@@ -14082,7 +13938,7 @@ function SettingsPage({
               <LabAddressSummary profile={activeProfile} />
             </AdvancedDetails>
           ) : (
-            <EmptyState title="No active lab setup" detail="Load or create a saved lab setup from Edit Config." />
+            <EmptyState title="No active lab setup" detail="Load or create a saved lab setup from Saved Lab Setups." />
           )}
         </section>
       )}
@@ -14463,6 +14319,7 @@ function guardedWorkflowRunButtonLabel(action: WorkflowAction): string {
   const id = action.action_id;
   if (id.includes("upgrade")) return "Start Upgrade";
   if (id.includes("reset") || id.includes("reload")) return "Reset";
+  if (id === "esxi.rebuild-install") return "Boot Installer";
   if (id.includes("rebuild") || id.includes("install")) return "Rebuild";
   if (id.includes("virtual-media")) return "Insert Media";
   if (id.includes("one-time-boot")) return "Set Boot";
@@ -14510,6 +14367,7 @@ async function copyWorkflowActionToClipboard(action: WorkflowAction) {
 function ProviderStatusPage() {
   const { activeContext, activeProfile } = useLabProfileContext();
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [iloProbeDeviceId, setIloProbeDeviceId] = useState("");
   const [ciscoSetupReadiness, setCiscoSetupReadiness] = useState<CiscoSetupReadiness | null>(null);
   const [ciscoSetupWizardPlan, setCiscoSetupWizardPlan] = useState<CiscoSetupWizardPlan | null>(null);
   const [ciscoBootstrapRequirements, setCiscoBootstrapRequirements] = useState<CiscoBootstrapRequirements | null>(null);
@@ -14537,6 +14395,12 @@ function ProviderStatusPage() {
         api.buildVerification()
       ]);
       setProviders(providerStatuses);
+      void api.deviceInventory()
+        .then((devices) => {
+          const primaryIlo = devices.find((device) => /(^|[^a-z0-9])(ilo|bmc)([^a-z0-9]|$)/i.test(device.device_type));
+          setIloProbeDeviceId(primaryIlo?.id ?? "");
+        })
+        .catch(() => setIloProbeDeviceId(""));
       setFirmwareCompliance(firmwareGate);
       setFullRebuildSummary(fullRebuild);
       setBuildVerification(certification);
@@ -14561,7 +14425,7 @@ function ProviderStatusPage() {
     setBusyProvider(provider.id);
     setError("");
     try {
-      const result = await api.probeProvider(provider.id);
+      const result = await api.probeProvider(provider.id, provider.id === "ilo-redfish" ? iloProbeDeviceId : null);
       setProbeResults((current) => ({ ...current, [provider.id]: result }));
       await load();
     } catch (err) {
@@ -16454,17 +16318,19 @@ function WorkflowSummary({
 function AdvancedDetails({
   children,
   className = "",
+  defaultOpenInAdvanced = true,
   summary,
   title
 }: {
   children: ReactNode;
   className?: string;
+  defaultOpenInAdvanced?: boolean;
   summary: string;
   title: string;
 }) {
   const { isAdvancedMode } = useUiMode();
   return (
-    <details className={`advanced-details ${className}`.trim()} open={isAdvancedMode ? true : undefined}>
+    <details className={`advanced-details ${className}`.trim()} open={isAdvancedMode && defaultOpenInAdvanced ? true : undefined}>
       <summary>
         <span>{title}</span>
         <small>{summary}</small>
@@ -16774,6 +16640,7 @@ function CiscoConsoleDetails({
 }
 
 function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
+  const [iloDeviceId, setIloDeviceId] = useState("");
   const [readiness, setReadiness] = useState<IloUpgradeReadiness | null>(null);
   const [baselinePreview, setBaselinePreview] = useState<IloBaselinePreview | null>(null);
   const [baselineReadiness, setBaselineReadiness] = useState<IloBaselineReadiness | null>(null);
@@ -16805,6 +16672,22 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
 
   useEffect(() => {
     let cancelled = false;
+    void api.deviceInventory()
+      .then((devices) => {
+        if (cancelled) return;
+        const primary = devices.find((device) => /(^|[^a-z0-9])(ilo|bmc)([^a-z0-9]|$)/i.test(device.device_type));
+        setIloDeviceId(primary?.id ?? "");
+      })
+      .catch(() => {
+        if (!cancelled) setIloDeviceId("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
     setError("");
     setSetupError("");
     setRaidError("");
@@ -16831,14 +16714,18 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
         });
     };
 
-    loadPart("iLO upgrade readiness", api.iloUpgradeReadiness(), setReadiness, (message) => appendError(setError, message));
-    loadPart("iLO baseline preview", api.iloBaselinePreview(), setBaselinePreview, (message) => appendError(setError, message));
-    loadPart("iLO baseline readiness", api.iloBaselineReadiness(), setBaselineReadiness, (message) => appendError(setError, message));
-    loadPart("iLO setup intent", api.iloSetupIntent(), setSetupIntent, (message) => appendError(setSetupError, message));
-    loadPart("iLO setup plan", api.iloSetupPlanPreview(), setSetupPlan, (message) => appendError(setSetupError, message));
-    loadPart("HPE storage discovery", api.hpeStorageDiscovery(), setRaidDiscovery, (message) => appendError(setRaidError, message));
-    loadPart("HPE RAID intent", api.hpeRaidIntent(), setRaidIntent, (message) => appendError(setRaidError, message));
-    loadPart("HPE RAID plan", api.hpeRaidPlanPreview(), setRaidPlan, (message) => appendError(setRaidError, message));
+    if (iloDeviceId) {
+      loadPart("iLO upgrade readiness", api.iloUpgradeReadiness(iloDeviceId), setReadiness, (message) => appendError(setError, message));
+      loadPart("iLO baseline preview", api.iloBaselinePreview(iloDeviceId), setBaselinePreview, (message) => appendError(setError, message));
+      loadPart("iLO baseline readiness", api.iloBaselineReadiness(iloDeviceId), setBaselineReadiness, (message) => appendError(setError, message));
+      loadPart("iLO setup intent", api.iloSetupIntent(iloDeviceId), setSetupIntent, (message) => appendError(setSetupError, message));
+      loadPart("iLO setup plan", api.iloSetupPlanPreview(iloDeviceId), setSetupPlan, (message) => appendError(setSetupError, message));
+      loadPart("HPE storage discovery", api.hpeStorageDiscovery(iloDeviceId), setRaidDiscovery, (message) => appendError(setRaidError, message));
+    }
+    if (iloDeviceId) {
+      loadPart("HPE RAID intent", api.hpeRaidIntent(iloDeviceId), setRaidIntent, (message) => appendError(setRaidError, message));
+      loadPart("HPE RAID plan", api.hpeRaidPlanPreview(iloDeviceId), setRaidPlan, (message) => appendError(setRaidError, message));
+    }
     loadPart("HPE RAID apply plan", api.hpeRaidApplyPlan(), setRaidApplyPlan, (message) => appendError(setRaidError, message));
     loadPart("HPE RAID pending check", api.hpeRaidPending(), setRaidPending, (message) => appendError(setRaidError, message));
     loadPart("HPE RAID reset plan", api.hpeRaidResetPlan(), setRaidResetPlan, (message) => appendError(setRaidError, message));
@@ -16846,15 +16733,16 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
     return () => {
       cancelled = true;
     };
-  }, [provider.last_probe_time, provider.status]);
+  }, [iloDeviceId, provider.last_probe_time, provider.status]);
 
   async function saveSetupIntent(payload: IloSetupIntentWrite) {
     setSetupBusy(true);
     setSetupError("");
     setSetupSavedMessage("");
     try {
-      const saved = await api.saveIloSetupIntent(payload);
-      const plan = await api.iloSetupPlanPreview();
+      if (!iloDeviceId) throw new Error("Add an iLO device to rack inventory before saving setup intent.");
+      const saved = await api.saveIloSetupIntent(iloDeviceId, payload);
+      const plan = await api.iloSetupPlanPreview(iloDeviceId);
       setSetupIntent(saved);
       setSetupPlan(plan);
       setSetupSavedMessage("Saved desired iLO setup intent. Apply remains disabled.");
@@ -16870,10 +16758,11 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
     setRaidError("");
     setRaidSavedMessage("");
     try {
-      const saved = await api.saveHpeRaidIntent(payload);
+      if (!iloDeviceId) throw new Error("Add an iLO device to rack inventory before saving RAID intent.");
+      const saved = await api.saveHpeRaidIntent(iloDeviceId, payload);
       const [discovery, plan] = await Promise.all([
-        api.hpeStorageDiscovery(),
-        api.hpeRaidPlanPreview()
+        api.hpeStorageDiscovery(iloDeviceId),
+        api.hpeRaidPlanPreview(iloDeviceId)
       ]);
       const applyPlan = await api.hpeRaidApplyPlan();
       const [pending, resetPlan] = await Promise.all([
@@ -16915,9 +16804,10 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
     setRaidPostApplyBusy(true);
     setRaidError("");
     try {
+      if (!iloDeviceId) throw new Error("Add an iLO device to rack inventory before reading its storage state.");
       const validation = await api.validateHpeRaidAfterReset();
       const [discovery, pending, esxiReadiness] = await Promise.all([
-        api.hpeStorageDiscovery(),
+        api.hpeStorageDiscovery(iloDeviceId),
         api.hpeRaidPending(),
         api.esxiInstallReadiness()
       ]);
@@ -16949,10 +16839,10 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
       <div className="provider-callout">
         <strong>{missingFields.length ? "Configuration missing" : "Configuration present"}</strong>
         <p>
-          iLO host, username, and password values are stored only in local environment configuration and
-          are exposed here as presence flags.
+          iLO host, username, and password values are stored locally for the selected rack device and are exposed here as presence flags.
         </p>
       </div>
+      {!iloDeviceId && <p className="provider-missing-fields">Add an iLO device to rack inventory before editing device-scoped setup or RAID intent.</p>}
       <div className="provider-fact-grid">
         <ProviderFact label="Host" value={presenceLabel(config.host_configured)} />
         <ProviderFact label="Username" value={presenceLabel(config.username_configured)} />
@@ -17019,11 +16909,11 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
         readiness={baselineReadiness}
       />
       </AdvancedDetails>
-      <AdvancedDetails
-        className="provider-workflow-details"
-        summary="Desired iLO hostname, IP, DNS, NTP, SNMP, and local user references"
-        title="iLO settings"
-      >
+      <section className="provider-core-workflow">
+        <div className="readiness-head">
+          <PanelTitle icon={<Settings size={18} />} title="iLO setup settings" />
+          <StatusBadge status={asString(setupPlan?.sections.find((section) => section.id === "network")?.status) || "plan_only"} />
+        </div>
       <IloSetupIntentPanel
         busy={setupBusy}
         error={setupError}
@@ -17032,7 +16922,7 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
         plan={setupPlan}
         savedMessage={setupSavedMessage}
       />
-      </AdvancedDetails>
+      </section>
       <section className="provider-core-workflow">
         <div className="readiness-head">
           <PanelTitle icon={<HardDrive size={18} />} title="HPE Storage / RAID" />
@@ -17291,6 +17181,26 @@ function IloSetupIntentPanel({
     }));
   }
 
+  function updateLicense<K extends keyof IloSetupIntentWrite["license"]>(
+    field: K,
+    value: IloSetupIntentWrite["license"][K],
+  ) {
+    setForm((current) => ({
+      ...current,
+      license: { ...current.license, [field]: value }
+    }));
+  }
+
+  function updateIpv6<K extends keyof IloSetupIntentWrite["ipv6"]>(
+    field: K,
+    value: IloSetupIntentWrite["ipv6"][K],
+  ) {
+    setForm((current) => ({
+      ...current,
+      ipv6: { ...current.ipv6, [field]: value }
+    }));
+  }
+
   function updateTime<K extends keyof IloSetupIntentWrite["time"]>(
     field: K,
     value: IloSetupIntentWrite["time"][K],
@@ -17311,7 +17221,7 @@ function IloSetupIntentPanel({
     }));
   }
 
-  function updateUser(index: number, field: "username_label" | "role", value: string) {
+  function updateUser(index: number, field: "username_label" | "role" | "password_ref_label", value: string) {
     setForm((current) => ({
       ...current,
       users: current.users.map((user, userIndex) =>
@@ -17323,7 +17233,7 @@ function IloSetupIntentPanel({
   function addUser() {
     setForm((current) => ({
       ...current,
-      users: [...current.users, { username_label: "", role: "Administrator" }]
+      users: [...current.users, { password_ref_label: "", role: "Administrator", username_label: "" }]
     }));
   }
 
@@ -17344,8 +17254,8 @@ function IloSetupIntentPanel({
       <div className="provider-callout">
         <strong>iLO setup intent</strong>
         <p>
-          Desired IP, DNS, NTP, SNMP, and user-reference values are saved locally for planning.
-          Password changes use references only; no plaintext password is stored here.
+          Desired iLO network behavior, users, license reference, DNS, NTP, SNMP, and IPv6 values are saved locally
+          for planning. Passwords and license keys use references only; no plaintext secret is stored here.
         </p>
       </div>
       <div className="provider-fact-grid compact">
@@ -17364,7 +17274,17 @@ function IloSetupIntentPanel({
         </div>
       )}
       <form className="form-grid ilo-setup-form" onSubmit={submit}>
-        <Field label="iLO Hostname">
+        <Field label="DHCP">
+          <select
+            value={optionalBooleanSelectValue(form.network.dhcp_enabled)}
+            onChange={(event) => updateNetwork("dhcp_enabled", optionalBooleanFromSelect(event.target.value))}
+          >
+            <option value="">Not set</option>
+            <option value="false">Off / static</option>
+            <option value="true">On / DHCP</option>
+          </select>
+        </Field>
+        <Field label="DNS Name / iLO Hostname">
           <input
             value={form.network.hostname ?? ""}
             onChange={(event) => updateNetwork("hostname", event.target.value)}
@@ -17394,6 +17314,18 @@ function IloSetupIntentPanel({
             onChange={(event) => updateNetwork("vlan", event.target.value)}
           />
         </Field>
+        <Field label="iLO Advanced License Ref">
+          <input
+            value={form.license.advanced_license_key_ref ?? ""}
+            onChange={(event) => updateLicense("advanced_license_key_ref", event.target.value)}
+          />
+        </Field>
+        <Field label="Expected License Status">
+          <input
+            value={form.license.expected_status ?? ""}
+            onChange={(event) => updateLicense("expected_status", event.target.value)}
+          />
+        </Field>
         <Field label="DNS Domain">
           <input
             value={form.dns_domain.domain_name ?? ""}
@@ -17412,10 +17344,26 @@ function IloSetupIntentPanel({
             onChange={(event) => updateTime("timezone", event.target.value)}
           />
         </Field>
+        <Field label="Use DHCP Time">
+          <select
+            value={optionalBooleanSelectValue(form.time.use_dhcp_supplied_time_settings)}
+            onChange={(event) => updateTime("use_dhcp_supplied_time_settings", optionalBooleanFromSelect(event.target.value))}
+          >
+            <option value="">Not set</option>
+            <option value="false">No</option>
+            <option value="true">Yes</option>
+          </select>
+        </Field>
         <Field label="NTP Servers">
           <input
             value={form.time.ntp_servers.join(", ")}
             onChange={(event) => updateTime("ntp_servers", splitCsvInput(event.target.value))}
+          />
+        </Field>
+        <Field label="SNTP Interface">
+          <input
+            value={form.time.interface_type ?? ""}
+            onChange={(event) => updateTime("interface_type", event.target.value)}
           />
         </Field>
         <label className="checkbox-row ilo-checkbox-row">
@@ -17426,6 +17374,34 @@ function IloSetupIntentPanel({
           />
           <span>SNMP enabled in desired state</span>
         </label>
+        <Field label="SNMP Version">
+          <select
+            value={form.snmp.version}
+            onChange={(event) => updateSnmp("version", event.target.value as IloSetupIntentWrite["snmp"]["version"])}
+          >
+            <option value="v1">SNMPv1</option>
+            <option value="v2c">SNMPv2c</option>
+            <option value="v3">SNMPv3</option>
+          </select>
+        </Field>
+        <Field label="SNMP System Location">
+          <input
+            value={form.snmp.system_location ?? ""}
+            onChange={(event) => updateSnmp("system_location", event.target.value)}
+          />
+        </Field>
+        <Field label="SNMP System Contact">
+          <input
+            value={form.snmp.system_contact ?? ""}
+            onChange={(event) => updateSnmp("system_contact", event.target.value)}
+          />
+        </Field>
+        <Field label="SNMP System Role">
+          <input
+            value={form.snmp.system_role ?? ""}
+            onChange={(event) => updateSnmp("system_role", event.target.value)}
+          />
+        </Field>
         <Field label="SNMP Destinations">
           <input
             value={form.snmp.destinations.join(", ")}
@@ -17440,6 +17416,68 @@ function IloSetupIntentPanel({
             }
           />
         </Field>
+        <Field label="SNMPv3 Security Name">
+          <input
+            value={form.snmp.snmpv3_security_name ?? ""}
+            onChange={(event) => updateSnmp("snmpv3_security_name", event.target.value)}
+          />
+        </Field>
+        <Field label="SNMPv3 Auth Protocol">
+          <select
+            value={form.snmp.snmpv3_auth_protocol}
+            onChange={(event) => updateSnmp("snmpv3_auth_protocol", event.target.value as IloSetupIntentWrite["snmp"]["snmpv3_auth_protocol"])}
+          >
+            <option value="MD5">MD5</option>
+            <option value="SHA">SHA</option>
+            <option value="SHA256">SHA256</option>
+            <option value="SHA384">SHA384</option>
+            <option value="SHA512">SHA512</option>
+          </select>
+        </Field>
+        <Field label="SNMPv3 Auth Ref">
+          <input
+            value={form.snmp.snmpv3_auth_passphrase_ref ?? ""}
+            onChange={(event) => updateSnmp("snmpv3_auth_passphrase_ref", event.target.value)}
+          />
+        </Field>
+        <Field label="SNMPv3 Privacy Protocol">
+          <select
+            value={form.snmp.snmpv3_privacy_protocol}
+            onChange={(event) => updateSnmp("snmpv3_privacy_protocol", event.target.value as IloSetupIntentWrite["snmp"]["snmpv3_privacy_protocol"])}
+          >
+            <option value="DES">DES</option>
+            <option value="AES">AES</option>
+            <option value="AES256">AES256</option>
+          </select>
+        </Field>
+        <Field label="SNMPv3 Privacy Ref">
+          <input
+            value={form.snmp.snmpv3_privacy_passphrase_ref ?? ""}
+            onChange={(event) => updateSnmp("snmpv3_privacy_passphrase_ref", event.target.value)}
+          />
+        </Field>
+        <div className="span-2 ilo-ipv6-intent-list">
+          <div className="ilo-user-intent-head">
+            <h3>Dedicated Port IPv6</h3>
+          </div>
+          {([
+            ["disable_all", "Disable all IPv6 options"],
+            ["disable_dhcpv6_dns_server", "Disable DHCPv6 DNS"],
+            ["disable_dhcpv6_domain_name", "Disable DHCPv6 domain"],
+            ["disable_dhcpv6_sntp_settings", "Disable DHCPv6 SNTP"],
+            ["disable_dhcpv6_stateful_mode", "Disable DHCPv6 stateful mode"],
+            ["disable_dhcpv6_stateless_mode", "Disable DHCPv6 stateless mode"]
+          ] as Array<[keyof IloSetupIntentWrite["ipv6"], string]>).map(([field, label]) => (
+            <label className="checkbox-row ilo-checkbox-row" key={field}>
+              <input
+                checked={form.ipv6[field]}
+                onChange={(event) => updateIpv6(field, event.target.checked)}
+                type="checkbox"
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
         <div className="span-2 ilo-user-intent-list">
           <div className="ilo-user-intent-head">
             <h3>Local User References</h3>
@@ -17461,6 +17499,12 @@ function IloSetupIntentPanel({
                 <input
                   value={user.role}
                   onChange={(event) => updateUser(index, "role", event.target.value)}
+                />
+              </Field>
+              <Field label="Password Ref">
+                <input
+                  value={user.password_ref_label ?? ""}
+                  onChange={(event) => updateUser(index, "password_ref_label", event.target.value)}
                 />
               </Field>
               <button onClick={() => removeUser(index)} type="button">
@@ -19357,6 +19401,7 @@ function bootstrapRequirementsForm(
 function iloSetupIntentForm(intent: IloSetupIntent | null): IloSetupIntentWrite {
   return {
     network: {
+      dhcp_enabled: intent?.network.dhcp_enabled ?? null,
       hostname: intent?.network.hostname ?? "",
       management_ip: intent?.network.management_ip ?? "",
       subnet_mask_or_prefix: intent?.network.subnet_mask_or_prefix ?? "",
@@ -19365,18 +19410,42 @@ function iloSetupIntentForm(intent: IloSetupIntent | null): IloSetupIntentWrite 
     },
     users: intent?.users.length
       ? intent.users.map((user) => ({
+          password_ref_label: user.password_ref_label ?? "",
           username_label: user.username_label,
           role: user.role
         }))
       : [],
+    license: {
+      advanced_license_key_ref: intent?.license.advanced_license_key_ref ?? "",
+      expected_status: intent?.license.expected_status ?? ""
+    },
     snmp: {
       enabled: intent?.snmp.enabled ?? false,
+      version: intent?.snmp.version ?? "v3",
+      system_location: intent?.snmp.system_location ?? "",
+      system_contact: intent?.snmp.system_contact ?? "",
+      system_role: intent?.snmp.system_role ?? "",
       destinations: intent?.snmp.destinations ?? [],
-      community_or_user_ref_labels: intent?.snmp.community_or_user_ref_labels ?? []
+      community_or_user_ref_labels: intent?.snmp.community_or_user_ref_labels ?? [],
+      snmpv3_security_name: intent?.snmp.snmpv3_security_name ?? "",
+      snmpv3_auth_protocol: intent?.snmp.snmpv3_auth_protocol ?? "MD5",
+      snmpv3_auth_passphrase_ref: intent?.snmp.snmpv3_auth_passphrase_ref ?? "",
+      snmpv3_privacy_protocol: intent?.snmp.snmpv3_privacy_protocol ?? "DES",
+      snmpv3_privacy_passphrase_ref: intent?.snmp.snmpv3_privacy_passphrase_ref ?? ""
+    },
+    ipv6: {
+      disable_all: intent?.ipv6.disable_all ?? true,
+      disable_dhcpv6_dns_server: intent?.ipv6.disable_dhcpv6_dns_server ?? true,
+      disable_dhcpv6_domain_name: intent?.ipv6.disable_dhcpv6_domain_name ?? true,
+      disable_dhcpv6_sntp_settings: intent?.ipv6.disable_dhcpv6_sntp_settings ?? true,
+      disable_dhcpv6_stateful_mode: intent?.ipv6.disable_dhcpv6_stateful_mode ?? true,
+      disable_dhcpv6_stateless_mode: intent?.ipv6.disable_dhcpv6_stateless_mode ?? true
     },
     time: {
+      use_dhcp_supplied_time_settings: intent?.time.use_dhcp_supplied_time_settings ?? null,
       timezone: intent?.time.timezone ?? "",
-      ntp_servers: intent?.time.ntp_servers ?? []
+      ntp_servers: intent?.time.ntp_servers ?? [],
+      interface_type: intent?.time.interface_type ?? ""
     },
     dns_domain: {
       domain_name: intent?.dns_domain.domain_name ?? "",
@@ -19389,6 +19458,7 @@ function iloSetupIntentForm(intent: IloSetupIntent | null): IloSetupIntentWrite 
 function cleanIloSetupIntent(form: IloSetupIntentWrite): IloSetupIntentWrite {
   return {
     network: {
+      dhcp_enabled: form.network.dhcp_enabled,
       hostname: blankToNull(form.network.hostname),
       management_ip: blankToNull(form.network.management_ip),
       subnet_mask_or_prefix: blankToNull(form.network.subnet_mask_or_prefix),
@@ -19397,20 +19467,44 @@ function cleanIloSetupIntent(form: IloSetupIntentWrite): IloSetupIntentWrite {
     },
     users: form.users
       .map((user) => ({
+        password_ref_label: blankToNull(user.password_ref_label),
         username_label: user.username_label.trim(),
         role: user.role.trim()
       }))
       .filter((user) => user.username_label && user.role),
+    license: {
+      advanced_license_key_ref: blankToNull(form.license.advanced_license_key_ref),
+      expected_status: blankToNull(form.license.expected_status)
+    },
     snmp: {
       enabled: form.snmp.enabled,
+      version: form.snmp.version,
+      system_location: blankToNull(form.snmp.system_location),
+      system_contact: blankToNull(form.snmp.system_contact),
+      system_role: blankToNull(form.snmp.system_role),
       destinations: form.snmp.destinations.map((item) => item.trim()).filter(Boolean),
       community_or_user_ref_labels: form.snmp.community_or_user_ref_labels
         .map((item) => item.trim())
-        .filter(Boolean)
+        .filter(Boolean),
+      snmpv3_security_name: blankToNull(form.snmp.snmpv3_security_name),
+      snmpv3_auth_protocol: form.snmp.snmpv3_auth_protocol,
+      snmpv3_auth_passphrase_ref: blankToNull(form.snmp.snmpv3_auth_passphrase_ref),
+      snmpv3_privacy_protocol: form.snmp.snmpv3_privacy_protocol,
+      snmpv3_privacy_passphrase_ref: blankToNull(form.snmp.snmpv3_privacy_passphrase_ref)
+    },
+    ipv6: {
+      disable_all: form.ipv6.disable_all,
+      disable_dhcpv6_dns_server: form.ipv6.disable_dhcpv6_dns_server,
+      disable_dhcpv6_domain_name: form.ipv6.disable_dhcpv6_domain_name,
+      disable_dhcpv6_sntp_settings: form.ipv6.disable_dhcpv6_sntp_settings,
+      disable_dhcpv6_stateful_mode: form.ipv6.disable_dhcpv6_stateful_mode,
+      disable_dhcpv6_stateless_mode: form.ipv6.disable_dhcpv6_stateless_mode
     },
     time: {
+      use_dhcp_supplied_time_settings: form.time.use_dhcp_supplied_time_settings,
       timezone: blankToNull(form.time.timezone),
-      ntp_servers: form.time.ntp_servers.map((item) => item.trim()).filter(Boolean)
+      ntp_servers: form.time.ntp_servers.map((item) => item.trim()).filter(Boolean),
+      interface_type: blankToNull(form.time.interface_type)
     },
     dns_domain: {
       domain_name: blankToNull(form.dns_domain.domain_name),
@@ -19495,6 +19589,18 @@ function splitCsvInput(value: string): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function optionalBooleanSelectValue(value: boolean | null | undefined): string {
+  if (value === true) return "true";
+  if (value === false) return "false";
+  return "";
+}
+
+function optionalBooleanFromSelect(value: string): boolean | null {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return null;
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
@@ -20060,6 +20166,7 @@ function Page({
   activeSection,
   children,
   description,
+  eyebrow = "Infra Config",
   issueArea,
   onSectionChange,
   primaryAction,
@@ -20070,6 +20177,7 @@ function Page({
   activeSection?: string;
   children: ReactNode;
   description?: string;
+  eyebrow?: string;
   issueArea?: ReportIssueAreaId;
   onSectionChange?: (sectionId: string) => void;
   primaryAction?: PrimaryAction;
@@ -20081,6 +20189,7 @@ function Page({
       <PageHeader
         actions={actions}
         description={description}
+        eyebrow={eyebrow}
         issueArea={issueArea}
         primaryAction={primaryAction}
         title={title}
@@ -20096,12 +20205,14 @@ function Page({
 function PageHeader({
   actions,
   description,
+  eyebrow,
   issueArea,
   primaryAction,
   title
 }: {
   actions?: ReactNode;
   description?: string;
+  eyebrow: string;
   issueArea?: ReportIssueAreaId;
   primaryAction?: PrimaryAction;
   title: string;
@@ -20128,7 +20239,7 @@ function PageHeader({
   return (
     <header className="page-header">
       <div className="page-title-block">
-        <p className="eyebrow">Lab Builder</p>
+        <p className="eyebrow">{eyebrow}</p>
         <h1>{title}</h1>
         {description && <p>{description}</p>}
         {issueArea && <PageIssueIndicator badge={issueBadge} />}
@@ -20844,9 +20955,10 @@ function blankLabProfileForm(): LabProfileFormState {
   labAddressFields.forEach((field) => {
     addresses[field.key] = "";
   });
-  const form = {
+  const form: LabProfileFormState = {
     name: "",
     description: "",
+    deploymentMode: "shared",
     profileTopology: "high_address_lab",
     addresses,
     globalSettings: blankLabGlobalSettings(24),
@@ -20875,6 +20987,10 @@ function labProfileFormFrom(profile: {
   return {
     name: profile.name,
     description: profile.description ?? "",
+    deploymentMode:
+      profile.features?.netapp_enabled === false || profile.features?.storage_protocol === "none"
+        ? "local"
+        : "shared",
     profileTopology: profile.profile_topology ?? topologyForPrefix(prefix),
     addresses,
     globalSettings: labGlobalSettingsFormFrom(profile.global_settings, profile.address_plan, prefix, profile.features),
@@ -20898,11 +21014,17 @@ function controlProfileFormForSave(
 function labProfilePayload(form: LabProfileFormState): LabProfileWrite {
   const addressPlan = blankLabAddressPlan();
   const subnetPrefix = parseSubnetPrefix(form.globalSettings.subnetPrefix);
-  const netappEnabled = labNetAppSupported(subnetPrefix);
+  const netappEnabled = form.deploymentMode === "shared" && labNetAppSupported(subnetPrefix);
+  const normalizedSubnet = normalizeIpv4Subnet(form.addresses.subnet, subnetPrefix);
+  const netappDisabledReason =
+    form.deploymentMode === "local"
+      ? netappDisabledForLocalStorageReason
+      : netappDisabledForSubnetReason;
   labAddressFields.forEach((field) => {
     const isNetAppField = field.key.startsWith("netapp_");
+    const value = field.key === "subnet" ? normalizedSubnet ?? form.addresses.subnet : form.addresses[field.key];
     addressPlan[field.key] =
-      isNetAppField && !netappEnabled ? null : cleanNullable(form.addresses[field.key]);
+      isNetAppField && !netappEnabled ? null : cleanNullable(value);
   });
   addressPlan.netapp_nfs_lifs = netappEnabled ? splitCsv(form.netappNfsLifs) : [];
   addressPlan.netapp_iscsi_lifs = netappEnabled ? splitCsv(form.netappIscsiLifs) : [];
@@ -20949,7 +21071,7 @@ function labProfilePayload(form: LabProfileFormState): LabProfileWrite {
       enable_snmp: form.globalSettings.enableSnmp,
       enable_ntp: form.globalSettings.enableNtp,
       enable_dns: form.globalSettings.enableDns,
-      netapp_disabled_reason: netappEnabled ? null : netappDisabledForSubnetReason,
+      netapp_disabled_reason: netappEnabled ? null : netappDisabledReason,
       vcenter_disabled_reason:
         form.globalSettings.vcenterEnabled && netappEnabled
           ? null
@@ -20963,7 +21085,7 @@ function labProfilePayload(form: LabProfileFormState): LabProfileWrite {
       ntp_servers: splitCsv(form.globalSettings.ntpServers),
       timezone: cleanNullable(form.globalSettings.timezone),
       netapp_enabled: netappEnabled,
-      netapp_disabled_reason: netappEnabled ? null : netappDisabledForSubnetReason,
+      netapp_disabled_reason: netappEnabled ? null : netappDisabledReason,
       vcenter_enabled: form.globalSettings.vcenterEnabled && netappEnabled,
       vlan_id: cleanNullable(form.globalSettings.vlanId),
       mtu: form.globalSettings.mtu.trim() ? Number(form.globalSettings.mtu) : null
@@ -21053,13 +21175,14 @@ function labGlobalSettingsFormFrom(
 function applyLabSubnetChoice(
   form: LabProfileFormState,
   subnetValue: string,
-  prefixValue: string
+  prefixValue: string,
+  options: { preserveSubnetInput?: boolean } = {}
 ): LabProfileFormState {
   const prefix = parseSubnetPrefix(prefixValue);
-  const normalizedSubnet = normalizeIpv4Subnet(subnetValue || defaultLabSubnet, prefix);
+  const normalizedSubnet = normalizeIpv4Subnet(subnetValue, prefix);
   const addresses = {
     ...form.addresses,
-    subnet: normalizedSubnet ?? subnetValue
+    subnet: options.preserveSubnetInput ? subnetValue : normalizedSubnet ?? subnetValue
   };
   const nextForm = {
     ...form,
@@ -21100,6 +21223,42 @@ function applyLabSubnetChoice(
   return nextForm;
 }
 
+function withLabDeploymentMode(
+  form: LabProfileFormState,
+  mode: LabDeploymentMode
+): LabProfileFormState {
+  const nextForm = {
+    ...form,
+    deploymentMode: mode,
+    globalSettings: {
+      ...form.globalSettings,
+      storageProtocol:
+        mode === "local"
+          ? "none"
+          : form.globalSettings.storageProtocol === "none"
+            ? "nfs"
+            : form.globalSettings.storageProtocol,
+      vcenterEnabled: mode === "shared"
+    }
+  };
+  return mode === "local" ? clearNetAppAddresses(nextForm) : nextForm;
+}
+
+function applyLabDeploymentMode(
+  form: LabProfileFormState,
+  mode: LabDeploymentMode
+): LabProfileFormState {
+  if (mode === "local") {
+    return withLabDeploymentMode(form, mode);
+  }
+  const currentPrefix = parseSubnetPrefix(form.globalSettings.subnetPrefix);
+  const sharedPrefix = labNetAppSupported(currentPrefix) ? String(currentPrefix) : "24";
+  return withLabDeploymentMode(
+    applyLabSubnetChoice(form, form.addresses.subnet, sharedPrefix),
+    mode
+  );
+}
+
 function clearNetAppAddresses(form: LabProfileFormState): LabProfileFormState {
   const addresses = { ...form.addresses };
   labNetAppAddressFields.forEach((field) => {
@@ -21111,6 +21270,10 @@ function clearNetAppAddresses(form: LabProfileFormState): LabProfileFormState {
     netappNfsLifs: "",
     netappIscsiLifs: ""
   };
+}
+
+function subnetNetworkInputValue(value: string): string {
+  return value.split("/", 1)[0];
 }
 
 function generateLabAddressPlan(subnet: string, prefix: number) {

@@ -21,8 +21,14 @@ from urllib.request import Request, urlopen
 from app.core.config import LAB_ESXI_MANAGEMENT_IP, settings
 from app.providers.action_policy import ActionCategory, LOCAL_LAB_READWRITE_MODE, LOCAL_READONLY_MODE, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
+from app.services.env_utils import env_flag as _env_flag
+from app.services.json_file_store import read_json_object, write_json_object, write_json_value, write_text_value
+from app.services.json_utils import parse_json_value
 from app.services.lab_profiles import active_lab_profile_context
+from app.services.list_utils import unique_csv_strings, unique_preserving_order, unique_strings
 from app.services.netapp_state import get_netapp_runtime_state
+from app.services.path_utils import display_path, is_directory, is_file, path_exists, repo_relative_path, rglob_paths
+from app.services.temp_file_utils import remove_file_best_effort
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 CODEX_RUN_DIR = REPO_ROOT / "artifacts" / "codex-runs"
@@ -57,12 +63,24 @@ VCENTER_ATTACH_ESXI_POLICY_ACTION_ID = "vcenter.attach-esxi"
 VCENTER_INSTALL_DEPLOY_TIMEOUT_SECONDS = 7200
 VCENTER_INSTALL_VALIDATE_WAIT_SECONDS = 600
 VCENTER_ATTACH_ESXI_TIMEOUT_SECONDS = 900
-VCSA_MOUNT_ROOTS = (
-    Path("/tmp/vcsa-iso"),
-    Path("/mnt/vcsa-iso"),
-    Path("/media/vcsa-iso"),
-    Path("/run/media/vcsa-iso"),
-)
+
+
+def _default_vcsa_mount_roots() -> tuple[Path, ...]:
+    if _is_windows_platform():
+        return (Path(tempfile.gettempdir()) / "vcsa-iso",)
+    return (
+        Path("/tmp/vcsa-iso"),
+        Path("/mnt/vcsa-iso"),
+        Path("/media/vcsa-iso"),
+        Path("/run/media/vcsa-iso"),
+    )
+
+
+def _is_windows_platform() -> bool:
+    return os.name == "nt"
+
+
+VCSA_MOUNT_ROOTS = _default_vcsa_mount_roots()
 
 
 def get_vcenter_netapp_readiness(
@@ -132,9 +150,9 @@ def get_vcenter_netapp_readiness(
         sanitized = redact_sensitive(payload)
         if write_report:
             CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-            READINESS_JSON.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
-            READINESS_REPORT.write_text(_readiness_markdown(sanitized), encoding="utf-8")
-            PLAN_REPORT.write_text(_plan_markdown(sanitized), encoding="utf-8")
+            _write_json(READINESS_JSON, sanitized)
+            write_text_value(READINESS_REPORT, _readiness_markdown(sanitized))
+            write_text_value(PLAN_REPORT, _plan_markdown(sanitized))
         return sanitized
     netapp_state = get_netapp_runtime_state()
     netapp_stage = _netapp_stage(netapp_state)
@@ -297,9 +315,9 @@ def get_vcenter_netapp_readiness(
     sanitized = redact_sensitive(payload)
     if write_report:
         CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-        READINESS_JSON.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
-        READINESS_REPORT.write_text(_readiness_markdown(sanitized), encoding="utf-8")
-        PLAN_REPORT.write_text(_plan_markdown(sanitized), encoding="utf-8")
+        _write_json(READINESS_JSON, sanitized)
+        write_text_value(READINESS_REPORT, _readiness_markdown(sanitized))
+        write_text_value(PLAN_REPORT, _plan_markdown(sanitized))
     return sanitized
 
 
@@ -460,7 +478,7 @@ def get_vcenter_install_readiness(
         "value_checks": value_checks,
         "credential_state": credential_state,
         "checks": checks,
-        "blockers": list(dict.fromkeys(blockers)),
+        "blockers": unique_preserving_order(blockers),
         "warnings": warnings,
         "not_attempted": [
             "VCSA deploy install",
@@ -489,8 +507,8 @@ def get_vcenter_install_readiness(
     sanitized = redact_sensitive(payload)
     if write_report:
         CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-        VCENTER_INSTALL_READINESS_JSON.write_text(json.dumps(sanitized, indent=2) + "\n", encoding="utf-8")
-        VCENTER_INSTALL_READINESS_REPORT.write_text(_vcenter_install_markdown(sanitized), encoding="utf-8")
+        _write_json(VCENTER_INSTALL_READINESS_JSON, sanitized)
+        write_text_value(VCENTER_INSTALL_READINESS_REPORT, _vcenter_install_markdown(sanitized))
     return sanitized
 
 
@@ -507,8 +525,8 @@ def get_vcenter_install_plan(*, write_report: bool = True) -> dict[str, Any]:
     sanitized = redact_sensitive(plan)
     if write_report:
         CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-        VCENTER_INSTALL_PLAN_JSON.write_text(json.dumps(sanitized, indent=2) + "\n", encoding="utf-8")
-        VCENTER_INSTALL_PLAN_REPORT.write_text(_vcenter_install_markdown(sanitized), encoding="utf-8")
+        _write_json(VCENTER_INSTALL_PLAN_JSON, sanitized)
+        write_text_value(VCENTER_INSTALL_PLAN_REPORT, _vcenter_install_markdown(sanitized))
     return sanitized
 
 
@@ -525,8 +543,8 @@ def get_vcenter_install_preview(*, write_report: bool = True) -> dict[str, Any]:
     sanitized = redact_sensitive(preview)
     if write_report:
         CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-        VCENTER_INSTALL_PREVIEW_JSON.write_text(json.dumps(sanitized, indent=2) + "\n", encoding="utf-8")
-        VCENTER_INSTALL_PREVIEW_REPORT.write_text(_vcenter_install_markdown(sanitized), encoding="utf-8")
+        _write_json(VCENTER_INSTALL_PREVIEW_JSON, sanitized)
+        write_text_value(VCENTER_INSTALL_PREVIEW_REPORT, _vcenter_install_markdown(sanitized))
     return sanitized
 
 
@@ -548,8 +566,8 @@ def get_vcenter_install_apply(*, write_report: bool = True) -> dict[str, Any]:
     spec_blockers = _vcenter_deployment_spec_blockers(spec)
     blockers = _unique(
         [
-            *list(readiness.get("blockers") or []),
-            *([] if preview_ready else list(preview.get("blockers") or [])),
+            *_coerce_string_list(readiness.get("blockers")),
+            *([] if preview_ready else _coerce_string_list(preview.get("blockers"))),
             *gate_state["blockers"],
             *spec_blockers,
         ]
@@ -629,8 +647,8 @@ def get_vcenter_install_apply(*, write_report: bool = True) -> dict[str, Any]:
     sanitized = _sanitize(payload)
     if write_report:
         _write_json(VCENTER_INSTALL_APPLY_JSON, sanitized)
-        VCENTER_INSTALL_APPLY_REPORT.write_text(_vcenter_apply_markdown(sanitized), encoding="utf-8")
-        VCENTER_INSTALL_APPLY_FINAL_REPORT.write_text(_vcenter_apply_final_markdown(sanitized), encoding="utf-8")
+        write_text_value(VCENTER_INSTALL_APPLY_REPORT, _vcenter_apply_markdown(sanitized))
+        write_text_value(VCENTER_INSTALL_APPLY_FINAL_REPORT, _vcenter_apply_final_markdown(sanitized))
     return sanitized
 
 
@@ -704,7 +722,7 @@ def validate_vcenter_post_install(
     sanitized = _sanitize(payload)
     if write_report:
         _write_json(VCENTER_POST_INSTALL_VALIDATION_JSON, sanitized)
-        VCENTER_POST_INSTALL_VALIDATION_REPORT.write_text(_vcenter_post_install_markdown(sanitized), encoding="utf-8")
+        write_text_value(VCENTER_POST_INSTALL_VALIDATION_REPORT, _vcenter_post_install_markdown(sanitized))
     return sanitized
 
 
@@ -795,7 +813,7 @@ def get_vcenter_attach_esxi_preview(*, write_report: bool = True) -> dict[str, A
     sanitized = _sanitize(payload)
     if write_report:
         _write_json(VCENTER_ATTACH_ESXI_PREVIEW_JSON, sanitized)
-        VCENTER_ATTACH_ESXI_PREVIEW_REPORT.write_text(_vcenter_attach_preview_markdown(sanitized), encoding="utf-8")
+        write_text_value(VCENTER_ATTACH_ESXI_PREVIEW_REPORT, _vcenter_attach_preview_markdown(sanitized))
     return sanitized
 
 
@@ -805,7 +823,7 @@ def get_vcenter_attach_esxi_apply(*, write_report: bool = True) -> dict[str, Any
     target = _vcenter_attach_target(include_thumbprint=True)
     preview_ready = preview.get("status") == "ready" and not preview.get("blockers")
     gate_state = _vcenter_attach_apply_gate_state(preview_ready=preview_ready)
-    blockers = _unique([*list(preview.get("blockers") or []), *gate_state["blockers"]])
+    blockers = _unique([*_coerce_string_list(preview.get("blockers")), *gate_state["blockers"]])
     operations: list[dict[str, Any]] = []
     validation: dict[str, Any] | None = None
     status = "blocked" if blockers else "ready_to_apply"
@@ -837,7 +855,7 @@ def get_vcenter_attach_esxi_apply(*, write_report: bool = True) -> dict[str, Any
         else:
             status = "failed"
             message = "vCenter ESXi attach ran, but post-attach validation is not ready."
-            blockers.extend(str(item) for item in validation.get("blockers") or [])
+            blockers.extend(_coerce_string_list(validation.get("blockers")))
 
     payload = {
         "provider_id": "vcenter",
@@ -874,8 +892,8 @@ def get_vcenter_attach_esxi_apply(*, write_report: bool = True) -> dict[str, Any
     sanitized = _sanitize(payload)
     if write_report:
         _write_json(VCENTER_ATTACH_ESXI_APPLY_JSON, sanitized)
-        VCENTER_ATTACH_ESXI_APPLY_REPORT.write_text(_vcenter_attach_apply_markdown(sanitized), encoding="utf-8")
-        VCENTER_ATTACH_ESXI_FINAL_REPORT.write_text(_vcenter_attach_final_markdown(sanitized), encoding="utf-8")
+        write_text_value(VCENTER_ATTACH_ESXI_APPLY_REPORT, _vcenter_attach_apply_markdown(sanitized))
+        write_text_value(VCENTER_ATTACH_ESXI_FINAL_REPORT, _vcenter_attach_final_markdown(sanitized))
     return sanitized
 
 
@@ -948,7 +966,7 @@ def validate_vcenter_post_attach(*, write_report: bool = True) -> dict[str, Any]
     sanitized = _sanitize(payload)
     if write_report:
         _write_json(VCENTER_POST_ATTACH_VALIDATION_JSON, sanitized)
-        VCENTER_POST_ATTACH_VALIDATION_REPORT.write_text(_vcenter_post_attach_markdown(sanitized), encoding="utf-8")
+        write_text_value(VCENTER_POST_ATTACH_VALIDATION_REPORT, _vcenter_post_attach_markdown(sanitized))
     return sanitized
 
 
@@ -1111,11 +1129,11 @@ def _vcenter_install_apply_gate_state(
         "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
         "readiness_ready": readiness_ready,
         "preview_ready": preview_ready,
-        "install_apply": os.getenv("VCENTER_INSTALL_APPLY") == "true",
+        "install_apply": _env_flag("VCENTER_INSTALL_APPLY"),
         "install_confirm": os.getenv("VCENTER_INSTALL_CONFIRM") == VCENTER_INSTALL_CONFIRM_PHRASE,
-        "install_allow_deploy": os.getenv("VCENTER_INSTALL_ALLOW_DEPLOY") == "true",
+        "install_allow_deploy": _env_flag("VCENTER_INSTALL_ALLOW_DEPLOY"),
     }
-    blockers = policy.action_blockers(VCENTER_INSTALL_POLICY_ACTION_ID, ActionCategory.VM_DEPLOY)
+    blockers = unique_strings(policy.action_blockers(VCENTER_INSTALL_POLICY_ACTION_ID, ActionCategory.VM_DEPLOY))
     if not readiness_ready:
         blockers.append("vCenter install readiness must be ready before apply.")
     if preview_ready is False:
@@ -1247,7 +1265,7 @@ def _prefix_from_cidr(value: Any) -> str | None:
 
 def _run_vcsa_deploy(spec: dict[str, Any], deploy_path_value: Any) -> dict[str, Any]:
     deploy_path = Path(str(deploy_path_value)).expanduser() if deploy_path_value else _find_vcsa_deploy()
-    if not deploy_path or not deploy_path.exists():
+    if not deploy_path or not path_exists(deploy_path):
         return {
             "vcsa_deploy_attempted": False,
             "return_code": 127,
@@ -1263,7 +1281,7 @@ def _run_vcsa_deploy(spec: dict[str, Any], deploy_path_value: Any) -> dict[str, 
             temp_path = handle.name
             json.dump(spec, handle, indent=2)
             handle.write("\n")
-        os.chmod(temp_path, 0o600)
+        _chmod_private(temp_path)
         completed = subprocess.run(
             _vcsa_deploy_install_command(str(deploy_path), temp_path),
             capture_output=True,
@@ -1299,10 +1317,7 @@ def _run_vcsa_deploy(spec: dict[str, Any], deploy_path_value: Any) -> dict[str, 
         }
     finally:
         if temp_path:
-            try:
-                Path(temp_path).unlink()
-            except OSError:
-                pass
+            remove_file_best_effort(temp_path, scrub=True)
     return _sanitize(result)
 
 
@@ -1416,11 +1431,11 @@ def _vcenter_attach_apply_gate_state(*, preview_ready: bool) -> dict[str, Any]:
         "provider_mode": settings.provider_mode,
         "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
         "preview_ready": preview_ready,
-        "attach_apply": os.getenv("VCENTER_ATTACH_ESXI_APPLY") == "true",
+        "attach_apply": _env_flag("VCENTER_ATTACH_ESXI_APPLY"),
         "attach_confirm": os.getenv("VCENTER_ATTACH_ESXI_CONFIRM") == VCENTER_ATTACH_ESXI_CONFIRM_PHRASE,
-        "attach_allow": os.getenv("VCENTER_ATTACH_ESXI_ALLOW") == "true",
+        "attach_allow": _env_flag("VCENTER_ATTACH_ESXI_ALLOW"),
     }
-    blockers = policy.action_blockers(VCENTER_ATTACH_ESXI_POLICY_ACTION_ID, ActionCategory.VM_DEPLOY)
+    blockers = unique_strings(policy.action_blockers(VCENTER_ATTACH_ESXI_POLICY_ACTION_ID, ActionCategory.VM_DEPLOY))
     if not preview_ready:
         blockers.append("vCenter ESXi attach preview must be ready before apply.")
     if not flag_state["attach_apply"]:
@@ -1852,7 +1867,7 @@ def _datastore_ready_check(datastore_name: str | None) -> dict[str, Any]:
         "freshness": "historical",
         "checked_at": payload.get("checked_at"),
         "recheck_command": "make provider-lab-esxi-netapp-datastore-validate",
-        "evidence_artifacts": [_rel(path)] if path.exists() else [],
+        "evidence_artifacts": [_rel(path)] if path_exists(path) else [],
     }
 
 
@@ -1896,23 +1911,11 @@ def _first_non_empty_list(*values: Any) -> list[str]:
 
 
 def _coerce_string_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, str):
-        return [item.strip() for item in value.split(",") if item.strip()]
-    if isinstance(value, (tuple, list)):
-        return [str(item).strip() for item in value if str(item).strip()]
-    return []
+    return unique_csv_strings(value, include_scalars=False)
 
 
 def _read_json_artifact(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
+    return read_json_object(path)
 
 
 def _post_attach_vcenter_netapp_state(*, datastore_name: str | None) -> dict[str, Any]:
@@ -2075,7 +2078,7 @@ def _tool_path(name: str) -> Path | None:
         return Path(found)
     for directory in (Path(sys.executable).parent, REPO_ROOT / ".local" / "bin"):
         candidate = directory / name
-        if candidate.exists() and candidate.is_file() and os.access(candidate, os.X_OK):
+        if is_file(candidate) and os.access(candidate, os.X_OK):
             return candidate
     return None
 
@@ -2111,16 +2114,38 @@ def _vcsa_deploy_status() -> dict[str, Any]:
 
 def _find_vcsa_deploy() -> Path | None:
     explicit = _configured_vcsa_deploy_path()
-    if explicit and explicit.exists() and explicit.is_file():
+    if explicit and is_file(explicit):
         return explicit
     path_tool = _tool_path("vcsa-deploy")
     if path_tool is not None:
         return path_tool
     for root in VCSA_MOUNT_ROOTS:
-        candidate = root / "vcsa-cli-installer" / "lin64" / "vcsa-deploy"
-        if candidate.exists() and candidate.is_file():
-            return candidate
+        for candidate in _vcsa_deploy_candidates(root):
+            if is_file(candidate):
+                return candidate
     return None
+
+
+def _vcsa_deploy_candidates(root: Path) -> tuple[Path, ...]:
+    installer_root = root / "vcsa-cli-installer"
+    if _is_windows_platform():
+        preferred = (
+            installer_root / "win32" / "vcsa-deploy.exe",
+            installer_root / "win32" / "vcsa-deploy",
+        )
+    else:
+        preferred = (
+            installer_root / "lin64" / "vcsa-deploy",
+            installer_root / "win32" / "vcsa-deploy.exe",
+        )
+    return tuple(unique_preserving_order([*preferred, installer_root / "lin64" / "vcsa-deploy"]))
+
+
+def _chmod_private(path: str) -> None:
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        return
 
 
 def _netapp_stage(state: dict[str, Any]) -> str:
@@ -2144,13 +2169,7 @@ def _netapp_stage(state: dict[str, Any]) -> str:
 
 
 def _artifact_value(path: Path, key: str) -> Any:
-    if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return payload.get(key) if isinstance(payload, dict) else None
+    return read_json_object(path).get(key)
 
 
 def _planned_nfs() -> dict[str, Any]:
@@ -2500,14 +2519,13 @@ def _decode_bytes(value: Any) -> str:
 
 
 def _json_contains(stdout: Any, needle: str) -> bool:
-    text = str(stdout or "")
+    text = _decode_bytes(stdout)
     if not needle:
         return False
     if needle in text:
         return True
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError:
+    payload = parse_json_value(stdout)
+    if payload is None:
         return False
     return needle in json.dumps(payload)
 
@@ -2537,9 +2555,9 @@ def _vcenter_apply_warnings(
         "vcsa-deploy is the only deployment executor for this workflow; secrets are passed through a temporary local spec and not written to artifacts.",
     ]
     if validation:
-        warnings.extend(str(item) for item in validation.get("warnings") or [])
+        warnings.extend(_coerce_string_list(validation.get("warnings")))
     if refresh_result:
-        warnings.extend(str(item) for item in refresh_result.get("errors") or [])
+        warnings.extend(_coerce_string_list(refresh_result.get("errors")))
     return _unique(warnings)
 
 
@@ -2578,7 +2596,7 @@ def _vcenter_attach_apply_warnings(
     if any(operation.get("operation") == "esxi.attach" and "-noverify" in str(operation.get("command_preview")) for operation in operations):
         warnings.append("ESXi certificate thumbprint was unavailable; govc host attach used -noverify for this local lab.")
     if validation:
-        warnings.extend(str(item) for item in validation.get("warnings") or [])
+        warnings.extend(_coerce_string_list(validation.get("warnings")))
     return _unique(warnings)
 
 
@@ -2605,7 +2623,10 @@ def _vcenter_attach_not_attempted(*, status: str, operations: list[dict[str, Any
 
 def _write_json(path: Path, payload: Any) -> None:
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    if isinstance(payload, dict):
+        write_json_object(path, payload)
+        return
+    write_json_value(path, payload)
 
 
 def _sanitize(payload: Any) -> Any:
@@ -2628,17 +2649,7 @@ def _redaction_values() -> list[str]:
 
 
 def _unique(values: list[Any]) -> list[Any]:
-    seen: set[str] = set()
-    result: list[Any] = []
-    for value in values:
-        if value in {None, ""}:
-            continue
-        key = str(value)
-        if key in seen:
-            continue
-        seen.add(key)
-        result.append(value)
-    return result
+    return unique_preserving_order(values, skip_falsey=True, key=str)
 
 
 def _missing_fields(vcenter_host: bool, vcenter_credentials: bool, netapp_credentials: bool) -> list[str]:
@@ -2750,17 +2761,17 @@ def _plan_markdown(payload: dict[str, Any]) -> str:
 
 def _find_vcsa_iso() -> Path | None:
     explicit = _configured_vcsa_iso_path()
-    if explicit and explicit.exists() and explicit.is_file():
+    if explicit and is_file(explicit):
         return explicit
     roots = [Path(item).expanduser() for item in settings.media_inventory_dirs]
     roots.append(REPO_ROOT / "artifacts" / "Media")
     candidates: list[Path] = []
     for root in roots:
-        if not root.exists() or not root.is_dir():
+        if not is_directory(root):
             continue
-        for path in root.rglob("*.iso"):
+        for path in rglob_paths(root, "*.iso"):
             lowered = path.name.lower()
-            if any(marker in lowered for marker in ("vcsa", "vcenter", "vmware-vc")):
+            if is_file(path) and any(marker in lowered for marker in ("vcsa", "vcenter", "vmware-vc")):
                 candidates.append(path)
     if not candidates:
         return None
@@ -2770,10 +2781,7 @@ def _find_vcsa_iso() -> Path | None:
 def _safe_media_path(path: Path | None) -> str | None:
     if path is None:
         return None
-    try:
-        return str(path.resolve().relative_to(REPO_ROOT))
-    except ValueError:
-        return str(path)
+    return display_path(path.resolve(), REPO_ROOT)
 
 
 def _safe_external_path(path: Path | None) -> str | None:
@@ -3150,7 +3158,7 @@ def _redacted_url(value: str | None) -> str | None:
 
 
 def _rel(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
+    return repo_relative_path(path, REPO_ROOT)
 
 
 def _now() -> str:

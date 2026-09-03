@@ -2,19 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
-
-from dotenv import dotenv_values
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REAL_LAB_ENV = REPO_ROOT / ".env.local.real-lab"
 
-if REAL_LAB_ENV.exists():
-    for key, value in dotenv_values(REAL_LAB_ENV).items():
-        if value is None or key in os.environ:
-            continue
-        os.environ[key] = value
+from app.services.env_utils import load_real_lab_env  # noqa: E402
+
+load_real_lab_env(REPO_ROOT)
 
 from app.services.vcenter_netapp_readiness import (  # noqa: E402
     get_vcenter_attach_esxi_apply,

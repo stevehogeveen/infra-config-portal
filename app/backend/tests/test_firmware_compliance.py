@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -66,6 +67,254 @@ def test_compliant_firmware_passes(monkeypatch, firmware_settings) -> None:
     assert result["status"] == "passed"
     assert result["components"][0]["status"] == "passed"
     assert result["blockers"] == []
+    assert result["baseline"]["path"] == "config/firmware-baselines/real-lab.yml"
+    assert result["reports"]["compliance"] == "artifacts/codex-runs/firmware-compliance-report.md"
+    assert "\\" not in result["reports"]["summary"]
+
+
+def test_live_firmware_refresh_never_falls_back_to_legacy_console_scan(
+    monkeypatch,
+    firmware_settings,
+) -> None:
+    from app.providers.cisco_console import CiscoConsoleAdapter
+    from app.providers.ilo_redfish import IloRedfishAdapter
+
+    firmware_settings.cisco_mgmt_configured = False
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        IloRedfishAdapter,
+        "probe",
+        lambda _self: calls.append("ilo") or {"provider_id": "ilo-redfish", "status": "ok"},
+    )
+    monkeypatch.setattr(
+        CiscoConsoleAdapter,
+        "firmware_inventory",
+        lambda _self: pytest.fail("firmware refresh must not invoke legacy serial scanning"),
+    )
+
+    fc._refresh_live_inventory()
+
+    assert calls == ["ilo"]
+
+
+def test_firmware_report_paths_use_posix_separators(tmp_path) -> None:
+    assert fc._rel(tmp_path / "artifacts" / "codex-runs" / "report.md") == "artifacts/codex-runs/report.md"
+
+
+def test_write_firmware_reports_writes_artifacts_atomically(monkeypatch, firmware_settings) -> None:
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("hpe_ilo_firmware", minimum="3.19")))
+    record_probe_result("ilo-redfish", {"provider_id": "ilo-redfish", "status": "ok", "managers": [{"FirmwareVersion": "3.19"}]})
+
+    result = fc.write_firmware_reports()
+
+    assert result["status"] == "passed"
+    saved = json.loads(fc.COMPLIANCE_SUMMARY.read_text(encoding="utf-8"))
+    assert saved["status"] == "passed"
+    assert fc.INVENTORY_REPORT.read_text(encoding="utf-8").strip()
+    assert fc.COMPLIANCE_REPORT.read_text(encoding="utf-8").strip()
+    assert not list(fc.CODEX_RUN_DIR.glob("*.tmp"))
+
+
+def test_write_firmware_reports_ignores_unavailable_stale_waiver_report(monkeypatch, firmware_settings) -> None:
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("hpe_ilo_firmware", minimum="3.19")))
+    record_probe_result("ilo-redfish", {"provider_id": "ilo-redfish", "status": "ok", "managers": [{"FirmwareVersion": "3.19"}]})
+    original_exists = type(fc.WAIVER_REPORT).exists
+
+    def unavailable_exists(path) -> bool:  # noqa: ANN001
+        if path == fc.WAIVER_REPORT:
+            raise OSError("waiver report unavailable")
+        return original_exists(path)
+
+    monkeypatch.setattr(type(fc.WAIVER_REPORT), "exists", unavailable_exists)
+
+    result = fc.write_firmware_reports()
+
+    assert result["status"] == "passed"
+    assert fc.COMPLIANCE_REPORT.read_text(encoding="utf-8").strip()
+
+
+def test_load_firmware_baseline_self_heals_missing_empty_and_invalid_files() -> None:
+    assert fc.load_firmware_baseline() == {"baseline_id": "missing", "components": []}
+
+    fc.BASELINE_PATH.parent.mkdir(parents=True)
+    fc.BASELINE_PATH.write_text("\n# no data\n", encoding="utf-8")
+    assert fc.load_firmware_baseline() == {"baseline_id": "missing", "components": []}
+
+    fc.BASELINE_PATH.write_text("this is not useful baseline yaml\n", encoding="utf-8")
+    assert fc.load_firmware_baseline() == {"baseline_id": "missing", "components": []}
+
+
+def test_load_firmware_baseline_filters_bad_component_shapes() -> None:
+    fc.BASELINE_PATH.parent.mkdir(parents=True)
+    fc.BASELINE_PATH.write_text(
+        "\n".join(
+            [
+                "baseline_id: real-lab",
+                "components:",
+                "  - hpe_ilo_firmware",
+                "  - id: hpe_bios_version",
+                "    minimum: 2.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    baseline = fc.load_firmware_baseline()
+
+    assert baseline["baseline_id"] == "real-lab"
+    assert baseline["components"] == [{"id": "hpe_bios_version", "minimum": "2.0"}]
+
+
+def test_read_json_artifact_self_heals_corrupt_cache(tmp_path) -> None:
+    artifact = tmp_path / "artifact.json"
+    artifact.write_text("{not valid json", encoding="utf-8")
+
+    assert fc._read_json_artifact(artifact) == {}
+
+
+def test_firmware_read_text_self_heals_locked_report(monkeypatch, tmp_path) -> None:
+    report = tmp_path / "firmware-report.md"
+    report.write_text("Status: ready\n", encoding="utf-8")
+    original_read_text = type(report).read_text
+
+    def locked_read_text(path, *args, **kwargs) -> str:
+        if path == report:
+            raise OSError("locked")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(report), "read_text", locked_read_text)
+
+    assert fc._read_text(report) == ""
+
+
+def test_firmware_read_text_self_heals_bad_encoding(tmp_path) -> None:
+    report = tmp_path / "firmware-report.md"
+    report.write_bytes(b"\xff\xfe\xfa")
+
+    assert fc._read_text(report) == ""
+
+
+def test_firmware_path_mtime_self_heals_disappearing_report(monkeypatch, tmp_path) -> None:
+    report = tmp_path / "firmware-report.md"
+    report.write_text("Status: ready\n", encoding="utf-8")
+    original_stat = type(report).stat
+
+    def disappearing_stat(path, *args, **kwargs) -> SimpleNamespace:
+        if path == report:
+            raise FileNotFoundError("gone")
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(report), "stat", disappearing_stat)
+
+    assert fc._path_mtime(report) is None
+
+
+def test_firmware_path_mtime_self_heals_exists_probe_errors(monkeypatch, tmp_path) -> None:
+    report = tmp_path / "firmware-report.md"
+    original_exists = type(report).exists
+
+    def locked_exists(path) -> bool:  # noqa: ANN001
+        if path == report:
+            raise OSError("path unavailable")
+        return original_exists(path)
+
+    monkeypatch.setattr(type(report), "exists", locked_exists)
+
+    assert fc._path_mtime(report) is None
+
+
+def test_firmware_string_list_self_heals_scalar_and_bad_shapes() -> None:
+    assert fc._string_list(" required intermediate ") == ["required intermediate"]
+    assert fc._string_list([" warning ", "warning", "", None, 42]) == ["warning", "42"]
+    assert fc._string_list({"warning": "ignored"}) == []
+
+
+def test_firmware_ontap_target_source_self_heals_exists_probe_errors(monkeypatch) -> None:
+    original_exists = type(fc.NETAPP_ONTAP_UPGRADE_VALIDATION_JSON).exists
+
+    def locked_exists(path) -> bool:  # noqa: ANN001
+        if path == fc.NETAPP_ONTAP_UPGRADE_VALIDATION_JSON:
+            raise OSError("validation artifact unavailable")
+        return original_exists(path)
+
+    monkeypatch.setattr(type(fc.NETAPP_ONTAP_UPGRADE_VALIDATION_JSON), "exists", locked_exists)
+    monkeypatch.setattr(fc, "_netapp_upgrade_versions", lambda: {"target_version": "9.17.1"})
+
+    result = fc._path_target("netapp_ontap_version", None, [])
+
+    assert result["target_version"] == "9.17.1"
+    assert result["baseline_source"] == "netapp-ontap-upgrade-plan-redacted.json"
+
+
+def test_firmware_path_evidence_artifacts_self_heals_exists_probe_errors(monkeypatch, tmp_path) -> None:
+    locked = tmp_path / "artifacts" / "codex-runs" / "netapp-ontap-upgrade-validation-report.md"
+    available = tmp_path / "artifacts" / "codex-runs" / "netapp-ontap-upgrade-plan-report.md"
+    available.parent.mkdir(parents=True)
+    available.write_text("planned\n", encoding="utf-8")
+    original_exists = type(available).exists
+
+    def locked_exists(path) -> bool:  # noqa: ANN001
+        if path == locked:
+            raise OSError("artifact unavailable")
+        return original_exists(path)
+
+    monkeypatch.setattr(type(available), "exists", locked_exists)
+
+    result = fc._path_evidence_artifacts("netapp_ontap_version")
+
+    assert "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md" not in result
+    assert "artifacts/codex-runs/netapp-ontap-upgrade-plan-report.md" in result
+
+
+def test_existing_summary_artifacts_skips_paths_that_error(monkeypatch) -> None:
+    class ArtifactPath:
+        def __init__(self, *, exists: bool = True, exists_error: Exception | None = None) -> None:
+            self._exists = exists
+            self._exists_error = exists_error
+
+        def exists(self) -> bool:
+            if self._exists_error:
+                raise self._exists_error
+            return self._exists
+
+    class RepoRoot:
+        def __truediv__(self, path: str) -> ArtifactPath:
+            return artifacts[path]
+
+    artifacts = {
+        "artifacts/ready.md": ArtifactPath(),
+        "artifacts/locked.md": ArtifactPath(exists_error=OSError("locked")),
+        "artifacts/missing.md": ArtifactPath(exists=False),
+    }
+    monkeypatch.setattr(fc, "REPO_ROOT", RepoRoot())
+    monkeypatch.setattr(fc, "SUMMARY_EVIDENCE_ARTIFACTS", {"custom": tuple(artifacts)})
+
+    assert fc._existing_summary_artifacts("custom") == ["artifacts/ready.md"]
+
+
+def test_cisco_firmware_report_versions_self_heals_missing_timestamp(monkeypatch, tmp_path) -> None:
+    report = tmp_path / "cisco-firmware-inventory-report.md"
+    report.write_text(
+        "\n".join(
+            [
+                "- Status: ready",
+                "- IOS XE version: 17.9.5",
+                "- Bootloader/ROMMON: 17.9",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(fc, "CISCO_FIRMWARE_INVENTORY_REPORT", report)
+    monkeypatch.setattr(fc, "_path_mtime", lambda path: None)
+
+    payload = fc._cisco_firmware_report_versions()
+
+    assert payload["status"] == "ready"
+    assert payload["ios_xe_version"] == "17.9.5"
+    assert payload["checked_at"] is None
 
 
 def test_ilo_legacy_identity_firmware_satisfies_baseline_when_redfish_inventory_auth_fails(
@@ -218,6 +467,89 @@ def test_cisco_console_inventory_satisfies_ios_xe_baseline(monkeypatch, firmware
     assert result["status"] == "passed"
     assert result["components"][0]["current_version"] == "17.15.05"
     assert result["inventory"]["live_inventory"]["cisco"]["source"] == "console-user-exec-show-version"
+
+
+def test_cisco_management_command_results_satisfy_ios_xe_baseline(monkeypatch, firmware_settings) -> None:
+    firmware_settings.cisco_mgmt_configured = True
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("cisco_ios_xe_version", minimum="17.9")))
+    record_probe_result(
+        "cisco-ansible",
+        {
+            "provider_id": "cisco-ansible",
+            "status": "ok",
+            "safe_show_commands": ["show version", "show inventory"],
+            "command_results": {
+                "show version": {
+                    "command": "show version",
+                    "version_hint": "17.15.05",
+                    "bootloader_rommon_hint": "17.12.1",
+                }
+            },
+        },
+    )
+
+    result = fc.get_firmware_compliance(scope="cisco")
+
+    assert result["status"] == "passed"
+    assert result["components"][0]["current_version"] == "17.15.05"
+    assert result["inventory"]["live_inventory"]["cisco"]["bootloader_rommon"] == "17.12.1"
+
+
+def test_cisco_management_version_survives_empty_console_cache(monkeypatch, firmware_settings) -> None:
+    firmware_settings.cisco_mgmt_configured = True
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("cisco_ios_xe_version", minimum="17.9")))
+    record_probe_result(
+        "cisco-ansible",
+        {
+            "provider_id": "cisco-ansible",
+            "status": "ok",
+            "safe_show_commands": ["show version"],
+            "command_results": {"show version": {"version_hint": "17.15.05"}},
+        },
+    )
+    record_probe_result(
+        "cisco-console",
+        {
+            "provider_id": "cisco-console",
+            "status": "ok",
+            "source": "console-ethernet-readiness",
+        },
+    )
+
+    result = fc.get_firmware_compliance(scope="full")
+
+    assert result["inventory"]["live_inventory"]["cisco"]["ios_xe_version"] == "17.15.05"
+    assert result["components"][0]["current_version"] == "17.15.05"
+
+
+def test_cisco_management_version_survives_blocked_console_cache(monkeypatch, firmware_settings) -> None:
+    firmware_settings.cisco_mgmt_configured = True
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("cisco_ios_xe_version", minimum="17.9")))
+    record_probe_result(
+        "cisco-ansible",
+        {
+            "provider_id": "cisco-ansible",
+            "status": "ok",
+            "command_results": {"show version": {"version_hint": "17.15.05"}},
+        },
+    )
+    record_probe_result(
+        "cisco-console",
+        {
+            "provider_id": "cisco-console",
+            "status": "blocked",
+            "source": "console",
+            "blockers": ["Console port opened but no prompt text was captured."],
+        },
+    )
+
+    result = fc.get_firmware_compliance(scope="full")
+
+    assert result["inventory"]["live_inventory"]["cisco"]["ios_xe_version"] == "17.15.05"
+    assert result["components"][0]["current_version"] == "17.15.05"
 
 
 def test_blocked_console_inventory_marks_ansible_version_historical(monkeypatch, firmware_settings) -> None:
@@ -741,6 +1073,36 @@ def test_active_waiver_converts_blocked_to_waived(monkeypatch, firmware_settings
     assert result["components"][0]["status"] == "waived"
 
 
+def test_corrupt_local_waiver_is_invalid_artifact(monkeypatch, firmware_settings) -> None:
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    fc.LOCAL_WAIVER_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fc.LOCAL_WAIVER_PATH.write_text("{not valid json", encoding="utf-8")
+
+    result = fc.load_firmware_waiver()
+
+    assert result["source"] == "artifact"
+    assert result["configured"] is False
+    assert result["active"] is False
+
+
+def test_unavailable_local_waiver_path_falls_back_to_empty_env(monkeypatch, firmware_settings) -> None:
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    original_exists = type(fc.LOCAL_WAIVER_PATH).exists
+
+    def unavailable_exists(path) -> bool:  # noqa: ANN001
+        if path == fc.LOCAL_WAIVER_PATH:
+            raise OSError("waiver path unavailable")
+        return original_exists(path)
+
+    monkeypatch.setattr(type(fc.LOCAL_WAIVER_PATH), "exists", unavailable_exists)
+
+    result = fc.load_firmware_waiver()
+
+    assert result["source"] == "env"
+    assert result["configured"] is False
+    assert result["active"] is False
+
+
 @pytest.mark.parametrize(
     ("reason", "expires", "expected_error"),
     [
@@ -809,6 +1171,48 @@ def test_api_exposes_compact_firmware_summary(client, monkeypatch, firmware_sett
     ilo = _summary_for(payload, "ilo")
     assert ilo["scan_action_id"] == "ilo.firmware-inventory"
     assert any(version["version"] == "iLO 5 v3.19" for version in ilo["current_versions"])
+
+
+def test_missing_path_evidence_dedupes_preserving_order() -> None:
+    missing = fc._missing_path_evidence(
+        current_version=None,
+        target_version=None,
+        baseline_component=None,
+        component_id="netapp_disk_firmware",
+    )
+
+    assert missing == [
+        "current version",
+        "target baseline",
+        "component firmware inventory",
+        "component firmware baseline",
+    ]
+
+
+def test_summary_path_rollup_dedupes_versions_and_prechecks() -> None:
+    rollup = fc._summary_path_rollup(
+        [
+            {
+                "path_status": "staged",
+                "package_available": False,
+                "required_intermediate_versions": ["3.00", "3.10"],
+                "prechecks_required": ["backup", "maintenance window"],
+                "estimated_impact": "Reboot required.",
+            },
+            {
+                "path_status": "direct",
+                "package_available": True,
+                "package_name": "ilo5_319.fwpkg",
+                "required_intermediate_versions": ["3.00", "3.20"],
+                "prechecks_required": ["backup", "console access"],
+                "estimated_impact": "Short outage.",
+            },
+        ]
+    )
+
+    assert rollup["required_intermediate_versions"] == ["3.00", "3.10", "3.20"]
+    assert rollup["prechecks_required"] == ["backup", "maintenance window", "console access"]
+    assert rollup["path_status"] == "staged"
 
 
 def _summary_for(summaries: list[dict], device_id: str) -> dict:

@@ -7,7 +7,12 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models import IloSetupIntent
-from app.providers.ilo_redfish import IloRedfishAdapter, PROVIDER_ID
+from app.providers.ilo_redfish import (
+    IloRedfishAdapter,
+    IloRedfishConfig,
+    PROVIDER_ID,
+    ilo_target_fingerprint,
+)
 from app.providers.probe_cache import get_probe_result
 from app.schemas import (
     IloConnectionReadinessRead,
@@ -15,6 +20,13 @@ from app.schemas import (
     IloDestructiveRebuildPreviewRead,
     IloDestructiveRebuildRequirementRead,
     IloDesiredSetupSectionRead,
+    IloDiscoveredDnsDomainRead,
+    IloDiscoveredLicenseRead,
+    IloDiscoveredNetworkRead,
+    IloDiscoveredSettingsRead,
+    IloDiscoveredSnmpRead,
+    IloDiscoveredTimeRead,
+    IloDiscoveredUserRead,
     IloReadinessSummaryRead,
     IloRealChangeLaneRead,
     IloReportArtifactPlaceholderRead,
@@ -27,6 +39,8 @@ from app.schemas import (
     IloSetupPlanPreviewRead,
     IloSetupPlanSectionRead,
 )
+from app.services.list_utils import unique_preserving_order, unique_strings
+from app.services.ilo_access_settings import ilo_device_ids, require_ilo_device
 from app.services.media_inventory import get_media_inventory
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
 
@@ -57,16 +71,23 @@ DESTRUCTIVE_SAFE_NEXT_ACTION = (
 )
 
 
-def get_ilo_setup_intent(session: Session) -> IloSetupIntentRead:
-    record = session.get(IloSetupIntent, PROVIDER_ID)
+def get_ilo_setup_intent(
+    session: Session,
+    device_id: str | None = None,
+) -> IloSetupIntentRead:
+    resolved_device_id = _resolve_ilo_device_id(session, device_id)
+    if resolved_device_id is None:
+        return _intent_read(IloSetupIntentWrite(), device_id="")
+    record = session.get(IloSetupIntent, (resolved_device_id, PROVIDER_ID))
     if record is None:
-        return _intent_read(IloSetupIntentWrite())
+        return _intent_read(IloSetupIntentWrite(), device_id=resolved_device_id)
     try:
         payload = IloSetupIntentWrite.model_validate(record.intent_json)
     except ValueError:
-        return _intent_read(IloSetupIntentWrite())
+        return _intent_read(IloSetupIntentWrite(), device_id=resolved_device_id)
     return _intent_read(
         payload,
+        device_id=resolved_device_id,
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
@@ -74,11 +95,17 @@ def get_ilo_setup_intent(session: Session) -> IloSetupIntentRead:
 
 def save_ilo_setup_intent(
     session: Session,
+    device_id: str,
     payload: IloSetupIntentWrite,
 ) -> IloSetupIntentRead:
-    record = session.get(IloSetupIntent, PROVIDER_ID)
+    require_ilo_device(session, device_id)
+    record = session.get(IloSetupIntent, (device_id, PROVIDER_ID))
     if record is None:
-        record = IloSetupIntent(provider_id=PROVIDER_ID, intent_json=payload.model_dump())
+        record = IloSetupIntent(
+            device_id=device_id,
+            provider_id=PROVIDER_ID,
+            intent_json=payload.model_dump(),
+        )
         session.add(record)
     else:
         record.intent_json = payload.model_dump()
@@ -87,17 +114,31 @@ def save_ilo_setup_intent(
     session.refresh(record)
     return _intent_read(
         IloSetupIntentWrite.model_validate(record.intent_json),
+        device_id=device_id,
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
 
 
-def get_ilo_readiness_summary() -> IloReadinessSummaryRead:
-    status = IloRedfishAdapter().health()
-    probe_result, probe_time = get_probe_result(PROVIDER_ID)
+def get_ilo_readiness_summary(
+    config: IloRedfishConfig | None = None,
+) -> IloReadinessSummaryRead:
+    status = (
+        IloRedfishAdapter(config=config).health()
+        if config is not None
+        else IloRedfishAdapter().health()
+    )
+    probe_result, probe_time = _cached_probe_for_config(config)
     media_inventory = get_media_inventory()
-    firmware_readiness = get_ilo_upgrade_readiness()
-    config = status.configuration
+    firmware_readiness = (
+        get_ilo_upgrade_readiness(
+            probe_result,
+            use_cached_probe=False,
+        )
+        if config is not None
+        else get_ilo_upgrade_readiness()
+    )
+    configuration = status.configuration
     endpoint_detection = _endpoint_detection(probe_result)
     endpoint_classification = str(endpoint_detection.get("classification") or "not_checked")
 
@@ -106,19 +147,19 @@ def get_ilo_readiness_summary() -> IloReadinessSummaryRead:
         connection=IloConnectionReadinessRead(
             provider_mode=status.mode,
             provider_status=status.status,
-            host_configured=bool(config.get("host_configured")),
-            username_configured=bool(config.get("username_configured")),
-            password_configured=bool(config.get("password_configured")),
-            tls_verify=bool(config.get("tls_verify")),
-            timeout_seconds=float(config.get("timeout_seconds") or 0),
-            missing_fields=_string_list(config.get("missing_fields")),
+            host_configured=bool(configuration.get("host_configured")),
+            username_configured=bool(configuration.get("username_configured")),
+            password_configured=bool(configuration.get("password_configured")),
+            tls_verify=bool(configuration.get("tls_verify")),
+            timeout_seconds=float(configuration.get("timeout_seconds") or 0),
+            missing_fields=_string_list(configuration.get("missing_fields")),
             redfish_probe_available=any(
                 action.id == "probe-ilo-redfish" and action.enabled
                 for action in status.safe_actions
             ),
             safety_flags={
                 key: value
-                for key, value in config.items()
+                for key, value in configuration.items()
                 if key.startswith("lab_") or key.endswith("_ack") or key == "readonly_allowed"
             },
         ),
@@ -166,7 +207,7 @@ def get_ilo_readiness_summary() -> IloReadinessSummaryRead:
             IloReportArtifactPlaceholderRead(
                 kind="readiness-report",
                 title="iLO Readiness Report",
-                status="current" if status.last_probe_time else "unavailable",
+                status="current" if probe_time else "unavailable",
                 note=(
                     "Current when cached GET-only discovery exists; otherwise shows connection flags, "
                     "blockers, warnings, and plan-only decisions without live evidence."
@@ -195,10 +236,18 @@ def get_ilo_readiness_summary() -> IloReadinessSummaryRead:
     )
 
 
-def get_ilo_setup_plan_preview(session: Session | None = None) -> IloSetupPlanPreviewRead:
-    summary = get_ilo_readiness_summary()
+def get_ilo_setup_plan_preview(
+    session: Session | None = None,
+    device_id: str | None = None,
+    config: IloRedfishConfig | None = None,
+) -> IloSetupPlanPreviewRead:
+    summary = get_ilo_readiness_summary(config=config)
     decision = summary.firmware_readiness.decision
-    intent = get_ilo_setup_intent(session) if session is not None else _intent_read(IloSetupIntentWrite())
+    intent = (
+        get_ilo_setup_intent(session, device_id)
+        if session is not None
+        else _intent_read(IloSetupIntentWrite(), device_id="")
+    )
 
     return IloSetupPlanPreviewRead(
         provider_id=PROVIDER_ID,
@@ -237,12 +286,27 @@ def get_ilo_setup_plan_preview(session: Session | None = None) -> IloSetupPlanPr
                 notes=["Credentials remain local configuration presence flags only."],
             ),
             _section(
+                "license",
+                "iLO Advanced License",
+                status=_license_status(intent),
+                current_observation="No cached iLO license key inventory is exposed by this preview.",
+                planned_preview=_license_preview(intent),
+                warnings=_license_warnings(intent),
+            ),
+            _section(
                 "snmp",
                 "SNMP",
                 status=_snmp_status(intent),
                 current_observation="No cached SNMP configuration discovery is available.",
                 planned_preview=_snmp_preview(intent),
                 warnings=_snmp_warnings(intent),
+            ),
+            _section(
+                "ipv6",
+                "Dedicated Port IPv6",
+                status=_ipv6_status(intent),
+                current_observation="No cached dedicated-port IPv6 configuration discovery is available.",
+                planned_preview=_ipv6_preview(intent),
             ),
             _section(
                 "time",
@@ -327,8 +391,10 @@ def get_ilo_setup_plan_preview(session: Session | None = None) -> IloSetupPlanPr
     )
 
 
-def get_ilo_destructive_rebuild_preview() -> IloDestructiveRebuildPreviewRead:
-    summary = get_ilo_readiness_summary()
+def get_ilo_destructive_rebuild_preview(
+    config: IloRedfishConfig | None = None,
+) -> IloDestructiveRebuildPreviewRead:
+    summary = get_ilo_readiness_summary(config=config)
     identity = _destructive_target_identity(summary)
     requirements = _destructive_rebuild_requirements(summary, identity)
     real_change_lanes = _real_change_lanes(identity)
@@ -509,55 +575,83 @@ def _real_change_lane(
     )
 
 
-def get_ilo_setup_compare(session: Session) -> IloSetupCompareReportRead:
-    summary = get_ilo_readiness_summary()
-    intent = get_ilo_setup_intent(session)
+def get_ilo_setup_compare(
+    session: Session,
+    device_id: str | None = None,
+    config: IloRedfishConfig | None = None,
+) -> IloSetupCompareReportRead:
+    summary = get_ilo_readiness_summary(config=config)
+    intent = get_ilo_setup_intent(session, device_id)
+    probe_result, _ = _cached_probe_for_config(config)
+    network_identity = _discovered_network_identity(probe_result)
+    discovered_license_status = _discovered_license_status(probe_result)
+    time_and_dns = _discovered_time_and_dns(probe_result)
+    discovered_usernames = _discovered_local_usernames(probe_result)
     sections = [
         _compare_section(
             "network",
             "Network",
             [
-                _compare_unknown(
+                _compare_discovered_row(
+                    "network",
+                    "dhcp_enabled",
+                    "DHCP Enabled",
+                    _optional_bool_label(intent.network.dhcp_enabled),
+                    _optional_bool_label(network_identity.get("dhcp_enabled"))
+                    if network_identity
+                    else None,
+                ),
+                _compare_discovered_row(
                     "network",
                     "hostname",
-                    "Hostname",
+                    "DNS Name / Hostname",
                     intent.network.hostname,
+                    network_identity.get("dns_name") if network_identity else None,
                     sensitive=True,
                 ),
-                _compare_unknown(
+                _compare_discovered_row(
                     "network",
                     "management_ip",
                     "Management IP",
                     intent.network.management_ip,
+                    network_identity.get("ip_address") if network_identity else None,
                     sensitive=True,
                 ),
-                _compare_unknown(
+                _compare_discovered_row(
                     "network",
                     "subnet_mask_or_prefix",
                     "Subnet Mask / Prefix",
                     intent.network.subnet_mask_or_prefix,
+                    network_identity.get("subnet_mask") if network_identity else None,
                     sensitive=True,
                 ),
-                _compare_unknown(
+                _compare_discovered_row(
                     "network",
                     "gateway",
                     "Gateway",
                     intent.network.gateway,
+                    network_identity.get("gateway") if network_identity else None,
                     sensitive=True,
                 ),
-                _compare_unknown("network", "vlan", "VLAN", intent.network.vlan),
+                _compare_discovered_row(
+                    "network",
+                    "vlan",
+                    "VLAN",
+                    intent.network.vlan,
+                    _discovered_vlan_label(network_identity),
+                ),
             ],
         ),
         _compare_section(
             "users",
             "Users",
             [
-                _compare_unknown(
+                _compare_discovered_list_row(
                     "users",
                     "desired_local_usernames",
                     "Desired Local Usernames",
-                    "configured" if intent.users else None,
-                    sensitive=True,
+                    [user.username_label for user in intent.users],
+                    discovered_usernames,
                 ),
                 _compare_unknown(
                     "users",
@@ -566,22 +660,76 @@ def get_ilo_setup_compare(session: Session) -> IloSetupCompareReportRead:
                     "configured" if intent.users else None,
                     sensitive=True,
                 ),
+                _compare_unknown(
+                    "users",
+                    "password_reference_labels",
+                    "Password Reference Labels",
+                    "configured" if any(user.password_ref_label for user in intent.users) else None,
+                    sensitive=True,
+                ),
+            ],
+        ),
+        _compare_section(
+            "license",
+            "iLO Advanced License",
+            [
+                _compare_unknown(
+                    "license",
+                    "advanced_license_key_ref",
+                    "Advanced License Key Reference",
+                    intent.license.advanced_license_key_ref,
+                    sensitive=True,
+                ),
+                _compare_discovered_row(
+                    "license",
+                    "expected_status",
+                    "Expected License Status",
+                    intent.license.expected_status,
+                    discovered_license_status,
+                ),
             ],
         ),
         _compare_section(
             "snmp",
             "SNMP",
             [
-                _compare_unknown(
+                _compare_discovered_row(
                     "snmp",
                     "enabled",
                     "Enabled",
                     _snmp_enabled_compare_desired(intent),
+                    _optional_bool_label(
+                        time_and_dns.get("snmp_protocol_enabled") if time_and_dns else None
+                    ),
+                ),
+                _compare_unknown(
+                    "snmp",
+                    "version",
+                    "Version",
+                    intent.snmp.version if _snmp_status(intent) != "missing_intent" else None,
+                ),
+                _compare_unknown(
+                    "snmp",
+                    "system_location",
+                    "System Location",
+                    intent.snmp.system_location,
+                ),
+                _compare_unknown(
+                    "snmp",
+                    "system_contact",
+                    "System Contact",
+                    intent.snmp.system_contact,
+                ),
+                _compare_unknown(
+                    "snmp",
+                    "system_role",
+                    "System Role",
+                    intent.snmp.system_role,
                 ),
                 _compare_unknown(
                     "snmp",
                     "destinations",
-                    "Destination Placeholders",
+                    "Alert Destinations",
                     "configured" if intent.snmp.destinations else None,
                     sensitive=True,
                 ),
@@ -592,19 +740,116 @@ def get_ilo_setup_compare(session: Session) -> IloSetupCompareReportRead:
                     "configured" if intent.snmp.community_or_user_ref_labels else None,
                     sensitive=True,
                 ),
+                _compare_unknown(
+                    "snmp",
+                    "snmpv3_security_name",
+                    "SNMPv3 Security Name",
+                    intent.snmp.snmpv3_security_name,
+                    sensitive=True,
+                ),
+                _compare_unknown(
+                    "snmp",
+                    "snmpv3_auth_protocol",
+                    "SNMPv3 Auth Protocol",
+                    intent.snmp.snmpv3_auth_protocol
+                    if _snmpv3_configured(intent)
+                    else None,
+                ),
+                _compare_unknown(
+                    "snmp",
+                    "snmpv3_auth_passphrase_ref",
+                    "SNMPv3 Auth Passphrase Reference",
+                    intent.snmp.snmpv3_auth_passphrase_ref,
+                    sensitive=True,
+                ),
+                _compare_unknown(
+                    "snmp",
+                    "snmpv3_privacy_protocol",
+                    "SNMPv3 Privacy Protocol",
+                    intent.snmp.snmpv3_privacy_protocol
+                    if _snmpv3_configured(intent)
+                    else None,
+                ),
+                _compare_unknown(
+                    "snmp",
+                    "snmpv3_privacy_passphrase_ref",
+                    "SNMPv3 Privacy Passphrase Reference",
+                    intent.snmp.snmpv3_privacy_passphrase_ref,
+                    sensitive=True,
+                ),
+            ],
+        ),
+        _compare_section(
+            "ipv6",
+            "Dedicated Port IPv6",
+            [
+                _compare_unknown(
+                    "ipv6",
+                    "disable_all",
+                    "Disable All IPv6 Options",
+                    "yes" if intent.ipv6.disable_all else "no",
+                ),
+                _compare_unknown(
+                    "ipv6",
+                    "disable_dhcpv6_dns_server",
+                    "Disable DHCPv6 DNS",
+                    "yes" if intent.ipv6.disable_dhcpv6_dns_server else "no",
+                ),
+                _compare_unknown(
+                    "ipv6",
+                    "disable_dhcpv6_domain_name",
+                    "Disable DHCPv6 Domain",
+                    "yes" if intent.ipv6.disable_dhcpv6_domain_name else "no",
+                ),
+                _compare_unknown(
+                    "ipv6",
+                    "disable_dhcpv6_sntp_settings",
+                    "Disable DHCPv6 SNTP",
+                    "yes" if intent.ipv6.disable_dhcpv6_sntp_settings else "no",
+                ),
+                _compare_unknown(
+                    "ipv6",
+                    "disable_dhcpv6_stateful_mode",
+                    "Disable DHCPv6 Stateful",
+                    "yes" if intent.ipv6.disable_dhcpv6_stateful_mode else "no",
+                ),
+                _compare_unknown(
+                    "ipv6",
+                    "disable_dhcpv6_stateless_mode",
+                    "Disable DHCPv6 Stateless",
+                    "yes" if intent.ipv6.disable_dhcpv6_stateless_mode else "no",
+                ),
             ],
         ),
         _compare_section(
             "time",
             "NTP / Time",
             [
-                _compare_unknown("time", "timezone", "Timezone", intent.time.timezone),
                 _compare_unknown(
+                    "time",
+                    "use_dhcp_supplied_time_settings",
+                    "Use DHCP-Supplied Time Settings",
+                    _optional_bool_label(intent.time.use_dhcp_supplied_time_settings),
+                ),
+                _compare_discovered_row(
+                    "time",
+                    "timezone",
+                    "Timezone",
+                    intent.time.timezone,
+                    time_and_dns.get("timezone") if time_and_dns else None,
+                ),
+                _compare_discovered_list_row(
                     "time",
                     "ntp_servers",
                     "NTP Server Placeholders",
-                    "configured" if intent.time.ntp_servers else None,
-                    sensitive=True,
+                    intent.time.ntp_servers,
+                    time_and_dns.get("ntp_servers") if time_and_dns else None,
+                ),
+                _compare_unknown(
+                    "time",
+                    "interface_type",
+                    "SNTP Interface",
+                    intent.time.interface_type,
                 ),
             ],
         ),
@@ -612,19 +857,20 @@ def get_ilo_setup_compare(session: Session) -> IloSetupCompareReportRead:
             "dns_domain",
             "DNS / Domain",
             [
-                _compare_unknown(
+                _compare_discovered_row(
                     "dns_domain",
                     "domain_name",
                     "Domain Name",
                     intent.dns_domain.domain_name,
+                    time_and_dns.get("domain_name") if time_and_dns else None,
                     sensitive=True,
                 ),
-                _compare_unknown(
+                _compare_discovered_list_row(
                     "dns_domain",
                     "dns_servers",
                     "DNS Server Placeholders",
-                    "configured" if intent.dns_domain.dns_servers else None,
-                    sensitive=True,
+                    intent.dns_domain.dns_servers,
+                    time_and_dns.get("dns_servers") if time_and_dns else None,
                 ),
             ],
         ),
@@ -658,12 +904,16 @@ def get_ilo_setup_compare(session: Session) -> IloSetupCompareReportRead:
     )
 
 
-def get_ilo_report_preview(session: Session) -> IloReportPreviewRead:
-    summary = get_ilo_readiness_summary()
-    intent = get_ilo_setup_intent(session)
-    compare = get_ilo_setup_compare(session)
-    plan = get_ilo_setup_plan_preview(session)
-    destructive_preview = get_ilo_destructive_rebuild_preview()
+def get_ilo_report_preview(
+    session: Session,
+    device_id: str | None = None,
+    config: IloRedfishConfig | None = None,
+) -> IloReportPreviewRead:
+    summary = get_ilo_readiness_summary(config=config)
+    intent = get_ilo_setup_intent(session, device_id)
+    compare = get_ilo_setup_compare(session, device_id, config=config)
+    plan = get_ilo_setup_plan_preview(session, device_id, config=config)
+    destructive_preview = get_ilo_destructive_rebuild_preview(config=config)
     media_inventory = get_media_inventory()
 
     return IloReportPreviewRead(
@@ -1070,6 +1320,7 @@ def _endpoint_warnings(classification: str) -> list[str]:
 def _redacted_intent_summary(intent: IloSetupIntentRead) -> dict[str, Any]:
     return {
         "network": {
+            "dhcp_enabled": _configured_bool(intent.network.dhcp_enabled),
             "hostname": _configured(intent.network.hostname),
             "management_ip": _configured(intent.network.management_ip),
             "subnet_mask_or_prefix": _configured(intent.network.subnet_mask_or_prefix),
@@ -1079,17 +1330,43 @@ def _redacted_intent_summary(intent: IloSetupIntentRead) -> dict[str, Any]:
         "users": {
             "desired_local_username_labels": _count_label(intent.users),
             "role_privilege_intent": _count_label(intent.users),
+            "password_reference_labels": _count_label(
+                [user.password_ref_label for user in intent.users if user.password_ref_label]
+            ),
+        },
+        "license": {
+            "advanced_license_key_ref": _configured(intent.license.advanced_license_key_ref),
+            "expected_status": _configured(intent.license.expected_status),
         },
         "snmp": {
             "enabled": intent.snmp.enabled,
+            "version": intent.snmp.version,
+            "system_location": _configured(intent.snmp.system_location),
+            "system_contact": _configured(intent.snmp.system_contact),
+            "system_role": _configured(intent.snmp.system_role),
             "destinations": _count_label(intent.snmp.destinations),
             "community_or_user_ref_labels": _count_label(
                 intent.snmp.community_or_user_ref_labels
             ),
+            "snmpv3_security_name": _configured(intent.snmp.snmpv3_security_name),
+            "snmpv3_auth_passphrase_ref": _configured(intent.snmp.snmpv3_auth_passphrase_ref),
+            "snmpv3_privacy_passphrase_ref": _configured(intent.snmp.snmpv3_privacy_passphrase_ref),
+        },
+        "ipv6": {
+            "disable_all": intent.ipv6.disable_all,
+            "disable_dhcpv6_dns_server": intent.ipv6.disable_dhcpv6_dns_server,
+            "disable_dhcpv6_domain_name": intent.ipv6.disable_dhcpv6_domain_name,
+            "disable_dhcpv6_sntp_settings": intent.ipv6.disable_dhcpv6_sntp_settings,
+            "disable_dhcpv6_stateful_mode": intent.ipv6.disable_dhcpv6_stateful_mode,
+            "disable_dhcpv6_stateless_mode": intent.ipv6.disable_dhcpv6_stateless_mode,
         },
         "time": {
+            "use_dhcp_supplied_time_settings": _configured_bool(
+                intent.time.use_dhcp_supplied_time_settings
+            ),
             "timezone": _configured(intent.time.timezone),
             "ntp_servers": _count_label(intent.time.ntp_servers),
+            "interface_type": _configured(intent.time.interface_type),
         },
         "dns_domain": {
             "domain_name": _configured(intent.dns_domain.domain_name),
@@ -1203,6 +1480,12 @@ def _configured(value: str | None) -> str:
     return "configured" if value and value.strip() else "missing"
 
 
+def _configured_bool(value: bool | None) -> str:
+    if value is None:
+        return "missing"
+    return "configured"
+
+
 def _count_label(values: list[Any]) -> str:
     return f"configured:{len(values)}" if values else "missing"
 
@@ -1259,6 +1542,339 @@ def _compare_unknown(
         next_safe_action=(
             "Run an explicit read-only discovery path when available; do not treat unknown "
             "discovery as a mismatch."
+        ),
+    )
+
+
+_REDACTED = "REDACTED"
+
+
+def _unredact(value: Any, replacement: str | None = None) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    if value == _REDACTED:
+        return replacement
+    return value
+
+
+def get_ilo_discovered_settings(
+    config: IloRedfishConfig | None = None,
+) -> IloDiscoveredSettingsRead:
+    """Raw current values from the cached read-only probe, for operator prefill.
+
+    Unlike setup-compare (a shareable report, which redacts real values behind
+    match/mismatch labels), this feeds the operator's own settings drawer, so it
+    returns the actual discovered values. This is operator-only data — never
+    embed it in report/artifact payloads.
+
+    Values the probe cache stored as REDACTED (they matched the configured
+    host/username at redaction time) are substituted from the operator's own
+    saved access settings, but only when the cached probe's target fingerprint
+    provably matches the current access host; if the operator retargeted since
+    the probe, the whole payload stays empty rather than attributing one
+    device's config to another's address.
+    """
+    device_scoped = config is not None
+    config = config or IloRedfishConfig.from_settings()
+    probe_result, probe_time = get_probe_result(PROVIDER_ID)
+    result = IloDiscoveredSettingsRead(provider_id=PROVIDER_ID, probe_time=probe_time)
+    if not isinstance(probe_result, dict):
+        return result
+
+    cached_fingerprint = probe_result.get("target_fingerprint")
+    current_fingerprint = ilo_target_fingerprint(config.host)
+    if cached_fingerprint and current_fingerprint:
+        result.target_matches_current_access = cached_fingerprint == current_fingerprint
+    # The cached probe belongs to a different target than the operator's
+    # current access host — presenting its values as "this device's current
+    # settings" would attribute device A's config to device B. Stay empty.
+    if device_scoped and result.target_matches_current_access is not True:
+        return result
+    if result.target_matches_current_access is False:
+        return result
+    if probe_result.get("status") != "ok":
+        return result
+    result.freshness = (
+        str(probe_result["freshness"]) if probe_result.get("freshness") else None
+    )
+    # Substituting REDACTED cache values from the operator's own saved access
+    # settings is only honest when the cache provably came from that target.
+    substitution_allowed = result.target_matches_current_access is True
+    substitute_host = config.host if substitution_allowed else None
+    substitute_username = config.username if substitution_allowed else None
+
+    network_identity = probe_result.get("network_identity")
+    if isinstance(network_identity, dict) and network_identity.get("status") == "ok":
+        result.available = True
+        result.network = IloDiscoveredNetworkRead(
+            dhcp_enabled=network_identity.get("dhcp_enabled")
+            if isinstance(network_identity.get("dhcp_enabled"), bool)
+            else None,
+            hostname=_unredact(network_identity.get("dns_name")),
+            management_ip=_unredact(network_identity.get("ip_address"), substitute_host),
+            subnet_mask_or_prefix=_unredact(network_identity.get("subnet_mask")),
+            gateway=_unredact(network_identity.get("gateway")),
+            # For prefill, a disabled VLAN is an empty field, not the
+            # compare-report's "disabled" label.
+            vlan=str(network_identity["vlan_id"])
+            if network_identity.get("vlan_enabled") and network_identity.get("vlan_id") is not None
+            else None,
+        )
+
+    time_and_dns = probe_result.get("time_and_dns")
+    if isinstance(time_and_dns, dict) and time_and_dns.get("status") == "ok":
+        result.available = True
+        raw_ntp = time_and_dns.get("ntp_servers")
+        raw_dns = time_and_dns.get("dns_servers")
+        result.time = IloDiscoveredTimeRead(
+            timezone=_unredact(time_and_dns.get("timezone")),
+            ntp_servers=[s for s in raw_ntp if isinstance(s, str) and s.strip()]
+            if isinstance(raw_ntp, list)
+            else [],
+            ntp_protocol_enabled=time_and_dns.get("ntp_protocol_enabled")
+            if isinstance(time_and_dns.get("ntp_protocol_enabled"), bool)
+            else None,
+        )
+        result.dns_domain = IloDiscoveredDnsDomainRead(
+            domain_name=_unredact(time_and_dns.get("domain_name")),
+            dns_servers=[s for s in raw_dns if isinstance(s, str) and s.strip()]
+            if isinstance(raw_dns, list)
+            else [],
+        )
+        result.snmp = IloDiscoveredSnmpRead(
+            enabled=time_and_dns.get("snmp_protocol_enabled")
+            if isinstance(time_and_dns.get("snmp_protocol_enabled"), bool)
+            else None,
+        )
+
+    # The manager EthernetInterface NameServers list is the network-identity
+    # read's view of DNS; prefer it when the NetworkProtocol OEM list is empty.
+    if not result.dns_domain.dns_servers and isinstance(network_identity, dict):
+        raw_name_servers = network_identity.get("name_servers")
+        if isinstance(raw_name_servers, list):
+            result.dns_domain.dns_servers = [
+                s for s in raw_name_servers if isinstance(s, str) and s.strip() and s != _REDACTED
+            ]
+
+    licenses = probe_result.get("licenses")
+    if isinstance(licenses, list) and licenses and isinstance(licenses[0], dict):
+        result.available = True
+        result.license = IloDiscoveredLicenseRead(
+            status=_unredact(licenses[0].get("status_state")),
+            name=_unredact(licenses[0].get("name")),
+        )
+
+    local_users = probe_result.get("local_users")
+    if isinstance(local_users, list):
+        users: list[IloDiscoveredUserRead] = []
+        for user in local_users:
+            if not isinstance(user, dict):
+                continue
+            username = _unredact(user.get("username"), substitute_username)
+            if not username:
+                continue
+            users.append(
+                IloDiscoveredUserRead(
+                    username=username,
+                    role=_unredact(user.get("role")),
+                    enabled=user.get("enabled") if isinstance(user.get("enabled"), bool) else None,
+                )
+            )
+        if users:
+            result.available = True
+            result.users = users
+
+    return result
+
+
+def _cached_probe_for_config(
+    config: IloRedfishConfig | None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    probe_result, probe_time = get_probe_result(PROVIDER_ID)
+    if config is None:
+        return probe_result, probe_time
+    if not isinstance(probe_result, dict):
+        return None, None
+    target_fingerprint = str(probe_result.get("target_fingerprint") or "")
+    configured_fingerprints = {
+        fingerprint
+        for candidate in config.target_candidates
+        if (fingerprint := ilo_target_fingerprint(candidate.get("host")))
+    }
+    if not target_fingerprint or target_fingerprint not in configured_fingerprints:
+        return None, None
+    return probe_result, probe_time
+
+
+def _discovered_network_identity(
+    probe_result: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(probe_result, dict):
+        return None
+    network_identity = probe_result.get("network_identity")
+    if not isinstance(network_identity, dict) or network_identity.get("status") != "ok":
+        return None
+    return network_identity
+
+
+def _discovered_vlan_label(network_identity: dict[str, Any] | None) -> str | None:
+    if not network_identity:
+        return None
+    if not network_identity.get("vlan_enabled"):
+        return "disabled"
+    vlan_id = network_identity.get("vlan_id")
+    return str(vlan_id) if vlan_id is not None else "enabled"
+
+
+def _discovered_time_and_dns(
+    probe_result: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(probe_result, dict):
+        return None
+    time_and_dns = probe_result.get("time_and_dns")
+    if not isinstance(time_and_dns, dict) or time_and_dns.get("status") != "ok":
+        return None
+    return time_and_dns
+
+
+def _discovered_local_usernames(
+    probe_result: dict[str, Any] | None,
+) -> list[str] | None:
+    if not isinstance(probe_result, dict) or probe_result.get("status") != "ok":
+        return None
+    local_users = probe_result.get("local_users")
+    if not isinstance(local_users, list):
+        return None
+    usernames = [
+        str(user["username"])
+        for user in local_users
+        if isinstance(user, dict) and user.get("username")
+    ]
+    return usernames
+
+
+def _discovered_license_status(
+    probe_result: dict[str, Any] | None,
+) -> str | None:
+    if not isinstance(probe_result, dict):
+        return None
+    licenses = probe_result.get("licenses")
+    if not isinstance(licenses, list) or not licenses:
+        return None
+    first = licenses[0]
+    if not isinstance(first, dict):
+        return None
+    status_state = first.get("status_state")
+    return str(status_state) if status_state else None
+
+
+def _compare_discovered_row(
+    section: str,
+    field: str,
+    label: str,
+    desired: str | None,
+    discovered: str | None,
+    *,
+    sensitive: bool = False,
+) -> IloSetupCompareRowRead:
+    if _missing(desired):
+        return _compare_row(
+            section,
+            field,
+            label,
+            desired="missing",
+            discovered="unknown" if _missing(discovered) else ("configured" if sensitive else str(discovered)),
+            status="desired_missing",
+            next_safe_action="Save desired intent locally before comparing this field.",
+        )
+    if _missing(discovered):
+        return _compare_row(
+            section,
+            field,
+            label,
+            desired="configured" if sensitive else str(desired),
+            discovered="unknown",
+            status="discovered_unknown",
+            next_safe_action=(
+                "Run an explicit read-only discovery path when available; do not treat unknown "
+                "discovery as a mismatch."
+            ),
+        )
+    matches = str(desired).strip().casefold() == str(discovered).strip().casefold()
+    return _compare_row(
+        section,
+        field,
+        label,
+        desired="configured" if sensitive else str(desired),
+        discovered=(
+            ("matches saved intent" if matches else "differs from saved intent")
+            if sensitive
+            else str(discovered)
+        ),
+        status="match" if matches else "mismatch",
+        next_safe_action=(
+            "No action needed; discovered value matches saved intent."
+            if matches
+            else "Review the mismatch before any guarded iLO apply workflow is designed."
+        ),
+    )
+
+
+def _compare_discovered_list_row(
+    section: str,
+    field: str,
+    label: str,
+    desired: list[str] | None,
+    discovered: list[str] | None,
+    *,
+    sensitive: bool = True,
+) -> IloSetupCompareRowRead:
+    desired_values = [value for value in (desired or []) if value and str(value).strip()]
+    discovered_values = [value for value in (discovered or []) if value and str(value).strip()]
+
+    if not desired_values:
+        return _compare_row(
+            section,
+            field,
+            label,
+            desired="missing",
+            discovered="unknown"
+            if not discovered_values
+            else ("configured" if sensitive else ", ".join(discovered_values)),
+            status="desired_missing",
+            next_safe_action="Save desired intent locally before comparing this field.",
+        )
+    if not discovered_values:
+        return _compare_row(
+            section,
+            field,
+            label,
+            desired="configured" if sensitive else ", ".join(desired_values),
+            discovered="unknown",
+            status="discovered_unknown",
+            next_safe_action=(
+                "Run an explicit read-only discovery path when available; do not treat unknown "
+                "discovery as a mismatch."
+            ),
+        )
+    matches = {str(v).strip().casefold() for v in desired_values} == {
+        str(v).strip().casefold() for v in discovered_values
+    }
+    return _compare_row(
+        section,
+        field,
+        label,
+        desired="configured" if sensitive else ", ".join(desired_values),
+        discovered=(
+            ("matches saved intent" if matches else "differs from saved intent")
+            if sensitive
+            else ", ".join(discovered_values)
+        ),
+        status="match" if matches else "mismatch",
+        next_safe_action=(
+            "No action needed; discovered value matches saved intent."
+            if matches
+            else "Review the mismatch before any guarded iLO apply workflow is designed."
         ),
     )
 
@@ -1328,6 +1944,8 @@ def _section_next_safe_action(status: str) -> str:
         return "Review the read-only report; no apply action is available."
     if status == "match":
         return "No action is needed for this read-only comparison."
+    if status == "mismatch":
+        return "Review the mismatch before any guarded iLO apply workflow is designed."
     return "Review the report; no apply action is available."
 
 
@@ -1335,13 +1953,21 @@ def _missing(value: str | None) -> bool:
     return value is None or not str(value).strip()
 
 
+def _optional_bool_label(value: bool | None) -> str | None:
+    if value is None:
+        return None
+    return "enabled" if value else "disabled"
+
+
 def _intent_read(
     payload: IloSetupIntentWrite,
     *,
+    device_id: str,
     created_at: Any = None,
     updated_at: Any = None,
 ) -> IloSetupIntentRead:
     return IloSetupIntentRead(
+        device_id=device_id,
         provider_id=PROVIDER_ID,
         apply_enabled=False,
         created_at=created_at,
@@ -1350,9 +1976,17 @@ def _intent_read(
     )
 
 
+def _resolve_ilo_device_id(session: Session, device_id: str | None) -> str | None:
+    if device_id:
+        return require_ilo_device(session, device_id).id
+    device_ids = ilo_device_ids(session)
+    return device_ids[0] if len(device_ids) == 1 else None
+
+
 def _network_status(intent: IloSetupIntentRead, summary: IloReadinessSummaryRead) -> str:
     if not any(
         (
+            intent.network.dhcp_enabled is not None,
             intent.network.hostname,
             intent.network.management_ip,
             intent.network.subnet_mask_or_prefix,
@@ -1370,6 +2004,7 @@ def _network_preview(intent: IloSetupIntentRead) -> str:
     network = intent.network
     if not any(
         (
+            network.dhcp_enabled is not None,
             network.hostname,
             network.management_ip,
             network.subnet_mask_or_prefix,
@@ -1379,7 +2014,8 @@ def _network_preview(intent: IloSetupIntentRead) -> str:
     ):
         return "Missing network intent. No network settings are planned."
     parts = [
-        _label("hostname", network.hostname),
+        _label("DHCP", _optional_bool_label(network.dhcp_enabled)),
+        _label("DNS name", network.hostname),
         _label("management IP", network.management_ip),
         _label("subnet/prefix", network.subnet_mask_or_prefix),
         _label("gateway", network.gateway),
@@ -1389,12 +2025,22 @@ def _network_preview(intent: IloSetupIntentRead) -> str:
 
 
 def _network_warnings(intent: IloSetupIntentRead) -> list[str]:
+    if intent.network.dhcp_enabled is True and any(
+        (
+            intent.network.management_ip,
+            intent.network.subnet_mask_or_prefix,
+            intent.network.gateway,
+        )
+    ):
+        return ["DHCP is enabled while static IP fields are also present; review the intended iLO network mode."]
     required = (
         intent.network.hostname,
         intent.network.management_ip,
         intent.network.subnet_mask_or_prefix,
         intent.network.gateway,
     )
+    if intent.network.dhcp_enabled is False and not all(required):
+        return ["Static iLO intent is partial; DNS name, management IP, subnet/prefix, and gateway are expected together."]
     if any(required) and not all(required):
         return ["Network intent is partial; hostname, management IP, subnet/prefix, and gateway are expected together."]
     return []
@@ -1403,12 +2049,48 @@ def _network_warnings(intent: IloSetupIntentRead) -> list[str]:
 def _users_preview(intent: IloSetupIntentRead) -> str:
     if not intent.users:
         return "Missing user intent. No local user labels or roles are planned."
-    users = ", ".join(f"{user.username_label} as {user.role}" for user in intent.users)
+    users = ", ".join(
+        f"{user.username_label} as {user.role}"
+        f"{' with password reference' if user.password_ref_label else ''}"
+        for user in intent.users
+    )
     return f"Preview only: desired local user labels {users}. No users or passwords are changed."
 
 
+def _license_status(intent: IloSetupIntentRead) -> str:
+    if intent.license.advanced_license_key_ref or intent.license.expected_status:
+        return "planned"
+    return "missing_intent"
+
+
+def _license_preview(intent: IloSetupIntentRead) -> str:
+    if _license_status(intent) == "missing_intent":
+        return "Missing iLO Advanced license intent. No license setting is planned."
+    ref = intent.license.advanced_license_key_ref or "no license reference"
+    status = intent.license.expected_status or "no expected status"
+    return f"Preview only: license reference {ref}, expected status {status}. No license key is installed."
+
+
+def _license_warnings(intent: IloSetupIntentRead) -> list[str]:
+    if intent.license.expected_status and not intent.license.advanced_license_key_ref:
+        return ["License status is planned without a license key reference label."]
+    return []
+
+
 def _snmp_status(intent: IloSetupIntentRead) -> str:
-    if not intent.snmp.enabled and not intent.snmp.destinations and not intent.snmp.community_or_user_ref_labels:
+    if not any(
+        (
+            intent.snmp.enabled,
+            intent.snmp.system_location,
+            intent.snmp.system_contact,
+            intent.snmp.system_role,
+            intent.snmp.destinations,
+            intent.snmp.community_or_user_ref_labels,
+            intent.snmp.snmpv3_security_name,
+            intent.snmp.snmpv3_auth_passphrase_ref,
+            intent.snmp.snmpv3_privacy_passphrase_ref,
+        )
+    ):
         return "missing_intent"
     if intent.snmp.enabled and not intent.snmp.destinations:
         return "blocked"
@@ -1419,19 +2101,98 @@ def _snmp_preview(intent: IloSetupIntentRead) -> str:
     if _snmp_status(intent) == "missing_intent":
         return "Missing SNMP intent. No SNMP settings are planned."
     state = "enabled" if intent.snmp.enabled else "disabled"
+    identity = ", ".join(
+        part
+        for part in (
+            _label("location", intent.snmp.system_location),
+            _label("contact", intent.snmp.system_contact),
+            _label("role", intent.snmp.system_role),
+        )
+        if part
+    ) or "no system identity"
     destinations = ", ".join(intent.snmp.destinations) or "no destinations"
     refs = ", ".join(intent.snmp.community_or_user_ref_labels) or "no community/user refs"
-    return f"Preview only: SNMP {state}, destinations {destinations}, references {refs}. No SNMP setting is written."
+    v3 = (
+        f"SNMPv3 {intent.snmp.snmpv3_security_name} / "
+        f"{intent.snmp.snmpv3_auth_protocol} / {intent.snmp.snmpv3_privacy_protocol}"
+        if _snmpv3_configured(intent)
+        else "no SNMPv3 user"
+    )
+    return (
+        f"Preview only: SNMP {state} ({intent.snmp.version}), {identity}, "
+        f"destinations {destinations}, references {refs}, {v3}. No SNMP setting is written."
+    )
 
 
 def _snmp_warnings(intent: IloSetupIntentRead) -> list[str]:
+    warnings: list[str] = []
     if intent.snmp.enabled and not intent.snmp.community_or_user_ref_labels:
-        return ["SNMP is enabled without community/user reference labels."]
-    return []
+        warnings.append("SNMP is enabled without community/user reference labels.")
+    if intent.snmp.version == "v3" and _snmpv3_configured(intent):
+        missing_v3_refs = not all(
+            (
+                intent.snmp.snmpv3_security_name,
+                intent.snmp.snmpv3_auth_passphrase_ref,
+                intent.snmp.snmpv3_privacy_passphrase_ref,
+            )
+        )
+        if missing_v3_refs:
+            warnings.append(
+                "SNMPv3 intent is partial; security name and auth/privacy reference labels are expected together."
+            )
+    return warnings
+
+
+def _snmpv3_configured(intent: IloSetupIntentRead) -> bool:
+    return any(
+        (
+            intent.snmp.snmpv3_security_name,
+            intent.snmp.snmpv3_auth_passphrase_ref,
+            intent.snmp.snmpv3_privacy_passphrase_ref,
+        )
+    )
+
+
+def _ipv6_status(intent: IloSetupIntentRead) -> str:
+    if intent.ipv6.disable_all or any(
+        (
+            intent.ipv6.disable_dhcpv6_dns_server,
+            intent.ipv6.disable_dhcpv6_domain_name,
+            intent.ipv6.disable_dhcpv6_sntp_settings,
+            intent.ipv6.disable_dhcpv6_stateful_mode,
+            intent.ipv6.disable_dhcpv6_stateless_mode,
+        )
+    ):
+        return "planned"
+    return "missing_intent"
+
+
+def _ipv6_preview(intent: IloSetupIntentRead) -> str:
+    if _ipv6_status(intent) == "missing_intent":
+        return "Missing IPv6 intent. No dedicated-port IPv6 setting is planned."
+    if intent.ipv6.disable_all:
+        return "Preview only: disable all dedicated-port IPv6 options. No IPv6 setting is written."
+    disabled = [
+        name
+        for name, enabled in (
+            ("DHCPv6 DNS", intent.ipv6.disable_dhcpv6_dns_server),
+            ("DHCPv6 domain", intent.ipv6.disable_dhcpv6_domain_name),
+            ("DHCPv6 SNTP", intent.ipv6.disable_dhcpv6_sntp_settings),
+            ("stateful mode", intent.ipv6.disable_dhcpv6_stateful_mode),
+            ("stateless mode", intent.ipv6.disable_dhcpv6_stateless_mode),
+        )
+        if enabled
+    ]
+    return f"Preview only: disable {', '.join(disabled) or 'no IPv6 options'}. No IPv6 setting is written."
 
 
 def _time_status(intent: IloSetupIntentRead) -> str:
-    if not intent.time.timezone and not intent.time.ntp_servers:
+    if (
+        intent.time.use_dhcp_supplied_time_settings is None
+        and not intent.time.timezone
+        and not intent.time.ntp_servers
+        and not intent.time.interface_type
+    ):
         return "missing_intent"
     if intent.time.timezone and intent.time.ntp_servers:
         return "planned"
@@ -1442,7 +2203,11 @@ def _time_preview(intent: IloSetupIntentRead) -> str:
     if _time_status(intent) == "missing_intent":
         return "Missing NTP/time intent. No time settings are planned."
     servers = ", ".join(intent.time.ntp_servers) or "no NTP servers"
-    return f"Preview only: timezone {intent.time.timezone or 'not set'}, NTP servers {servers}. No time setting is written."
+    dhcp_time = _optional_bool_label(intent.time.use_dhcp_supplied_time_settings) or "not set"
+    return (
+        f"Preview only: DHCP-supplied time {dhcp_time}, timezone {intent.time.timezone or 'not set'}, "
+        f"NTP servers {servers}, interface {intent.time.interface_type or 'not set'}. No time setting is written."
+    )
 
 
 def _time_warnings(intent: IloSetupIntentRead) -> list[str]:
@@ -1521,10 +2286,8 @@ def _redfish_endpoint_detected(probe_result: dict[str, Any] | None) -> str:
 
 
 def _string_list(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
+    return unique_strings(value)
 
 
 def _unique(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))
+    return unique_preserving_order(values)

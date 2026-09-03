@@ -18,6 +18,8 @@ from app.providers.base import ProviderAction, ProviderStatus
 from app.providers.lab_safety import current_lab_safety
 from app.providers.probe_cache import get_probe_result, record_probe_result
 from app.providers.redaction import redact_sensitive
+from app.services.path_utils import is_file
+from app.services.provider_profile_defaults import active_server_network_defaults, first_configured
 
 PROVIDER_ID = "esxi-readonly"
 MAX_ATTEMPTS = 3
@@ -38,8 +40,9 @@ class EsxiReadonlyConfig:
 
     @classmethod
     def from_settings(cls) -> "EsxiReadonlyConfig":
+        profile_defaults = active_server_network_defaults()
         return cls(
-            host=settings.esxi_test_host,
+            host=first_configured(profile_defaults.get("esxi_management"), settings.esxi_test_host),
             username=settings.esxi_test_username,
             password=settings.esxi_test_password,
             management_configured=settings.esxi_configured,
@@ -469,7 +472,7 @@ def _which(name: str) -> bool:
         return True
     for directory in (Path(sys.executable).parent, REPO_ROOT / ".local" / "bin"):
         candidate = directory / name
-        if candidate.exists() and candidate.is_file():
+        if is_file(candidate):
             return True
     return False
 

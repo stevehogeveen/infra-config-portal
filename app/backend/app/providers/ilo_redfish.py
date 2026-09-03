@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 from xml.etree import ElementTree
@@ -18,6 +22,7 @@ from app.providers.action_policy import (
 from app.providers.base import ProviderAction, ProviderStatus
 from app.providers.probe_cache import get_probe_result, record_probe_result
 from app.providers.redaction import redact_sensitive
+from app.services.list_utils import unique_preserving_order
 
 PROVIDER_ID = "ilo-redfish"
 MAX_GET_ATTEMPTS = 3
@@ -35,6 +40,13 @@ INVENTORY_COLLECTION_AUTH_NEXT_ACTION = (
 )
 
 
+class RedfishJsonDecodeError(RuntimeError):
+    def __init__(self, path: str, status_code: int) -> None:
+        super().__init__(f"Redfish GET {path} returned HTTP {status_code} with invalid JSON.")
+        self.path = path
+        self.status_code = status_code
+
+
 @dataclass(frozen=True)
 class IloRedfishConfig:
     host: str | None
@@ -45,6 +57,9 @@ class IloRedfishConfig:
     host_source: str = "runtime_env"
     fallback_hosts: tuple[str, ...] = ()
     fallback_host_sources: tuple[str, ...] = ()
+    # Set when the config came from a rack device, so probe evidence is
+    # cached against that device instead of a single shared iLO slot.
+    device_id: str | None = None
 
     @classmethod
     def from_settings(cls) -> "IloRedfishConfig":
@@ -93,9 +108,10 @@ class IloRedfishConfig:
             if not host:
                 continue
             clean_host = host.strip()
-            if not clean_host or clean_host in seen:
+            dedupe_key = clean_host.casefold()
+            if not clean_host or dedupe_key in seen:
                 continue
-            seen.add(clean_host)
+            seen.add(dedupe_key)
             candidates.append({"host": clean_host, "source": source})
         return candidates
 
@@ -110,8 +126,21 @@ class IloRedfishAdapter:
         self.config = config or IloRedfishConfig.from_settings()
 
     def health(self) -> ProviderStatus:
-        last_result, last_time = get_probe_result(PROVIDER_ID)
+        last_result, last_time = get_probe_result(PROVIDER_ID, scope=self.config.device_id)
         missing_fields = self.config.missing_fields
+        last_probe_status = _probe_status(last_result)
+        last_probe_target_matches_candidates = _probe_target_matches_candidates(
+            last_result,
+            self.config.target_candidates,
+        )
+        last_probe_target_matches_active_profile = _probe_target_matches_host(
+            last_result,
+            _active_saved_profile_ilo_host(),
+        )
+        last_probe_target_matches_runtime_host = _probe_target_matches_host(
+            last_result,
+            settings.ilo_test_host,
+        )
         policy = current_lab_action_policy(self.provider_mode)
         blockers = [
             f"Missing local iLO configuration: {', '.join(missing_fields)}."
@@ -128,11 +157,21 @@ class IloRedfishAdapter:
                 "local-lab-readwrite permits explicitly allowlisted real-lab workflow categories only."
             )
 
-        status = "missing-config" if missing_fields else "ready"
+        status = "missing-config" if missing_fields else "not_checked"
         if not missing_fields and self.provider_mode not in REAL_CONTACT_MODES:
             status = "configured"
-        if not missing_fields and self.provider_mode in REAL_CONTACT_MODES and blockers:
+        elif not missing_fields and self.provider_mode in REAL_CONTACT_MODES and blockers:
             status = "blocked"
+        elif not missing_fields and self.provider_mode in REAL_CONTACT_MODES:
+            status = _health_status_from_probe(last_result, last_probe_target_matches_candidates)
+
+        if status in {"blocked", "failed"} and isinstance(last_result, dict):
+            probe_blockers = [
+                str(item)
+                for item in last_result.get("blockers", [])
+                if isinstance(item, str) and item.strip()
+            ]
+            blockers.extend(item for item in probe_blockers if item not in blockers)
 
         probe_enabled = (
             self.provider_mode in REAL_CONTACT_MODES
@@ -156,10 +195,7 @@ class IloRedfishAdapter:
                 "redfish-system-summary",
                 "redfish-chassis-summary",
             ],
-            message=(
-                "Local iLO configuration is checked without contacting Redfish; "
-                "the probe button performs an explicit read-only Redfish inventory check."
-            ),
+            message=_health_message_from_probe(status, last_result),
             configuration={
                 "host_configured": bool(self.config.host),
                 "host_source": self.config.host_source,
@@ -174,6 +210,18 @@ class IloRedfishAdapter:
                 "timeout_seconds": self.config.timeout_seconds,
                 "missing_fields": missing_fields,
                 "lab_policy": policy.status_summary(),
+                "last_probe_status": last_probe_status or "not_checked",
+                "last_probe_target_source": (
+                    last_result.get("target_source")
+                    if isinstance(last_result, dict)
+                    else None
+                ),
+                "last_probe_target_fingerprint_present": bool(
+                    isinstance(last_result, dict) and last_result.get("target_fingerprint")
+                ),
+                "last_probe_target_matches_configured_candidates": last_probe_target_matches_candidates,
+                "last_probe_target_matches_active_profile": last_probe_target_matches_active_profile,
+                "last_probe_target_matches_runtime_host": last_probe_target_matches_runtime_host,
             },
             blockers=blockers,
             warnings=warnings,
@@ -268,6 +316,7 @@ class IloRedfishAdapter:
             "message": "Read-only Redfish probe completed.",
             "base_url": _redacted_base_url(base_url),
             "target_source": host_source,
+            "target_fingerprint": ilo_target_fingerprint(host),
             "candidate_index": candidate_index,
             "target_candidate_count": candidate_count,
             "tls_verify": self.config.verify_tls,
@@ -282,6 +331,10 @@ class IloRedfishAdapter:
             "thermal": [],
             "firmware": [],
             "network_adapters": [],
+            "network_identity": {"status": "not_checked"},
+            "time_and_dns": {"status": "not_checked"},
+            "licenses": [],
+            "local_users": [],
             "storage": {
                 "status": "not_checked",
                 "controllers": [],
@@ -425,6 +478,32 @@ class IloRedfishAdapter:
                     auth_method="basic",
                 )
                 _populate_inventory_result(result, client, base_url, root, requests)
+        except RedfishJsonDecodeError as exc:
+            classification = "redfish_invalid_json"
+            message = _endpoint_message(classification)
+            result.update(
+                {
+                    "status": "failed",
+                    "message": message,
+                    "endpoint_detection": {
+                        "classification": classification,
+                        "message": message,
+                        "checks": requests,
+                        "redfish_status": "invalid_json",
+                        "legacy_status": "not_checked",
+                        "web_status": "not_checked",
+                        "inventory_collection_status": "failed",
+                        "inventory_collection_classification": classification,
+                        "inventory_collection_checks": [],
+                        "auth_failure_classification": "not_checked",
+                        "auth_recovery_hint": "not_checked",
+                        "failed_path": exc.path,
+                        "failed_status_code": exc.status_code,
+                        "next_safe_action": _endpoint_next_safe_action(classification),
+                    },
+                    "blockers": [_endpoint_next_safe_action(classification)],
+                }
+            )
         except httpx.HTTPStatusError as exc:
             detection = _classify_inventory_auth_failure(
                 result.get("endpoint_detection"),
@@ -487,10 +566,12 @@ class IloRedfishAdapter:
         )
 
     def _record_result(self, result: dict[str, Any]) -> dict[str, Any]:
+        result = _attach_write_target_evidence(result)
         redacted = redact_sensitive(result, self._redaction_values())
-        previous_result, previous_checked_at = get_probe_result(PROVIDER_ID)
+        scope = self.config.device_id
+        previous_result, previous_checked_at = get_probe_result(PROVIDER_ID, scope=scope)
         redacted = _preserve_legacy_identity(redacted, previous_result, previous_checked_at)
-        return record_probe_result(PROVIDER_ID, redacted)
+        return record_probe_result(PROVIDER_ID, redacted, scope=scope)
 
     def _redaction_values(self) -> list[str | None]:
         return ilo_redfish_redaction_values(self.config)
@@ -501,6 +582,7 @@ def _candidate_probe_summary(result: dict[str, Any]) -> dict[str, Any]:
     return {
         "candidate_index": result.get("candidate_index"),
         "target_source": result.get("target_source"),
+        "target_fingerprint": result.get("target_fingerprint"),
         "status": result.get("status"),
         "classification": _probe_classification(result),
         "request_count": len(requests) if isinstance(requests, list) else 0,
@@ -543,6 +625,79 @@ def _preserve_legacy_identity(
     return preserved
 
 
+def _probe_status(result: dict[str, Any] | None) -> str:
+    if not isinstance(result, dict):
+        return ""
+    return str(result.get("status") or "").strip().lower()
+
+
+def _health_status_from_probe(
+    result: dict[str, Any] | None,
+    target_matches_candidates: bool,
+) -> str:
+    status = _probe_status(result)
+    if not status:
+        return "not_checked"
+    if (
+        isinstance(result, dict)
+        and result.get("target_fingerprint")
+        and not target_matches_candidates
+    ):
+        return "target_mismatch"
+    if status == "ok":
+        return "ready" if target_matches_candidates else "target_mismatch"
+    if status in {"blocked", "failed"}:
+        return status
+    return status
+
+
+def _health_message_from_probe(status: str, result: dict[str, Any] | None) -> str:
+    result_message = str(result.get("message") or "").strip() if isinstance(result, dict) else ""
+    if status == "ready":
+        return result_message or "Last read-only iLO Redfish probe proved the current target."
+    if status == "target_mismatch":
+        return "Last iLO proof is not bound to the current target. Run Check this iLO IP again."
+    if status in {"blocked", "failed"}:
+        return f"Last iLO read-only check {status}: {result_message or 'review blockers.'}"
+    if status == "not_checked":
+        return "iLO access is configured, but no read-only Redfish probe has proved this target yet."
+    if status == "missing-config":
+        return "Enter iLO host, username, and password before running the read-only Redfish check."
+    if status == "configured":
+        return (
+            "Local iLO configuration is present without contacting Redfish; "
+            "run an explicit read-only check before trusting the map."
+        )
+    return result_message or "Run an explicit read-only iLO check before trusting the map."
+
+
+def _probe_target_matches_candidates(
+    result: dict[str, Any] | None,
+    candidates: list[dict[str, str]],
+) -> bool:
+    target_fingerprint = str(result.get("target_fingerprint") or "") if isinstance(result, dict) else ""
+    if not target_fingerprint:
+        return False
+    return target_fingerprint in {
+        fingerprint
+        for candidate in candidates
+        if (fingerprint := ilo_target_fingerprint(candidate.get("host")))
+    }
+
+
+def _probe_target_matches_host(result: dict[str, Any] | None, host: str | None) -> bool:
+    target_fingerprint = str(result.get("target_fingerprint") or "") if isinstance(result, dict) else ""
+    host_fingerprint = ilo_target_fingerprint(host)
+    return bool(target_fingerprint and host_fingerprint and target_fingerprint == host_fingerprint)
+
+
+def ilo_target_fingerprint(host: str | None) -> str | None:
+    clean_host = _clean_target_host(host)
+    if not clean_host:
+        return None
+    return hashlib.sha256(clean_host.casefold().encode("utf-8")).hexdigest()[:16]
+
+
 def _try_next_ilo_candidate(result: dict[str, Any]) -> bool:
     return _probe_classification(result) in {
         "network_unreachable",
@@ -564,10 +719,14 @@ def _probe_classification(result: dict[str, Any]) -> str:
 def _configured_ilo_targets() -> tuple[str | None, str, tuple[str, ...], tuple[str, ...]]:
     profile_host = _active_saved_profile_ilo_host()
     first_access_host = _saved_ilo_first_access_host()
+    initial_profile_host = _active_saved_profile_ilo_initial_host()
     if profile_host:
         fallback_hosts, fallback_sources = _fallback_ilo_targets(
             profile_host,
-            [(first_access_host, "control_access_original_dhcp_ip")],
+            [
+                (first_access_host, "control_access_original_dhcp_ip"),
+                (initial_profile_host, "active_lab_profile_initial_ilo"),
+            ],
         )
         return profile_host, "active_lab_profile", fallback_hosts, fallback_sources
 
@@ -575,12 +734,21 @@ def _configured_ilo_targets() -> tuple[str | None, str, tuple[str, ...], tuple[s
     if runtime_host:
         fallback_hosts, fallback_sources = _fallback_ilo_targets(
             runtime_host,
-            [(first_access_host, "control_access_original_dhcp_ip")],
+            [
+                (first_access_host, "control_access_original_dhcp_ip"),
+                (initial_profile_host, "active_lab_profile_initial_ilo"),
+            ],
         )
         return runtime_host, "runtime_env", fallback_hosts, fallback_sources
 
     if first_access_host:
-        return first_access_host, "control_access_original_dhcp_ip", (), ()
+        fallback_hosts, fallback_sources = _fallback_ilo_targets(
+            first_access_host,
+            [(initial_profile_host, "active_lab_profile_initial_ilo")],
+        )
+        return first_access_host, "control_access_original_dhcp_ip", fallback_hosts, fallback_sources
+    if initial_profile_host:
+        return initial_profile_host, "active_lab_profile_initial_ilo", (), ()
     return None, "runtime_env", (), ()
 
 
@@ -621,6 +789,23 @@ def _active_saved_profile_ilo_host() -> str | None:
     if not isinstance(plan, dict):
         return None
     return _clean_target_host(plan.get("ilo"))
+
+
+def _active_saved_profile_ilo_initial_host() -> str | None:
+    try:
+        from app.services.lab_profiles import active_lab_profile_context
+
+        context = active_lab_profile_context()
+    except Exception:
+        return None
+
+    active = context.get("active_profile") if isinstance(context, dict) else {}
+    if not isinstance(active, dict) or active.get("source") != "saved":
+        return None
+    plan = context.get("resolved_address_plan") if isinstance(context, dict) else {}
+    if not isinstance(plan, dict):
+        return None
+    return _clean_target_host(plan.get("ilo_initial"))
 
 
 def _saved_ilo_first_access_host() -> str | None:
@@ -757,7 +942,7 @@ def _endpoint_check(client: httpx.Client, base_url: str, path: str) -> dict[str,
             if isinstance(payload, dict):
                 check["_json_payload"] = payload
         except ValueError:
-            check["classification"] = "redfish_http_error"
+            check["classification"] = "redfish_invalid_json"
     if response.status_code == 200 and path == LEGACY_XML_PATH:
         identity = _legacy_xml_identity(response.text)
         if identity:
@@ -1129,6 +1314,224 @@ def _populate_inventory_result(
         result["systems"],
         requests,
     )
+    result["network_identity"] = _manager_network_identity(client, base_url, root, requests)
+    result["time_and_dns"] = _manager_time_and_dns_settings(client, base_url, root, requests)
+    result["licenses"] = _manager_license_summaries(client, base_url, root, requests)
+    result["local_users"] = _account_service_users(client, base_url, root, requests)
+
+
+def _account_service_users(
+    client: httpx.Client,
+    base_url: str,
+    root: dict[str, Any],
+    requests: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    account_service_path = _odata_id(root.get("AccountService"))
+    if not account_service_path:
+        return []
+    try:
+        service = _get_json(client, base_url, account_service_path, requests)
+        accounts_path = _odata_id(service.get("Accounts"))
+        if not accounts_path:
+            return []
+        collection = _get_json(client, base_url, accounts_path, requests)
+        members = collection.get("Members", [])
+        if not isinstance(members, list):
+            return []
+        users: list[dict[str, Any]] = []
+        for member in members[:20]:
+            path = _odata_id(member)
+            if not path:
+                continue
+            payload = _get_json(client, base_url, path, requests)
+            username = payload.get("UserName")
+            if not username:
+                continue
+            users.append(
+                {
+                    "@odata.id": path,
+                    "username": username,
+                    "role": payload.get("RoleId"),
+                    "enabled": payload.get("Enabled"),
+                }
+            )
+        return users
+    except (RedfishJsonDecodeError, httpx.HTTPError):
+        return []
+
+
+def _manager_time_and_dns_settings(
+    client: httpx.Client,
+    base_url: str,
+    root: dict[str, Any],
+    requests: list[dict[str, Any]],
+) -> dict[str, Any]:
+    managers_path = _odata_id(root.get("Managers"))
+    if not managers_path:
+        return {"status": "not_supported", "message": "Service root does not expose Managers."}
+    try:
+        collection = _get_json(client, base_url, managers_path, requests)
+        members = collection.get("Members", [])
+        manager_path = _odata_id(members[0]) if isinstance(members, list) and members else None
+        if not manager_path:
+            return {"status": "not_available", "message": "No manager resource was found."}
+        manager = _get_json(client, base_url, manager_path, requests)
+
+        oem = manager.get("Oem") if isinstance(manager.get("Oem"), dict) else {}
+        hpe_oem = oem.get("Hpe") if isinstance(oem.get("Hpe"), dict) else {}
+        time_zone = hpe_oem.get("TimeZone") if isinstance(hpe_oem.get("TimeZone"), dict) else {}
+        timezone = time_zone.get("Name")
+
+        ntp_servers: list[str] = []
+        ntp_protocol_enabled: bool | None = None
+        domain_name: str | None = None
+        dns_servers: list[str] = []
+
+        network_protocol_path = _odata_id(manager.get("NetworkProtocol"))
+        if network_protocol_path:
+            network_protocol = _get_json(client, base_url, network_protocol_path, requests)
+            ntp = (
+                network_protocol.get("NTP") if isinstance(network_protocol.get("NTP"), dict) else {}
+            )
+            raw_servers = ntp.get("NTPServers")
+            ntp_servers = raw_servers if isinstance(raw_servers, list) else []
+            raw_enabled = ntp.get("ProtocolEnabled")
+            ntp_protocol_enabled = raw_enabled if isinstance(raw_enabled, bool) else None
+            domain_name = _derive_domain_name(
+                network_protocol.get("HostName"),
+                network_protocol.get("FQDN"),
+            )
+            np_oem = (
+                network_protocol.get("Oem") if isinstance(network_protocol.get("Oem"), dict) else {}
+            )
+            np_hpe = np_oem.get("Hpe") if isinstance(np_oem.get("Hpe"), dict) else {}
+            raw_dns = np_hpe.get("DNSServers")
+            dns_servers = raw_dns if isinstance(raw_dns, list) else []
+            snmp = (
+                network_protocol.get("SNMP") if isinstance(network_protocol.get("SNMP"), dict) else {}
+            )
+            raw_snmp_enabled = snmp.get("ProtocolEnabled")
+            snmp_protocol_enabled = raw_snmp_enabled if isinstance(raw_snmp_enabled, bool) else None
+        else:
+            snmp_protocol_enabled = None
+
+        return {
+            "status": "ok",
+            "timezone": timezone,
+            "ntp_servers": ntp_servers,
+            "ntp_protocol_enabled": ntp_protocol_enabled,
+            "domain_name": domain_name,
+            "dns_servers": dns_servers,
+            "snmp_protocol_enabled": snmp_protocol_enabled,
+        }
+    except (RedfishJsonDecodeError, httpx.HTTPError) as exc:
+        return {"status": "unavailable", "message": f"Time/DNS settings read failed: {exc}"}
+
+
+def _derive_domain_name(hostname: Any, fqdn: Any) -> str | None:
+    if not isinstance(fqdn, str) or not fqdn:
+        return None
+    if isinstance(hostname, str) and hostname and fqdn.startswith(f"{hostname}."):
+        return fqdn[len(hostname) + 1 :]
+    if "." in fqdn:
+        return fqdn.split(".", 1)[1]
+    return None
+
+
+def _manager_network_identity(
+    client: httpx.Client,
+    base_url: str,
+    root: dict[str, Any],
+    requests: list[dict[str, Any]],
+) -> dict[str, Any]:
+    managers_path = _odata_id(root.get("Managers"))
+    if not managers_path:
+        return {"status": "not_supported", "message": "Service root does not expose Managers."}
+    try:
+        collection = _get_json(client, base_url, managers_path, requests)
+        members = collection.get("Members", [])
+        manager_path = _odata_id(members[0]) if isinstance(members, list) and members else None
+        if not manager_path:
+            return {"status": "not_available", "message": "No manager resource was found."}
+        manager = _get_json(client, base_url, manager_path, requests)
+        eth_path = _odata_id(manager.get("EthernetInterfaces"))
+        if not eth_path:
+            return {
+                "status": "not_supported",
+                "message": "Manager resource does not expose EthernetInterfaces.",
+            }
+        eth_collection = _get_json(client, base_url, eth_path, requests)
+        eth_members = eth_collection.get("Members", [])
+        iface_path = (
+            _odata_id(eth_members[0]) if isinstance(eth_members, list) and eth_members else None
+        )
+        if not iface_path:
+            return {
+                "status": "not_available",
+                "message": "Manager EthernetInterfaces collection has no members.",
+            }
+        iface = _get_json(client, base_url, iface_path, requests)
+    except (RedfishJsonDecodeError, httpx.HTTPError) as exc:
+        return {"status": "unavailable", "message": f"Network identity read failed: {exc}"}
+
+    ipv4_addresses = iface.get("IPv4Addresses")
+    first_ipv4 = (
+        ipv4_addresses[0] if isinstance(ipv4_addresses, list) and ipv4_addresses else {}
+    )
+    dhcpv4 = iface.get("DHCPv4") if isinstance(iface.get("DHCPv4"), dict) else {}
+    vlan = iface.get("VLAN") if isinstance(iface.get("VLAN"), dict) else {}
+    name_servers = iface.get("NameServers")
+    return {
+        "status": "ok",
+        "@odata.id": iface_path,
+        "dns_name": iface.get("HostName"),
+        "fqdn_value": iface.get("FQDN"),
+        "dhcp_enabled": dhcpv4.get("DHCPEnabled") if isinstance(dhcpv4, dict) else None,
+        "ip_address": first_ipv4.get("Address") if isinstance(first_ipv4, dict) else None,
+        "subnet_mask": first_ipv4.get("SubnetMask") if isinstance(first_ipv4, dict) else None,
+        "gateway": first_ipv4.get("Gateway") if isinstance(first_ipv4, dict) else None,
+        "vlan_enabled": vlan.get("VLANEnable") if isinstance(vlan, dict) else None,
+        "vlan_id": vlan.get("VLANId") if isinstance(vlan, dict) else None,
+        "name_servers": name_servers if isinstance(name_servers, list) else [],
+    }
+
+
+def _manager_license_summaries(
+    client: httpx.Client,
+    base_url: str,
+    root: dict[str, Any],
+    requests: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    license_service_path = _odata_id(root.get("LicenseService"))
+    if not license_service_path:
+        return []
+    try:
+        service = _get_json(client, base_url, license_service_path, requests)
+        licenses_path = _odata_id(service.get("Licenses"))
+        if not licenses_path:
+            return []
+        collection = _get_json(client, base_url, licenses_path, requests)
+        members = collection.get("Members", [])
+        if not isinstance(members, list):
+            return []
+        summaries: list[dict[str, Any]] = []
+        for member in members[:5]:
+            path = _odata_id(member)
+            if not path:
+                continue
+            payload = _get_json(client, base_url, path, requests)
+            status = payload.get("Status") if isinstance(payload.get("Status"), dict) else {}
+            summaries.append(
+                {
+                    "@odata.id": path,
+                    "name": payload.get("Name"),
+                    "product_type": payload.get("LicenseType"),
+                    "status_state": status.get("State"),
+                }
+            )
+        return summaries
+    except (RedfishJsonDecodeError, httpx.HTTPError):
+        return []
 
 
 def _inventory_collection_access_checks(
@@ -1158,7 +1561,7 @@ def _inventory_collection_paths(root: dict[str, Any]) -> list[tuple[str, str]]:
         path = _odata_id(root.get(name))
         if path:
             paths.append((name, path))
-    return paths
+    return _unique_named_paths(paths)
 
 
 def _collection_access_check(
@@ -1227,6 +1630,8 @@ def _classify_endpoint_checks(checks: list[dict[str, Any]]) -> str:
         for check in checks
     ):
         return "redfish_available"
+    if any(check.get("classification") == "redfish_invalid_json" for check in checks):
+        return "redfish_invalid_json"
     if any(check.get("classification") == "network_unreachable" for check in checks):
         return "network_unreachable"
 
@@ -1308,6 +1713,7 @@ def _endpoint_message(classification: str) -> str:
             "Basic authentication was rejected or lacks sufficient inventory privilege."
         ),
         "session_auth_may_be_required": "Session authentication may be required for inventory collection.",
+        "redfish_invalid_json": "Redfish endpoint returned HTTP 200 with a non-JSON or malformed JSON body.",
         "redfish_http_error": "Redfish root returned an unexpected HTTP error.",
         "legacy_available": "Legacy iLO endpoint is available.",
         "legacy_available_redfish_not_found": "Legacy iLO endpoint is available, but Redfish root was not found.",
@@ -1335,6 +1741,9 @@ def _endpoint_next_safe_action(classification: str) -> str:
         "redfish_collection_unauthorized": INVENTORY_COLLECTION_AUTH_NEXT_ACTION,
         "basic_auth_rejected_or_insufficient_privilege": INVENTORY_COLLECTION_AUTH_NEXT_ACTION,
         "session_auth_may_be_required": INVENTORY_COLLECTION_AUTH_NEXT_ACTION,
+        "redfish_invalid_json": (
+            "Verify the target is iLO Redfish and retry GET-only detection after endpoint health is corrected."
+        ),
         "redfish_http_error": "Review iLO Redfish support and endpoint status before retrying GET-only detection.",
         "legacy_available": "Use a dedicated read-only legacy iLO discovery path if Redfish is unavailable.",
         "legacy_available_redfish_not_found": "Use legacy read-only discovery context or verify whether this iLO supports Redfish.",
@@ -1414,7 +1823,19 @@ def _get_json(
                 }
             )
             response.raise_for_status()
-            payload = response.json()
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                requests.append(
+                    {
+                        "path": path,
+                        "attempt": attempt,
+                        "status": "failed",
+                        "status_code": response.status_code,
+                        "error": "invalid_json",
+                    }
+                )
+                raise RedfishJsonDecodeError(path, response.status_code) from exc
             return payload if isinstance(payload, dict) else {"value": payload}
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             last_error = exc
@@ -1537,10 +1958,8 @@ def _network_collection_paths(system_payload: dict[str, Any], system_path: str) 
         if path:
             paths.append(path)
     for suffix in ("NetworkAdapters", "EthernetInterfaces"):
-        fallback = f"{system_path.rstrip('/')}/{suffix}/"
-        if fallback not in paths:
-            paths.append(fallback)
-    return paths
+        paths.append(f"{system_path.rstrip('/')}/{suffix}/")
+    return _unique_paths(paths)
 
 
 def _network_collection_members(
@@ -1552,20 +1971,31 @@ def _network_collection_members(
     try:
         collection = _get_json(client, base_url, path, requests)
     except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 404:
+        if 400 <= exc.response.status_code < 500:
             return []
         raise
     members = collection.get("Members", [])
     if not isinstance(members, list):
         return []
     results: list[dict[str, Any]] = []
-    for member in members[:16]:
-        member_path = _odata_id(member)
-        if not member_path:
-            continue
-        payload = _get_json(client, base_url, member_path, requests)
+    for member_path in _member_paths(members, limit=16):
+        try:
+            payload = _get_json(client, base_url, member_path, requests)
+        except httpx.HTTPStatusError as exc:
+            if 400 <= exc.response.status_code < 500:
+                continue
+            raise
         results.append(_network_summary(payload))
     return results
+
+
+def _member_paths(members: list[Any], *, limit: int) -> list[str]:
+    paths: list[str] = []
+    for member in members[:limit]:
+        member_path = _odata_id(member)
+        if member_path:
+            paths.append(member_path)
+    return _unique_paths(paths)
 
 
 def _network_summary(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1627,10 +2057,8 @@ def _storage_collection_paths(system_payload: dict[str, Any], system_path: str) 
     if smart_storage:
         paths.append(smart_storage)
     for suffix in ("Storage", "SmartStorage"):
-        fallback = f"{system_path.rstrip('/')}/{suffix}/"
-        if fallback not in paths:
-            paths.append(fallback)
-    return paths
+        paths.append(f"{system_path.rstrip('/')}/{suffix}/")
+    return _unique_paths(paths)
 
 
 def _discover_storage_path(
@@ -1657,13 +2085,11 @@ def _discover_storage_path(
 
     members = payload.get("Members")
     if isinstance(members, list):
-        for member in members[:16]:
-            member_path = _odata_id(member)
-            if member_path:
-                _merge_storage_discovery(
-                    discovery,
-                    _discover_storage_member(client, base_url, member_path, requests),
-                )
+        for member_path in _member_paths(members, limit=16):
+            _merge_storage_discovery(
+                discovery,
+                _discover_storage_member(client, base_url, member_path, requests),
+            )
         return discovery
 
     _merge_storage_discovery(
@@ -1751,7 +2177,28 @@ def _storage_controller_collection_paths(payload: dict[str, Any]) -> list[str]:
             path = _odata_id(links.get(key))
         if path:
             paths.append(path)
-    return paths
+    return _unique_paths(paths)
+
+
+def _unique_paths(paths: list[str]) -> list[str]:
+    return unique_preserving_order(
+        (path for path in paths if _path_dedupe_key(path)),
+        key=_path_dedupe_key,
+    )
+
+
+def _unique_named_paths(paths: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    return unique_preserving_order(
+        ((name, path) for name, path in paths if _path_dedupe_key(path)),
+        key=lambda item: _path_dedupe_key(item[1]),
+    )
+
+
+def _path_dedupe_key(path: str) -> str:
+    text = path.strip()
+    if text in {"", "/"}:
+        return text
+    return text.rstrip("/")
 
 
 def _storage_controller_collection(
@@ -1770,10 +2217,7 @@ def _storage_controller_collection(
     if not isinstance(members, list):
         return []
     controllers = []
-    for member in members[:16]:
-        member_path = _odata_id(member)
-        if not member_path:
-            continue
+    for member_path in _member_paths(members, limit=16):
         controllers.append(_discover_storage_member(client, base_url, member_path, requests))
     return controllers
 
@@ -1814,10 +2258,7 @@ def _storage_collection_summaries(
     if not isinstance(members, list):
         return []
     summaries = []
-    for member in members[:64]:
-        member_path = _odata_id(member)
-        if not member_path:
-            continue
+    for member_path in _member_paths(members, limit=64):
         summaries.append(summarizer(_get_json(client, base_url, member_path, requests)))
     return summaries
 
@@ -1932,7 +2373,134 @@ def _resource_summary(payload: dict[str, Any]) -> dict[str, Any]:
     summary = {key: payload[key] for key in keys if key in payload}
     if "SerialNumber" in payload:
         summary["serial_number_present"] = bool(payload["SerialNumber"])
+    identity_values = {
+        key: payload.get(key)
+        for key in (
+            "@odata.id",
+            "Id",
+            "UUID",
+            "SerialNumber",
+            "Manufacturer",
+            "Model",
+            "ManagerType",
+        )
+        if payload.get(key) not in {None, ""}
+    }
+    if identity_values:
+        summary["identity_fingerprint_sha256"] = hashlib.sha256(
+            json.dumps(
+                identity_values,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
+    hardware_identity_values = {
+        key: payload.get(key)
+        for key in ("UUID", "SerialNumber")
+        if payload.get(key) not in {None, ""}
+    }
+    if hardware_identity_values:
+        summary["hardware_identity_fingerprint_sha256"] = hashlib.sha256(
+            json.dumps(
+                hardware_identity_values,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
     return summary
+
+
+def _attach_write_target_evidence(result: dict[str, Any]) -> dict[str, Any]:
+    if result.get("status") != "ok":
+        return result
+
+    managers = result.get("managers") if isinstance(result.get("managers"), list) else []
+    systems = result.get("systems") if isinstance(result.get("systems"), list) else []
+    chassis = result.get("chassis") if isinstance(result.get("chassis"), list) else []
+    manager_fingerprints = _identity_fingerprints(managers)
+    system_fingerprints = _identity_fingerprints(systems)
+    chassis_fingerprints = _identity_fingerprints(chassis)
+    system_hardware_fingerprints = _hardware_identity_fingerprints(systems)
+    identity_verified = bool(
+        manager_fingerprints
+        and system_fingerprints
+        and system_hardware_fingerprints
+    )
+    identity_payload = {
+        "managers": manager_fingerprints,
+        "systems": system_fingerprints,
+        "system_hardware": system_hardware_fingerprints,
+        "chassis": chassis_fingerprints,
+    }
+    identity_fingerprint = (
+        hashlib.sha256(
+            json.dumps(
+                identity_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        if identity_verified
+        else None
+    )
+    evidence: dict[str, Any] = {
+        "source": "live-ilo-redfish-inventory",
+        "collected_at": datetime.now(UTC).isoformat(),
+        "target_source": result.get("target_source"),
+        "target_fingerprint": result.get("target_fingerprint"),
+        "identity_fingerprint_sha256": identity_fingerprint,
+        "candidate_index": result.get("candidate_index"),
+        "target_candidate_count": result.get("target_candidate_count"),
+        "exact_target_only": (
+            result.get("candidate_index") == 1
+            and result.get("target_candidate_count") == 1
+        ),
+        "authenticated": True,
+        "read_only_collection": True,
+        "inventory_complete": identity_verified,
+        "identity_verified": identity_verified,
+    }
+    evidence["evidence_digest_sha256"] = hashlib.sha256(
+        json.dumps(
+            evidence,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+    return {**result, "write_target_evidence": evidence}
+
+
+def _identity_fingerprints(items: list[Any]) -> list[str]:
+    return sorted(
+        {
+            fingerprint
+            for item in items
+            if isinstance(item, dict)
+            and isinstance(
+                fingerprint := item.get("identity_fingerprint_sha256"),
+                str,
+            )
+            and re.fullmatch(r"[0-9a-f]{64}", fingerprint)
+        }
+    )
+
+
+def _hardware_identity_fingerprints(items: list[Any]) -> list[str]:
+    return sorted(
+        {
+            fingerprint
+            for item in items
+            if isinstance(item, dict)
+            and isinstance(
+                fingerprint := item.get("hardware_identity_fingerprint_sha256"),
+                str,
+            )
+            and re.fullmatch(r"[0-9a-f]{64}", fingerprint)
+        }
+    )
 
 
 def _strip_links(summary: dict[str, Any]) -> dict[str, Any]:
