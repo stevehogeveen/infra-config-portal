@@ -22,6 +22,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { api } from "./api";
 import { DeviceInventoryForm } from "./components/DeviceInventoryForm";
+import { DriveAllocationPanel } from "./components/DriveAllocationPanel";
 import { OperatorHomeView } from "./components/operator/OperatorHomeView";
 import {
   ActionLink,
@@ -1382,7 +1383,7 @@ export function OperatorServerPage({ health, labProfileState, onReloadLabProfile
 
 type ServerDetailSectionId = "setup" | "ilo" | "checks" | "hardware";
 
-type RackIloTab = "access" | "settings" | "checks" | "install";
+type RackIloTab = "access" | "settings" | "drives" | "checks" | "install";
 
 /**
  * Guarded actions the rack can run for one iLO, in the order an install uses
@@ -1637,6 +1638,7 @@ export function RackIloConfigurator({
   const tabs: Array<{ id: RackIloTab; label: string }> = [
     { id: "access", label: "Access" },
     { id: "settings", label: "iLO settings" },
+    { id: "drives", label: "Drives" },
     { id: "checks", label: "Checks" },
     { id: "install", label: "Install ESXi" }
   ];
@@ -1655,6 +1657,7 @@ export function RackIloConfigurator({
       <div className="rack-inline-config-body">
         {tab === "access" && <IloAccessSettingsPanel deviceId={device.id} initialHost={device.host || address.ilo_initial || ""} onReload={reloadInlineData} plannedHost={address.ilo || ""} />}
         {tab === "settings" && <IloSetupIntentWorkspacePanel deviceId={device.id} />}
+        {tab === "drives" && <DriveAllocationPanel deviceId={device.id} deviceName={device.display_name} onSaved={reloadInlineData} />}
         {tab === "checks" && <ServerWorkspaceControls activeProfile={activeProfile} address={address} firmwareSummaries={firmwareSummaries} iloDeviceId={device.id} localStorageMode={localStorageMode} onReload={reloadInlineData} scope="ilo" workflowActions={workflowActions} />}
         {tab === "install" && <section className="rack-guarded-actions" aria-label={`Install ESXi on ${device.display_name}`}>
           <header className="rack-guarded-head">
