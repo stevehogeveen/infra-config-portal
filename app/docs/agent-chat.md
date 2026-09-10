@@ -14881,3 +14881,88 @@ iLO open the same beside-rack configurator instead of forking on saved credentia
 
 Read-only by default; every hardware write stays behind its existing preview-then-confirm.
 Never green without current proof bound to the exact target. `PROVIDER_MODE=mock` for agent tests.
+
+## 2026-09-10 — CLAUDE (drive allocation built; rack workspace redesign underway)
+
+Work is on branch **`rack-workspace-visual-redesign`** (pushed). Trunk `unified-build-journey`
+is untouched at `da6501a` — nothing here destabilises it.
+
+### What landed
+
+`2c8bce2` — a **Drives** tab in the beside-rack iLO configurator
+(`RackIloConfigurator`, `operatorPages.tsx`), backed by a new
+`app/frontend/src/components/DriveAllocationPanel.tsx`.
+
+Every bay is assigned exactly one job — ESXi boot, vSAN, or local — and the panel writes that
+choice as RAID intent through the endpoints that already existed
+(`hpe-storage-discovery` to read, `hpe-raid-intent` PUT to save):
+
+- **boot** becomes a bootable `RAID1` volume named `ESXi-OS`
+- **local** becomes a `VM-Datastore` volume, level chosen by drive count the same way
+  `hpe_raid.py` recommends (RAID1 / RAID5 / RAID6)
+- **vSAN is the absence of a volume.** Those bays are deliberately left out of every volume so
+  the controller passes them through raw. The panel names that absence, because otherwise it
+  reads as "unassigned" rather than "decided".
+
+That last point is the actual fix for a real problem: `_recommended_plan()` in `hpe_raid.py`
+only ever offers "boot mirror plus a local RAID volume", which claims **every** remaining
+drive. That is why DL360 A and DL380A report zero passthrough drives and cannot join a vSAN
+cluster. There was no way to say "leave these raw" until now.
+
+Three rules gate the save (`allocationRules()`), and Save is disabled while any fails:
+boot pair is exactly two drives; assigned roles never exceed the bays the controller reported;
+at least one drive stays raw or the host cannot contribute to vSAN.
+
+### Verified, not assumed
+
+- `tsc --noEmit` clean; `npm run test:component` passes.
+- Pure logic exercised against real shapes: volume building, rule gating (1 boot, 3 boot and
+  zero-vSAN all correctly blocked), and intent round-trip.
+- Live round-trip against DL360 B's real `hpe-raid-intent` endpoint to prove the payload is
+  accepted, then **its original empty intent was restored** — its saved plan is as it was.
+
+### Gotchas worth knowing before touching this
+
+1. **Bay ids are not numbers.** The controller reports HPE `port:box:bay` strings —
+   `1I:1:1` through `2I:1:8` on the DL360s. `bayNumber()` sorts on the trailing segment and
+   the tile shows "Bay 1" with the full id on hover. Do not assume integers anywhere.
+2. **`hpe-raid-intent` does not validate bay ids.** It accepted `"1"` and `"2"`, which do not
+   exist on that controller. The panel only ever sends ids from discovery, but the endpoint
+   itself will take anything.
+3. **The backend must run from the main checkout**, not a worktree. `.local/` holds the real
+   lab profile and database (`REPO_ROOT` in `probe_cache.py` resolves relative to the running
+   code), so a worktree-run backend sees an empty lab.
+4. A `node_modules` junction was made inside the worktree pointing at the main checkout so it
+   could type-check. Untracked and disposable.
+
+### Lab state as left
+
+Backend up in `local-lab-readwrite` / `real_lab`. Three iLOs proven. **DL360 B has 8 of 8
+drives passthrough-ready; DL360 A (8 bays) and DL380A (16 bays) have zero** — every bay sits
+in a RAID volume. No host has a boot pair carved, and no host runs ESXi. vSAN is therefore
+blocked on RAID rework, not on ESXi install.
+
+### Next, in order
+
+1. **Wire preview-then-apply.** The panel saves intent but never calls
+   `hpe-raid-plan-preview`. Carving the mirror is destructive and must keep the existing
+   preview → explicit confirmation → apply path. Nothing in this commit writes to a controller.
+2. Stage-dependent rendering of the three-column workspace (mostly conditional rendering of
+   an already-approved design; no new data needed).
+3. The build flow as its own page, writing to the lab profile instead of localStorage.
+4. VM placement and the vCenter sequence — only once a host actually runs ESXi.
+
+### Open, needs Steve
+
+- `AGENTS.md` carries two `INCOMPLETE` markers where sentences were truncated beyond recovery
+  (a fragment reading only "real-lab workflow.", and the `danger-full-access` condition).
+  Until he restores the wording, treat `danger-full-access` as **not** permitted.
+- Whether the separate Strata configurator prototype becomes a Design mode
+  (`app/docs/design/05-blend-options.html`, option B) or the flow page just ships standalone.
+
+### Read first
+
+`app/docs/lab-build-rules.md` — eight rules this work implements. `app/docs/design/` — the
+mockups, self-contained HTML, open in a browser. Standing constraints unchanged: read-only by
+default, every hardware write behind preview-then-confirm, never green without current proof
+bound to the exact target, `PROVIDER_MODE=mock` for agent-run tests.
