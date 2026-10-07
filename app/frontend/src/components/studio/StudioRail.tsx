@@ -114,7 +114,7 @@ export function StudioRail({ viewing }: { viewing: number | null }) {
   return <nav className={`sd-rail ${open ? "open" : ""}`} aria-label="Build steps and equipment">
     <button type="button" className="sd-rail-sum" aria-expanded={open} onClick={() => setOpen(value => !value)}>
       <span className="sd-dot">{summaryStep + 1}</span>
-      <span><b>Step {summaryStep + 1} of {steps.length} · {steps[summaryStep].name}</b><small>{viewing !== null && viewing !== summaryStep ? `Viewing ${steps[viewing].name}` : steps[summaryStep].note}{servers.length ? ` · ${answered} of ${servers.length} answered` : ""}</small></span>
+      <span><b>{steps.every(step => step.state === "done") && viewing === null ? `All ${steps.length} steps done · kit built` : `Step ${summaryStep + 1} of ${steps.length} · ${steps[summaryStep].name}`}</b><small>{viewing !== null && viewing !== summaryStep ? `Viewing ${steps[viewing].name}` : steps[summaryStep].note}{servers.length ? ` · ${answered} of ${servers.length} answered` : ""}</small></span>
       <svg className="sd-ic sd-ic-s" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
     </button>
     <div className="sd-rail-group">
