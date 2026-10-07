@@ -10,6 +10,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  RotateCcw,
   Route,
   Save,
   Server,
@@ -23,7 +24,11 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api } from "./api";
 import { DeviceInventoryForm } from "./components/DeviceInventoryForm";
 import { DriveAllocationPanel } from "./components/DriveAllocationPanel";
+import { InventoryWorkflowPanel } from "./components/InventoryWorkflowPanel";
+import type { RackPlan } from "./components/RackPlanner";
 import { OperatorHomeView } from "./components/operator/OperatorHomeView";
+import { Guide, GuideActionProvider, GuidePrimary, useGuideActions } from "./components/studio/Guide";
+import { ProvenanceChip } from "./components/studio/ProvenanceChip";
 import {
   ActionLink,
   BlockerItem,
@@ -640,28 +645,50 @@ const validationIntentRegions: UiIntentRegion[] = [
 ];
 
 export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }: OperatorPageProps) {
+  // No router hooks here: this page is also rendered outside the app router in harnesses.
+  const guideActions = useGuideActions();
   const activeProfile = activeLabProfile(labProfileState);
   const address = activeAddressPlan(activeProfile);
   const profileKey = `${activeProfile?.id ?? "none"}:${activeProfile?.version ?? 0}:${activeProfile?.source ?? "missing"}`;
   const [edit, setEdit] = useState<SettingsProfileEditState>(() => settingsProfileEditStateFrom(activeProfile));
   const [serviceLists, setServiceLists] = useState<LabDefaultsServiceLists>(() => labDefaultsServiceListsFrom(activeProfile));
+  const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify({ edit: settingsProfileEditStateFrom(activeProfile), serviceLists: labDefaultsServiceListsFrom(activeProfile) }));
+  const snapshot = JSON.stringify({ edit, serviceLists });
+  const dirty = snapshot !== savedSnapshot;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const sharedCredentialsSaved = false;
 
   useEffect(() => {
     setEdit(settingsProfileEditStateFrom(activeProfile));
     setServiceLists(labDefaultsServiceListsFrom(activeProfile));
+    setSavedSnapshot(JSON.stringify({ edit: settingsProfileEditStateFrom(activeProfile), serviceLists: labDefaultsServiceListsFrom(activeProfile) }));
     setError("");
     setMessage("");
   }, [profileKey, activeProfile]);
 
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  function resetDefaults() {
+    const saved = JSON.parse(savedSnapshot) as { edit: SettingsProfileEditState; serviceLists: LabDefaultsServiceLists };
+    setEdit(saved.edit);
+    setServiceLists(saved.serviceLists);
+    setError("");
+    setMessage("");
+  }
+
   function update<K extends keyof SettingsProfileEditState>(key: K, value: SettingsProfileEditState[K]) {
+    setMessage("");
     setEdit((current) => ({ ...current, [key]: value }));
   }
 
   function updateServiceServer(service: LabDefaultsServiceKey, index: number, value: string) {
+    setMessage("");
     setServiceLists((current) => ({
       ...current,
       [service]: current[service].map((server, serverIndex) => serverIndex === index ? value : server)
@@ -669,6 +696,7 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
   }
 
   function addServiceServer(service: LabDefaultsServiceKey) {
+    setMessage("");
     setServiceLists((current) => current[service].length >= 8 ? current : {
       ...current,
       [service]: [...current[service], ""]
@@ -676,6 +704,7 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
   }
 
   function removeServiceServer(service: LabDefaultsServiceKey, index: number) {
+    setMessage("");
     setServiceLists((current) => {
       const remaining = current[service].filter((_, serverIndex) => serverIndex !== index);
       return {
@@ -708,6 +737,7 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
         await api.activateLabProfile(saved.id);
       }
       await (onReloadLabProfile ?? (async () => {}))();
+      setSavedSnapshot(snapshot);
       setMessage("Lab defaults saved.");
     } catch (err) {
       setError(errorMessage(err));
@@ -718,29 +748,37 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
 
   return (
     <OperatorPage title="Lab Defaults">
-      <div className="operator-surface-heading">
-        <p className="operator-kicker">Setup</p>
-        <h1>Lab Defaults</h1>
-        <p>Shared network and service values this kit reuses everywhere. Add every DNS, NTP, and SNMP endpoint here.</p>
+      <div className="kit-defaults-shell">
+      <div className="kit-defaults-heading">
+        <p className="kit-defaults-eyebrow">{activeProfile?.name || "Kit setup"}</p>
+        <h1>Network settings</h1>
+        <p>Shared settings for your server, switch and ESXi host.</p>
       </div>
-      <form className="lab-defaults-form" onSubmit={saveDefaults}>
+      {!activeProfile && <p role="alert">Kit settings are unavailable. Reload this page after the backend is connected.</p>}
+      <form id="lab-defaults-form" className="lab-defaults-form" onSubmit={saveDefaults}>
+        <Guide eyebrow={<>Your guide · <b>Step 2 of 7</b> · Network settings</>}
+          say={dirty ? <>You have changed the shared network settings, so save them to keep them in your plan.</> : <>These network settings are shared by every piece of equipment in this kit; when they look right, carry on to connecting the equipment.</>}
+          reassure="Saving writes your plan only. Nothing on the network is changed."
+          actionRef={guideActions.ref}
+          primary={dirty ? undefined : <a className="sd-primary" href={"/setup/connect" + (typeof window === "undefined" ? "" : window.location.search)}>Continue to connections</a>}
+          label={<><ProvenanceChip kind="saved" />These values are your plan. The app has not checked them against the network.</>} />
         <div className="lab-defaults-grid">
-          <Card aria-label="Network defaults" className="lab-defaults-network-card" hover={false}>
-            <CardHeader>
+          <section aria-label="Network defaults" className="kit-defaults-section">
+            <header className="kit-section-heading">
+              <EthernetPort size={22} aria-hidden="true" />
               <div>
-                <h2>Network &amp; services</h2>
-                <p className="muted">Addressing, storage path, and every shared service endpoint stay visible in one place.</p>
+                <h2>Management network</h2>
+                <p>Planned network settings</p>
               </div>
-            </CardHeader>
-            <CardContent>
+            </header>
               <div className="lab-defaults-input-grid">
                 <label className="lab-defaults-field">
-                  <span>Subnet</span>
+                  <span>Subnet / CIDR</span>
                   <input
                     aria-label="Subnet"
                     disabled={busy || !activeProfile}
                     onChange={(event) => update("subnet", event.target.value)}
-                    placeholder="192.168.1.0/24"
+                    placeholder="Network address / prefix"
                     value={edit.subnet}
                   />
                 </label>
@@ -750,7 +788,7 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
                     aria-label="Gateway"
                     disabled={busy || !activeProfile}
                     onChange={(event) => update("gateway", event.target.value)}
-                    placeholder={topologyGatewayFromSubnet(edit.subnet || address.subnet)}
+                    placeholder="Gateway IP address"
                     value={edit.gateway}
                   />
                 </label>
@@ -776,7 +814,7 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
                   />
                 </label>
                 <label className="lab-defaults-field lab-defaults-select-field lab-defaults-field-wide">
-                  <span>Storage protocol</span>
+                  <span>VM storage</span>
                   <select
                     aria-label="Storage protocol"
                     disabled={busy || !activeProfile}
@@ -785,11 +823,14 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
                   >
                     <option value="nfs">NFS</option>
                     <option value="iscsi">iSCSI</option>
-                    <option value="local">Local</option>
+                    <option value="local">Local datastore</option>
                   </select>
                 </label>
               </div>
 
+          </section>
+          <section className="kit-defaults-section" aria-label="Shared services">
+            <header className="kit-section-heading"><Route size={22} aria-hidden="true" /><div><h2>Shared services</h2><p>Name resolution, time and monitoring</p></div></header>
               <div className="lab-defaults-service-stack" aria-label="Shared service defaults">
                 <section aria-label="DNS defaults" className="lab-defaults-service-card">
                   <div className="lab-defaults-service-heading">
@@ -800,17 +841,21 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
                     <label className="lab-defaults-service-toggle">
                       <input checked={edit.enableDns} disabled={busy || !activeProfile} onChange={(event) => update("enableDns", event.target.checked)} type="checkbox" />
                       <span>Enable DNS</span>
-                    </label>
+                    </label><span className={`sd-switch-state ${edit.enableDns ? "on" : ""}`} aria-hidden="true">{edit.enableDns ? "on" : "off"}</span>
                   </div>
                   <LabDefaultsServerList
-                    disabled={busy || !activeProfile}
+                    disabled={busy || !activeProfile || !edit.enableDns}
                     label="DNS server"
                     onAdd={() => addServiceServer("dns")}
                     onChange={(index, value) => updateServiceServer("dns", index, value)}
                     onRemove={(index) => removeServiceServer("dns", index)}
-                    placeholder="192.168.1.1"
+                    placeholder="IP address or hostname"
                     values={serviceLists.dns}
                   />
+                  <label className="lab-defaults-service-version kit-service-extra">
+                    <span>Domain name</span>
+                    <input aria-label="Domain name" disabled={busy || !activeProfile || !edit.enableDns} value={edit.domainName} onChange={(event) => update("domainName", event.target.value)} placeholder="Optional domain" />
+                  </label>
                 </section>
 
                 <section aria-label="NTP defaults" className="lab-defaults-service-card">
@@ -822,17 +867,21 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
                     <label className="lab-defaults-service-toggle">
                       <input checked={edit.enableNtp} disabled={busy || !activeProfile} onChange={(event) => update("enableNtp", event.target.checked)} type="checkbox" />
                       <span>Enable NTP</span>
-                    </label>
+                    </label><span className={`sd-switch-state ${edit.enableNtp ? "on" : ""}`} aria-hidden="true">{edit.enableNtp ? "on" : "off"}</span>
                   </div>
                   <LabDefaultsServerList
-                    disabled={busy || !activeProfile}
+                    disabled={busy || !activeProfile || !edit.enableNtp}
                     label="NTP server"
                     onAdd={() => addServiceServer("ntp")}
                     onChange={(index, value) => updateServiceServer("ntp", index, value)}
                     onRemove={(index) => removeServiceServer("ntp", index)}
-                    placeholder="192.168.1.2"
+                    placeholder="IP address or hostname"
                     values={serviceLists.ntp}
                   />
+                  <label className="lab-defaults-service-version kit-service-extra">
+                    <span>Timezone</span>
+                    <input aria-label="Timezone" disabled={busy || !activeProfile || !edit.enableNtp} value={edit.timezone} onChange={(event) => update("timezone", event.target.value)} placeholder="Area/Location" />
+                  </label>
                 </section>
 
                 <section aria-label="SNMP defaults" className="lab-defaults-service-card">
@@ -844,13 +893,13 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
                     <label className="lab-defaults-service-toggle">
                       <input checked={edit.enableSnmp} disabled={busy || !activeProfile} onChange={(event) => update("enableSnmp", event.target.checked)} type="checkbox" />
                       <span>Enable SNMP</span>
-                    </label>
+                    </label><span className={`sd-switch-state ${edit.enableSnmp ? "on" : ""}`} aria-hidden="true">{edit.enableSnmp ? "on" : "off"}</span>
                   </div>
                   <label className="lab-defaults-service-version">
                     <span>Version</span>
                     <select
                       aria-label="SNMP version"
-                      disabled={busy || !activeProfile}
+                      disabled={busy || !activeProfile || !edit.enableSnmp}
                       onChange={(event) => update("snmpVersion", event.target.value)}
                       value={edit.snmpVersion}
                     >
@@ -860,54 +909,36 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
                     </select>
                   </label>
                   <LabDefaultsServerList
-                    disabled={busy || !activeProfile}
+                    disabled={busy || !activeProfile || !edit.enableSnmp}
                     label="SNMP manager"
                     onAdd={() => addServiceServer("snmp")}
                     onChange={(index, value) => updateServiceServer("snmp", index, value)}
                     onRemove={(index) => removeServiceServer("snmp", index)}
-                    placeholder="192.168.1.3"
+                    placeholder="IP address or hostname"
                     values={serviceLists.snmp}
                   />
                 </section>
               </div>
-            </CardContent>
-          </Card>
-          <Card aria-label="Shared sign-in" className="lab-defaults-signin-card" hover={false}>
-            <CardHeader>
-              <div>
-                <h2>Shared sign-in</h2>
-                <p className="muted">Secrets are not stored in kit defaults. Click a device on Overview to set its own sign-in; this page only keeps non-secret conventions.</p>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <dl className="lab-defaults-facts lab-defaults-secret-facts">
-                <div>
-                  <dt>Password location</dt>
-                  <dd>
-                    <span>{sharedCredentialsSaved ? "saved secret reference" : "device workspaces"}</span>
-                    <StatusBadge label={sharedCredentialsSaved ? "Saved" : "Set per device"} status={sharedCredentialsSaved ? "ready" : "plan-only"} />
-                  </dd>
-                </div>
-                <div>
-                  <dt>Default username</dt>
-                  <dd>
-                    <span>Use each device workspace</span>
-                    <StatusBadge label="Not secret" status="ready" />
-                  </dd>
-                </div>
-              </dl>
-            </CardContent>
-          </Card>
+          </section>
         </div>
-        {error && <div className="operator-feedback error lab-defaults-feedback">{error}</div>}
-        {message && <div className="operator-feedback lab-defaults-feedback">{message}</div>}
+        {error && <div role="alert" className="operator-feedback error lab-defaults-feedback">{error}</div>}
+        {message && <div role="status" className="operator-feedback lab-defaults-feedback">{message}</div>}
         <div className="lab-defaults-actions">
-          <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
-            <Save size={16} />
-            {busy ? "Saving" : "Save defaults"}
-          </button>
+          <span className={dirty ? "kit-unsaved" : ""}>{dirty ? "Unsaved changes" : "Saved plan only. No hardware changes."}</span>
+          <div className="kit-save-controls">
+          <button className="button-link" type="button" disabled={busy || !dirty} onClick={resetDefaults}><RotateCcw size={16} /> Reset changes</button>
+          {(() => {
+            const saveButton = <button className="operator-primary-button" form="lab-defaults-form" disabled={busy || !activeProfile || !dirty} type="submit">
+              <Save size={16} />
+              {busy ? "Saving" : "Save defaults"}
+            </button>;
+            // While there are unsaved changes, the save button is the one primary in the guide.
+            return <GuideActionProvider value={guideActions.value}>{dirty ? <GuidePrimary>{saveButton}</GuidePrimary> : saveButton}</GuideActionProvider>;
+          })()}
+          </div>
         </div>
       </form>
+      </div>
     </OperatorPage>
   );
 }
@@ -1150,6 +1181,57 @@ function networkSwitchAccessLabel(ciscoReadiness: ProviderProbeResult | null, co
   ].join(" ").toLowerCase();
   if (/(credential|password|username|sign[- ]?in|login|secret|auth)/i.test(text)) return "Needs sign-in";
   return "Not checked";
+}
+
+export function GuidedEsxiPage({ labProfileState, onReloadLabProfile }: OperatorPageProps) {
+  const profile = activeLabProfile(labProfileState);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [plan, setPlan] = useState<RackPlan | null>(null);
+  const [actions, setActions] = useState<WorkflowAction[]>([]);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<WorkflowActionRun | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setPlan(null); setError("");
+    if (profile) Promise.all([api.rackPlan(profile.id), api.workflowActions()]).then(([rack, workflow]) => {
+      if (active) { setPlan(rack); setActions(workflow); }
+    }).catch(e => { if (active) setError(e.message); });
+    return () => { active = false; };
+  }, [profile?.id]);
+  const servers = plan?.equipment.filter(item => item.kind === "server" && item.device_id) || [];
+  const requested = new URLSearchParams(location.search).get("device");
+  const server = requested ? servers.find(item => item.device_id === requested) : servers[0];
+  useEffect(() => { setResult(null); }, [server?.device_id]);
+  const query = server?.device_id ? "?device=" + encodeURIComponent(server.device_id) : "";
+  const address = activeAddressPlan(profile);
+  async function checkHost() {
+    setBusy(true); setError("");
+    try { setResult(await api.runWorkflowAction("esxi.management-validation")); }
+    catch (e) { setError(errorMessage(e)); }
+    finally { setBusy(false); }
+  }
+  return <div className="guided-esxi">
+    {error && <p role="alert" className="workflow-alert">{error}</p>}
+    {!plan && !error && <p role="status">Loading ESXi setup...</p>}
+    {plan && <label className="connection-device-picker">Server<select aria-label="Server for ESXi" disabled={busy} value={server?.device_id || ""} onChange={e => navigate("/setup/prepare-esxi?device=" + encodeURIComponent(e.target.value))}>{!server && <option value="">Choose a server</option>}{servers.map(item => <option key={item.device_id} value={item.device_id!}>{item.name}</option>)}</select></label>}
+    {plan && !server && <p className="workflow-pending">Choose a server in this kit. <Link to="/setup/guide">Review equipment</Link></p>}
+    {server && profile && <>
+      <p className="esxi-storage-handoff">Hardware and RAID: <Link to={"/setup/connect" + query}>Connect equipment</Link>. Firmware approval and a verified boot mirror are required before installation.</p>
+      {servers.length === 1 ? <ServerConfigurePanel esxiOnly activeProfile={profile} address={address} global={profile.global_settings} onSaved={onReloadLabProfile || (async () => {})} /> : <p className="workflow-pending">This kit has multiple servers. The legacy ESXi network configuration is kit-wide, so it is not editable here as a per-server setting.</p>}
+      <section className="workflow-section"><header><div><h2>ESXi installation</h2><p>{server.name}</p></div></header>
+        <details className="esxi-install-actions"><summary>Installer media and one-time boot</summary>
+          <p>Confirm the ESXi ISO and boot target before approving these actions. Installing ESXi overwrites the volume selected in the installer.</p>
+          {RACK_ILO_GUARDED_ACTIONS.map(entry => <GuardedActionRunner key={server.device_id + entry.actionId} action={actions.find(action => action.action_id === entry.actionId)} detail={entry.detail} deviceId={server.device_id!} title={entry.title} onReload={async () => setActions(await api.workflowActions())} />)}
+        </details>
+      </section>
+      <section className="workflow-section"><header><div><h2>ESXi management access</h2><p>Planned host: {address.esxi_management || "Not set"}</p></div></header>
+        <button className="secondary-action" disabled={busy || servers.length !== 1 || !address.esxi_management} onClick={() => void checkHost()}><RefreshCw size={16}/>{busy ? "Checking..." : "Check ESXi management"}</button>
+        {result && <div className="workflow-pending" role="status"><strong>{displayStatus(result.status)}</strong><p>{result.summary || result.stderr_summary}</p>{result.blockers?.map(item => <p key={item}>{item}</p>)}</div>}
+      </section>
+    </>}
+  </div>;
 }
 
 export function OperatorServerPage({ health, labProfileState, onReloadLabProfile }: OperatorPageProps) {
@@ -1646,7 +1728,7 @@ export function RackIloConfigurator({
   return (
     <aside className="rack-inline-config" aria-label="Configure HPE iLO beside rack">
       <div className="rack-inline-config-head">
-        <div><p className="operator-kicker">Configure beside rack</p><h2>{device.display_name}</h2><span>{displayAddress(device.host || address.ilo_initial || address.ilo)}</span></div>
+        <div><p className="operator-kicker">Configure beside rack</p><h2>{device.display_name}</h2><span>{displayAddress(device.host)}</span></div>
         <button onClick={onClose} type="button">Back to device</button>
       </div>
       <RackInlineSafetyRail deviceLabel={device.display_name} />
@@ -1655,10 +1737,13 @@ export function RackIloConfigurator({
       </div>
       <Feedback loading={loading} error={error} />
       <div className="rack-inline-config-body">
-        {tab === "access" && <IloAccessSettingsPanel deviceId={device.id} initialHost={device.host || address.ilo_initial || ""} onReload={reloadInlineData} plannedHost={address.ilo || ""} />}
+        {tab === "access" && <IloAccessSettingsPanel deviceId={device.id} initialHost={device.host || ""} onReload={reloadInlineData} plannedHost="" />}
         {tab === "settings" && <IloSetupIntentWorkspacePanel deviceId={device.id} />}
-        {tab === "drives" && <DriveAllocationPanel deviceId={device.id} deviceName={device.display_name} onSaved={reloadInlineData} />}
-        {tab === "checks" && <ServerWorkspaceControls activeProfile={activeProfile} address={address} firmwareSummaries={firmwareSummaries} iloDeviceId={device.id} localStorageMode={localStorageMode} onReload={reloadInlineData} scope="ilo" workflowActions={workflowActions} />}
+        {tab === "drives" && <DriveAllocationPanel currentHost={device.host} deviceId={device.id} deviceName={device.display_name} onSaved={reloadInlineData} />}
+        {tab === "checks" && <>
+          <InventoryWorkflowPanel deviceId={device.id} currentHost={device.host} />
+          <ServerWorkspaceControls activeProfile={activeProfile} address={address} firmwareSummaries={firmwareSummaries} iloDeviceId={device.id} localStorageMode={localStorageMode} onReload={reloadInlineData} scope="ilo" workflowActions={workflowActions} />
+        </>}
         {tab === "install" && <section className="rack-guarded-actions" aria-label={`Install ESXi on ${device.display_name}`}>
           <header className="rack-guarded-head">
             <p className="operator-kicker">Guarded writes</p>
@@ -2848,12 +2933,12 @@ export function localRaidInventoryBays(discovery: HpeStorageDiscovery | null | u
     });
   });
   return recordArray(discovery?.physical_drives)
-    .map((drive, index) => {
+    .map((drive) => {
       // Only trust a real bay/slot location here. drive.Id is a Redfish
       // resource identifier (often a large, arbitrary integer), not a
       // physical bay number — falling back to it renders nonsense like
       // "Bay 64518" for drives with no known slot.
-      const bay = asString(drive.bay_id) || asString(drive.Bay) || asString(drive.slot) || String(index + 1);
+      const bay = asString(drive.bay_id) || asString(drive.Bay) || asString(drive.slot);
       const cleanBay = bay.trim();
       if (!cleanBay || seen.has(cleanBay)) return null;
       seen.add(cleanBay);
@@ -5249,7 +5334,7 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
       <section className="firmware-simple-header" aria-labelledby="firmware-simple-title">
         <div>
           <p className="operator-kicker">Setup / Firmware</p>
-          <h1 id="firmware-simple-title">Keep every device on the expected version.</h1>
+          <h1 id="firmware-simple-title">Firmware versions</h1>
           <p>Check the current version, compare it with the target, then upgrade or leave it as-is.</p>
         </div>
         <RunCheckButton actionIds={["firmware.inventory", "firmware.compliance-check"]} actions={actions} label="Check versions" onError={setError} onReload={load} />
@@ -7531,6 +7616,7 @@ function IloAccessSettingsPanel({
       setUsername(next.username || username);
       setPassword("");
       setMessage("iLO access saved locally. Run the iLO access check here before trusting the map or starting ESXi install.");
+      await onReload?.();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -12197,7 +12283,8 @@ function topologyAddressPlanForSubnet(address: LabAddressPlan, subnet: string | 
     cisco_management: topologyRebaseIp(address.cisco_management, base),
     esxi_management: topologyRebaseIp(address.esxi_management, base),
     ilo: topologyRebaseIp(address.ilo, base),
-    ilo_initial: topologyRebaseIp(address.ilo_initial, base),
+    // The bootstrap address belongs to the current DHCP network, not the planned subnet.
+    ilo_initial: address.ilo_initial,
     netapp_cluster_mgmt: topologyRebaseIp(address.netapp_cluster_mgmt, base),
     netapp_controller_a_sp: topologyRebaseIp(address.netapp_controller_a_sp, base),
     netapp_controller_b_sp: topologyRebaseIp(address.netapp_controller_b_sp, base),
@@ -15691,11 +15778,13 @@ function ServerConfigurePanel({
   activeProfile,
   address,
   global,
+  esxiOnly = false,
   onSaved
 }: {
   activeProfile: LabProfile | null;
   address: LabAddressPlan;
   global: LabProfile["global_settings"] | null;
+  esxiOnly?: boolean;
   onSaved: () => Promise<void>;
 }) {
   const [edit, setEdit] = useState<ServerProfileEditState>(() =>
@@ -15727,6 +15816,13 @@ function ServerConfigurePanel({
     setMessage("");
     try {
       const payload = serverProfilePayload(activeProfile, edit);
+      if (esxiOnly) {
+        payload.address_plan = { ...activeProfile.address_plan, esxi_management: cleanNetworkNullable(edit.esxiManagement), server_embedded_nic: cleanNetworkNullable(edit.serverEmbeddedNic) };
+        payload.devices = { ...activeProfile.devices, esxi: cleanNetworkNullable(edit.esxiManagement) };
+        payload.global_settings = activeProfile.global_settings;
+        payload.dns = activeProfile.dns; payload.ntp = activeProfile.ntp;
+        payload.gateway = activeProfile.gateway; payload.mtu = activeProfile.mtu; payload.subnet_cidr = activeProfile.subnet_cidr;
+      }
       if (activeProfile.source === "saved") {
         await api.updateLabProfile(activeProfile.id, payload);
       } else {
@@ -15734,7 +15830,7 @@ function ServerConfigurePanel({
         await api.activateLabProfile(saved.id);
       }
       await onSaved();
-      setMessage("Server config saved.");
+      setMessage(esxiOnly ? "ESXi settings saved. Other kit settings were preserved." : "Server config saved.");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -15747,27 +15843,27 @@ function ServerConfigurePanel({
       <CardHeader>
         <div>
           <p className="operator-kicker">Setup</p>
-          <h2>Compute setup</h2>
+          <h2>{esxiOnly ? "ESXi host settings" : "Compute setup"}</h2>
         </div>
       </CardHeader>
       <CardContent>
         <form className="network-config-form" onSubmit={save}>
           <p className="rack-server-form-note">These inputs show the saved values directly. Saving updates the kit only; it does not contact or configure the server.</p>
           <div className="rack-server-input-grid">
-            <Field label="Planned iLO IP">
+            {!esxiOnly && <Field label="Planned iLO IP">
               <input aria-label="Planned iLO IP" value={edit.ilo} onChange={(event) => update("ilo", event.target.value)} />
-            </Field>
+            </Field>}
             <Field label="ESXi management IP">
               <input aria-label="ESXi management IP" value={edit.esxiManagement} onChange={(event) => update("esxiManagement", event.target.value)} />
             </Field>
-            <Field label="Initial iLO IP">
+            {!esxiOnly && <Field label="Initial iLO IP">
               <input aria-label="Initial iLO IP" value={edit.iloInitial} onChange={(event) => update("iloInitial", event.target.value)} />
-            </Field>
+            </Field>}
             <Field label="Embedded server NIC">
               <input aria-label="Embedded server NIC" value={edit.serverEmbeddedNic} onChange={(event) => update("serverEmbeddedNic", event.target.value)} />
             </Field>
           </div>
-          <details className="server-config-more server-config-overrides rack-server-network-defaults">
+          {esxiOnly ? <div className="esxi-inherited-network"><h3>Shared network settings</h3><dl><div><dt>Subnet</dt><dd>{edit.subnet || "Not set"}</dd></div><div><dt>Gateway</dt><dd>{edit.gateway || "Not set"}</dd></div><div><dt>DNS</dt><dd>{edit.dnsServers || "Not set"}</dd></div><div><dt>NTP</dt><dd>{activeProfile?.features.enable_ntp ? edit.ntpServers || "Not set" : "Disabled"}</dd></div></dl><Link to="/setup/defaults">Edit network settings</Link></div> : <details className="server-config-more server-config-overrides rack-server-network-defaults">
             <summary><span>Network defaults</span><small>Subnet, gateway, DNS, NTP, and MTU inherited by this server.</small></summary>
             <div className="server-config-more-grid">
               <Field label="Subnet"><input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} /></Field>
@@ -15776,9 +15872,9 @@ function ServerConfigurePanel({
               <Field label="NTP servers"><input value={edit.ntpServers} onChange={(event) => update("ntpServers", event.target.value)} /></Field>
               <Field label="MTU"><input inputMode="numeric" value={edit.mtu} onChange={(event) => update("mtu", event.target.value)} /></Field>
             </div>
-          </details>
+          </details>}
           <div className="network-config-actions rack-server-save-row">
-            <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">{busy ? "Saving..." : "Save server settings"}</button>
+            <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit"><Save size={16}/>{busy ? "Saving..." : esxiOnly ? "Save ESXi settings" : "Save server settings"}</button>
             <span className="rack-server-safe-copy">Kit save only · no hardware contacted</span>
             {message && <span className="operator-success-text">{message}</span>}
             {error && <span className="operator-error-text">{error}</span>}
@@ -16931,7 +17027,7 @@ function settingsProfileEditStateFrom(activeProfile: LabProfile | null): Setting
     enableNtp: features?.enable_ntp ?? true,
     enableSnmp: features?.enable_snmp ?? false,
     enableVcenter: features?.vcenter_enabled ?? global?.vcenter_enabled ?? false,
-    gateway: global?.gateway ?? activeProfile?.gateway ?? topologyGatewayFromSubnet(address.subnet),
+    gateway: global?.gateway ?? activeProfile?.gateway ?? "",
     mtu: global?.mtu !== null && global?.mtu !== undefined ? String(global.mtu) : activeProfile?.mtu ? String(activeProfile.mtu) : "",
     name: activeProfile?.name ?? "",
     ntpServers: (global?.ntp_servers ?? activeProfile?.ntp ?? []).join(", "),
@@ -16955,7 +17051,8 @@ function settingsProfilePayload(profile: LabProfile, edit: SettingsProfileEditSt
   const ntpServers = splitNetworkList(edit.ntpServers);
   const snmpServers = splitNetworkList(edit.snmpServers);
   const vlanId = cleanNetworkNullable(edit.vlanId);
-  const addressPlan = topologyAddressPlanForSubnet(activeAddressPlan(profile), subnet);
+  // Shared subnet edits must not rewrite explicit device or bootstrap addresses.
+  const addressPlan = { ...activeAddressPlan(profile), subnet };
   const netappDevice = profile.devices?.netapp && typeof profile.devices.netapp === "object" ? profile.devices.netapp : {};
   const snmpVersion: NonNullable<LabProfile["global_settings"]["snmp_version"]> =
     edit.snmpVersion === "v1" || edit.snmpVersion === "v3" ? edit.snmpVersion : "v2c";
@@ -17208,6 +17305,19 @@ function storageProfilePayload(profile: LabProfile, edit: StorageProfileEditStat
     subnet_cidr: subnet,
     vlan_id: profile.vlan_id
   };
+}
+
+/** Save only the ESXi management address into the saved kit, preserving every other kit setting
+ * (the same rules as the ESXi form on the server page). */
+export async function saveEsxiManagementAddress(profile: LabProfile, managementIp: string) {
+  const edit = { ...serverProfileEditStateFrom(profile, activeAddressPlan(profile), profile.global_settings ?? null), esxiManagement: managementIp };
+  const payload = serverProfilePayload(profile, edit);
+  payload.address_plan = { ...profile.address_plan, esxi_management: cleanNetworkNullable(managementIp) };
+  payload.devices = { ...profile.devices, esxi: cleanNetworkNullable(managementIp) };
+  payload.global_settings = profile.global_settings;
+  payload.dns = profile.dns; payload.ntp = profile.ntp;
+  payload.gateway = profile.gateway; payload.mtu = profile.mtu; payload.subnet_cidr = profile.subnet_cidr;
+  await api.updateLabProfile(profile.id, payload);
 }
 
 function serverProfilePayload(profile: LabProfile, edit: ServerProfileEditState): LabProfileWrite {
@@ -18317,15 +18427,18 @@ function primaryIloInventoryDevice(devices: DeviceInventoryItem[]): DeviceInvent
 
 function usePrimaryIloInventoryDevice(): DeviceInventoryItem | null {
   const [device, setDevice] = useState<DeviceInventoryItem | null>(null);
+  const location = useLocation();
+  const requested = new URLSearchParams(location.search).get("device");
   useEffect(() => {
     let cancelled = false;
+    setDevice(null);
     void safeApi(api.deviceInventory, [] as DeviceInventoryItem[]).then((devices) => {
-      if (!cancelled) setDevice(primaryIloInventoryDevice(devices));
+      if (!cancelled) setDevice(requested ? devices.find(item=>item.id===requested && rackInlineDeviceKind(item)==="ilo") || null : primaryIloInventoryDevice(devices));
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [requested]);
   return device;
 }
 

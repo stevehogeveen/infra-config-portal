@@ -1,0 +1,1252 @@
+<title>Rack Companion</title>
+<style>
+:root{
+  color-scheme:light;
+  --paper:#eeede8; --panel:#fbfaf7; --narr:#e5e3dc; --sunk:#f3f2ee;
+  --ink:#212128; --muted:#55545b; --faint:#a3a19a; --edge:#86848c; --line:#d6d4cc; --line2:#e6e4dd;
+  --accent:#343c8c; --accent-deep:#262d6e; --accent-ink:#ffffff; --accent-wash:#e4e6f4;
+  --proof:#2d6b4b; --proof-wash:#e2eee6;
+  --warn:#83571a; --warn-wash:#f5ead3;
+  --danger:#a3392a; --danger-ink:#ffffff; --danger-wash:#f6e1dc;
+  --rack-bg:#dfddd5; --rack-edge:#bebbb1; --unit:#fbfaf7; --unit-edge:#c1beb4;
+  --bay:#76747c; --bay-empty:#e6e4dd; --bay-empty-line:#8f8d86; --port:#55545c;
+  --shadow:0 1px 2px rgba(33,33,40,.06), 0 18px 32px -26px rgba(33,33,40,.4);
+  --voice:"Newsreader","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --sans:"Atkinson Hyperlegible","Segoe UI",system-ui,-apple-system,Arial,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --paper:#15161a; --panel:#1e1f24; --narr:#191a1f; --sunk:#25262c;
+    --ink:#ebeae5; --muted:#b2b1ab; --faint:#5f5e66; --edge:#74737c; --line:#383940; --line2:#2d2e34;
+    --accent:#aab2f2; --accent-deep:#c4c9f7; --accent-ink:#15161a; --accent-wash:#2a2e4d;
+    --proof:#7ec59e; --proof-wash:#1a2e23;
+    --warn:#e2b262; --warn-wash:#352a15;
+    --danger:#ef8d7a; --danger-ink:#15161a; --danger-wash:#3a201c;
+    --rack-bg:#24252b; --rack-edge:#46474f; --unit:#2c2d34; --unit-edge:#4a4b53;
+    --bay:#b8b7c0; --bay-empty:#35363d; --bay-empty-line:#8a8993; --port:#c3c2ca;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 18px 32px -26px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --paper:#15161a; --panel:#1e1f24; --narr:#191a1f; --sunk:#25262c;
+  --ink:#ebeae5; --muted:#b2b1ab; --faint:#5f5e66; --edge:#74737c; --line:#383940; --line2:#2d2e34;
+  --accent:#aab2f2; --accent-deep:#c4c9f7; --accent-ink:#15161a; --accent-wash:#2a2e4d;
+  --proof:#7ec59e; --proof-wash:#1a2e23;
+  --warn:#e2b262; --warn-wash:#352a15;
+  --danger:#ef8d7a; --danger-ink:#15161a; --danger-wash:#3a201c;
+  --rack-bg:#24252b; --rack-edge:#46474f; --unit:#2c2d34; --unit-edge:#4a4b53;
+  --bay:#b8b7c0; --bay-empty:#35363d; --bay-empty-line:#8a8993; --port:#c3c2ca;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 18px 32px -26px rgba(0,0,0,.8);
+}
+*{box-sizing:border-box;margin:0}
+[hidden]{display:none!important}
+body{background:var(--paper);color:var(--ink);font:15px/1.55 var(--sans);padding:0 16px 64px}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+input,select,textarea{font:inherit;color:var(--ink)}
+table{font:inherit;font-size:14px;width:100%;border-collapse:collapse;color:var(--ink)}
+h1,h2,h3,h4{font-family:var(--sans);font-weight:700;line-height:1.25}
+.wrap{max-width:1440px;margin:0 auto;min-width:0}
+.intro{padding:18px 0 6px;max-width:860px;display:grid;gap:4px}
+.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.intro h1{font-family:var(--voice);font-size:32px;font-weight:500;letter-spacing:-.01em;line-height:1.15}
+.intro p{color:var(--muted);font-size:15px}
+.controls{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;padding:6px 0 10px}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+.tabs button{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 12px;min-height:44px;font-weight:700;color:var(--muted)}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.toggle{margin-left:auto;display:inline-flex;align-items:center;gap:8px;color:var(--muted);cursor:pointer;font-size:14px;min-height:44px}
+.toggle input{accent-color:var(--accent);width:18px;height:18px}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+/* ---------- app frame ---------- */
+.app{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:clip;box-shadow:var(--shadow)}
+.topbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 22px;padding:10px 24px;border-bottom:1px solid var(--line2)}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--voice);font-size:20px;font-weight:600}
+.brand i{width:26px;height:26px;border-radius:50% 50% 50% 4px;background:var(--accent);position:relative;display:inline-block}
+.brand i::after{content:"";position:absolute;left:7px;top:11px;width:12px;height:3px;border-radius:2px;background:var(--panel);box-shadow:0 -5px 0 var(--panel)}
+.kitbar{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.kitbar .kitname{display:inline-flex;align-items:center;gap:10px;border:1px solid var(--edge);border-radius:6px;padding:8px 12px;min-height:44px;font-weight:700;background:var(--sunk)}
+.kitbar .kitname::after{content:"";width:7px;height:7px;border-right:1.6px solid var(--muted);border-bottom:1.6px solid var(--muted);transform:rotate(45deg);margin-top:-3px}
+.qbtn{border:1px solid transparent;border-radius:6px;padding:8px 10px;min-height:44px;color:var(--muted);font-weight:700}
+.qbtn:hover{background:var(--sunk);color:var(--ink)}
+.topbar .right{margin-left:auto;display:flex;flex-wrap:wrap;gap:2px;align-items:center}
+
+.journey{padding:8px 24px 8px;border-bottom:1px solid var(--line2);background:var(--sunk);display:grid;gap:4px}
+.jlabel{font-size:13px;color:var(--muted);display:flex;flex-wrap:wrap;gap:2px 12px}
+.jlabel strong{color:var(--ink)}
+.jlabel .gloss{flex-basis:100%;font-size:12.5px}
+.steps{list-style:none;padding:0;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
+.step{display:grid;grid-template-columns:24px minmax(0,1fr);gap:8px;align-items:start;font-size:13px;color:var(--muted);padding:4px 6px;border-radius:6px;border:2px solid transparent;line-height:1.3}
+.step b{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--edge);background:var(--panel);font-weight:700;font-size:12px;color:var(--muted)}
+.step.done b{border-color:var(--ink);color:var(--ink)}
+.step.now b{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.step strong{display:block;font-weight:700;color:var(--ink)}
+.step small{display:block;font-size:12px;color:var(--muted)}
+.step.locked b{border-style:dashed}
+.step.locked b::before{content:"";width:9px;height:11px;border:1.5px solid var(--muted);border-radius:3px;border-top-width:5px;box-sizing:border-box}
+.step .here{display:none;font-style:normal;font-weight:700;font-size:11.5px;color:var(--accent-ink);background:var(--accent);border-radius:4px;padding:0 6px;margin-top:2px;width:max-content}
+.step.is-here{border-color:var(--accent);background:var(--panel)}
+.step.is-here .here{display:block}
+
+/* ---------- screen split ---------- */
+.screen{display:grid;grid-template-columns:minmax(300px,3fr) minmax(0,7fr);min-height:760px}
+.narrator{background:var(--narr);border-right:1px solid var(--line);min-width:0}
+.nbody{position:sticky;top:12px;max-height:calc(100vh - 24px);display:flex;flex-direction:column;padding:18px 26px 22px}
+.who{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted);margin-bottom:8px;flex:none}
+.who i{width:30px;height:30px;border-radius:50% 50% 50% 6px;background:var(--panel);border:1px solid var(--edge);position:relative;flex:none}
+.who i::before{content:"";position:absolute;left:8px;top:13px;width:12px;height:2.5px;border-radius:2px;background:var(--accent);box-shadow:0 -5px 0 var(--accent)}
+.trailtoggle{display:inline-flex;flex:none;margin:12px 0 6px;min-height:44px;align-items:center;gap:8px;font-weight:700;color:var(--accent);border-bottom:1px solid var(--accent);width:max-content;max-width:100%;text-align:left}
+.trail{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:6px;scrollbar-width:thin}
+.narrator:not(.show-trail) .trail{display:none}
+.nowline{flex:none}
+.nowline .thread{padding-top:0}
+details.labels{flex:none;margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
+details.labels summary{cursor:pointer;font-weight:700;color:var(--accent);min-height:44px;display:flex;align-items:center}
+details.labels .explain{margin-top:6px}
+.field>.chip{justify-self:start}
+.thread{position:relative;display:grid;gap:16px;padding:4px 0 4px 24px;font-family:var(--voice)}
+.thread::before{content:"";position:absolute;left:6px;top:14px;bottom:14px;width:1.5px;background:var(--line)}
+.said{position:relative;font-size:17.5px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+.said::before{content:"";position:absolute;left:-24px;top:9px;width:11px;height:11px;border-radius:50%;background:var(--narr);border:1.5px solid var(--edge)}
+.said.now{color:var(--ink);font-size:22px;line-height:1.4}
+.said.now::before{background:var(--accent);border-color:var(--accent);top:10px;width:13px;height:13px;left:-25px}
+.said.next{font-size:15.5px;font-style:italic}
+.said.next::before{border-style:dashed;background:transparent}
+.said.next b{font-style:normal;font-family:var(--sans);font-size:12px;letter-spacing:.08em;text-transform:uppercase;display:block}
+.said .name{font-weight:600;color:var(--ink)}
+.said .spp{display:block;font-family:var(--mono);font-size:13.5px;font-weight:400;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:4px 8px;margin-top:6px;overflow-wrap:anywhere}
+.explain{display:grid;gap:10px;margin:4px 0 0;font-family:var(--sans);font-size:14.5px;color:var(--ink)}
+.explain div{display:grid;gap:4px;justify-items:start}
+.explain p{color:var(--muted);line-height:1.45}
+.explain p strong{color:var(--ink)}
+.one{flex:none;display:grid;gap:8px;justify-items:start;margin-top:12px}
+.one small{color:var(--muted);font-size:13.5px}
+.upnext{flex:none;margin-top:12px}
+.need{display:grid;gap:4px;border:1px solid var(--warn);border-left:4px solid var(--warn);border-radius:5px;background:var(--panel);padding:8px 12px;font-size:14px;color:var(--ink);justify-items:start}
+.need b{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--warn)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1.5px solid var(--edge);border-radius:6px;padding:10px 16px;background:var(--panel);color:var(--ink);font-weight:700;min-height:44px;line-height:1.2;text-align:left}
+.btn:hover{border-color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{background:var(--accent-deep);border-color:var(--accent-deep)}
+.btn.big{font-size:17px;padding:13px 20px;min-height:54px;max-width:100%}
+.btn.small{padding:8px 12px;font-size:14px}
+.btn.send{background:var(--danger);border-color:var(--danger);color:var(--danger-ink)}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
+.btn:disabled,.btn.danger:disabled{opacity:1;background:var(--sunk);border-color:var(--edge);border-style:dashed;color:var(--muted);cursor:not-allowed}
+.link{color:var(--accent);font-weight:700;text-decoration:underline;text-underline-offset:3px;min-height:32px;display:inline-flex;align-items:center;text-align:left}
+.reason{font-size:13.5px;color:var(--muted)}
+
+.view{padding:24px 28px 32px;min-width:0;display:grid;gap:18px;align-content:start}
+.view h2{font-size:26px;letter-spacing:-.01em}
+.sub{color:var(--muted);margin-top:2px}
+.vhead{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px 20px;min-width:0}
+.card h3{font-size:18px;margin-bottom:2px}
+.card .sub{font-size:14px}
+.gl{display:block;font-size:13px;color:var(--muted);font-weight:400;line-height:1.4}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+.cols.rk{grid-template-columns:minmax(0,1fr) minmax(0,400px)}
+.seg{display:inline-flex;flex-wrap:wrap;border:1.5px solid var(--edge);border-radius:6px;overflow:hidden}
+.seg button{padding:8px 14px;min-height:42px;font-weight:700;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+
+/* chips: provenance */
+.chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--edge);border-radius:4px;padding:2px 8px;font-size:12.5px;color:var(--muted);background:var(--panel);white-space:nowrap;font-weight:700;font-family:var(--sans);line-height:1.5;font-style:normal;vertical-align:middle}
+.chip i{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none;position:relative}
+.chip.proof{color:var(--proof);border-color:var(--proof);background:var(--proof-wash)}
+.chip.proof i{background:var(--proof)}
+.chip.saved i{width:10px;height:4px;border-radius:0 1.5px 1.5px 0;background:var(--muted);transform:rotate(-45deg);margin:0 0 0 4px}
+.chip.saved i::before{content:"";position:absolute;left:-4px;top:0;border-style:solid;border-width:2px 4px 2px 0;border-color:transparent var(--muted) transparent transparent}
+.chip.saved i::after{content:"";position:absolute;right:2px;top:0;width:1.5px;height:4px;background:var(--panel)}
+.chip.sugg{border-style:solid}
+.chip.sugg i{background:transparent;border:2px solid var(--muted)}
+.chip.blank{border-style:dotted;border-color:var(--muted);background:transparent}
+.chip.blank i{background:transparent;border:1.5px dotted var(--muted)}
+.chip.rec{color:var(--ink);border-color:var(--ink);background:var(--sunk);white-space:normal}
+.chip.rec i{width:5px;height:9px;border-radius:0;background:transparent;border-right:2px solid var(--ink);border-bottom:2px solid var(--ink);transform:rotate(40deg);margin:-3px 1px 0 2px}
+.chip.warn{color:var(--warn);border-color:var(--warn);background:var(--warn-wash)}
+.chip.warn i{background:var(--warn)}
+.chip.danger{color:var(--danger);border-color:var(--danger);background:var(--danger-wash)}
+.chip.danger i{background:var(--danger)}
+
+/* key/value */
+.facts{display:grid;margin-top:8px}
+.facts>div{display:grid;grid-template-columns:minmax(92px,36%) minmax(0,1fr);gap:12px;align-items:start;padding:9px 0;border-top:1px solid var(--line2);font-size:15px}
+.facts>div:first-child{border-top:0}
+.facts dt{color:var(--muted)}
+.facts dd{font-weight:700;display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
+.facts dd .gl{font-weight:400}
+.facts dd.plain{font-weight:400;color:var(--muted)}
+.dim{color:var(--muted)}
+.facts dd.dim{font-weight:400}
+.ready{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.ready div{border:1px solid var(--line);border-radius:6px;padding:9px 12px;display:grid;grid-template-columns:18px 1fr;column-gap:6px;font-size:13.5px;color:var(--muted)}
+.ready div::before{content:"";grid-row:1/span 2;width:12px;height:12px;margin-top:4px;border-radius:50%;border:1.5px dashed var(--edge)}
+.ready .ok::before{content:"✓";border:0;color:var(--proof);font-weight:800;width:auto;height:auto;margin-top:0}
+.ready strong{color:var(--ink);font-size:14px}
+details.tech{border:1px solid var(--line);border-radius:6px;padding:8px 14px;background:var(--sunk);margin-top:14px}
+details.tech summary{cursor:pointer;font-weight:700;color:var(--ink);min-height:36px;display:flex;align-items:center}
+details.tech .facts>div{font-size:14px}
+.mono{font-family:var(--mono);font-size:13px}
+.links{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* ---------- rack illustration ---------- */
+.rackbox{background:var(--rack-bg);border:1px solid var(--rack-edge);border-radius:8px;padding:16px 16px 12px;min-width:0}
+.rackbox .cap{display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted);margin-bottom:10px}
+.rack{--uh:50px;display:grid;grid-template-columns:30px minmax(0,1fr);gap:0 10px}
+.rack .ruler{display:grid;grid-auto-rows:var(--uh);font-size:12px;color:var(--muted);text-align:right;font-weight:700}
+.rack .ruler span{display:flex;align-items:center;justify-content:flex-end}
+.frame{display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:var(--uh);background:var(--panel);border:2px solid var(--rack-edge);border-radius:6px;padding:0 8px;position:relative}
+.slot{grid-column:1;border-top:1px dashed var(--line);display:flex;align-items:center;padding-left:10px;font-size:12.5px;color:var(--muted)}
+.slot.first{border-top:0}
+.slot.drop{background:var(--accent-wash);outline:2px dashed var(--accent);outline-offset:-4px;border-radius:6px;z-index:2;color:var(--ink);font-weight:700;font-size:14px;padding:6px 14px;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px}
+.slot.drop span{display:flex;align-items:center;gap:8px;font-weight:400;color:var(--muted);font-size:13px}
+.unit{grid-column:1;z-index:1;margin:5px 2px;border-radius:5px;background:var(--unit);border:1px solid var(--unit-edge);display:flex;align-items:center;gap:10px;padding:0 12px;cursor:grab;position:relative;min-width:0;overflow:hidden;text-align:left;min-height:40px}
+.unit .dot{width:10px;height:10px;border-radius:50%;background:var(--proof);flex:none}
+.unit.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.unit .nm{font-weight:700;font-size:14px;white-space:nowrap;min-width:0;flex:0 0 auto}
+.unit .kd{font-size:12.5px;color:var(--muted);white-space:nowrap;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.unit .art{margin-left:auto;display:flex;gap:3px;align-items:center;flex:0 1 auto;min-width:0;overflow:hidden}
+.unit .art.bays i{flex:none;width:10px;height:20px;border-radius:2px;border:1.5px solid var(--bay);background:repeating-linear-gradient(135deg,var(--bay) 0 1.5px,transparent 1.5px 4px)}
+.unit .art.bays i.e{background:transparent;border:1.5px dashed var(--bay-empty-line)}
+.unit .art.ports{display:grid;grid-template-columns:repeat(12,7px);gap:2px}
+.unit .art.ports i{width:7px;height:7px;background:var(--port);border-radius:1px;opacity:.75}
+.unit .art.sfp{margin-left:4px}
+.unit .art.sfp i{width:11px;height:8px;border:1.5px solid var(--port);border-radius:1px}
+.unit .art.outlets i{width:11px;height:11px;border-radius:3px;border:2px solid var(--port);opacity:.7}
+.unit.new{border:2px dashed var(--accent);background:var(--accent-wash);cursor:default}
+.legend{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:10px}
+.legend i{display:inline-block;width:10px;height:12px;border-radius:2px;vertical-align:-1px;margin-right:5px;border:1.5px solid var(--bay);background:repeating-linear-gradient(135deg,var(--bay) 0 1.5px,transparent 1.5px 4px)}
+.legend i.e{background:transparent;border:1.5px dashed var(--bay-empty-line)}
+.legend i.p{border-radius:50%;background:var(--proof)}
+.listview{display:grid;gap:8px}
+.listview .row{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:6px 14px;align-items:center;border:1px solid var(--line);border-radius:6px;padding:10px 14px;background:var(--panel);min-height:56px}
+.listview .row.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.listview .row b{font-size:13px;color:var(--muted)}
+
+/* ---------- add equipment ---------- */
+.build{display:grid;grid-template-columns:210px minmax(0,1fr);gap:16px;align-items:start}
+.build .shelf{grid-row:1/span 2}
+.build .edit{grid-column:2}
+.shelf{display:grid;gap:8px}
+.shelf h3{font-size:16px}
+.hcard{display:grid;grid-template-columns:40px minmax(0,1fr);gap:10px;align-items:center;border:1px solid var(--line);border-radius:6px;padding:8px 10px;background:var(--panel);cursor:grab;font-size:13px;color:var(--muted);text-align:left;min-height:52px;width:100%}
+.hcard strong{display:block;color:var(--ink);font-size:14px}
+.hcard.held{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent);background:var(--accent-wash)}
+.hcard .hold{display:block;font-size:12px;font-weight:700;color:var(--accent)}
+.hcard .face{height:26px;border-radius:3px;background:var(--unit);border:1px solid var(--unit-edge);position:relative;overflow:hidden}
+.hcard .face.two{height:36px}
+.hcard .face::after{content:"";position:absolute;inset:6px 5px;background:repeating-linear-gradient(90deg,var(--bay) 0 4px,transparent 4px 7px);opacity:.6}
+.hcard .face.sw::after{inset:9px 5px;background:repeating-linear-gradient(90deg,var(--port) 0 3px,transparent 3px 5px)}
+.hcard .face.pdu::after{inset:8px 6px;background:repeating-linear-gradient(90deg,transparent 0 2px,var(--port) 2px 4px,transparent 4px 8px);opacity:.5}
+.hcard .face.ups::after{inset:8px 8px;background:none;border:2px solid var(--port);border-radius:3px;opacity:.5}
+.removezone{border:2px dashed var(--edge);border-radius:6px;padding:14px;text-align:center;color:var(--muted);font-size:13.5px;margin-top:6px}
+.removezone strong{display:block;color:var(--ink)}
+.heightctl{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--edge);border-radius:6px;padding:3px 5px;background:var(--panel)}
+.heightctl button{width:44px;height:44px;border-radius:4px;font-size:22px;font-weight:700;color:var(--ink);background:var(--sunk)}
+.heightctl b{min-width:52px;text-align:center;font-size:16px}
+fieldset.edit{border:1px solid var(--line);min-inline-size:0;display:grid;gap:12px 14px;grid-template-columns:repeat(3,minmax(0,1fr));align-content:start}
+.edit h3,.edit .baygrid,.edit .links,.edit .paused,.edit .bayhead{grid-column:1/-1}
+.edit h3{font-size:16px;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.paused{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center;background:var(--accent-wash);border:1px solid var(--accent);border-radius:6px;padding:9px 12px;font-size:14px;color:var(--ink)}
+.paused i{width:22px;height:22px;border-radius:50%;background:var(--accent);position:relative}
+.paused i::before,.paused i::after{content:"";position:absolute;top:6px;width:3px;height:10px;background:var(--accent-ink);border-radius:1px}
+.paused i::before{left:7px}.paused i::after{left:12px}
+.field{display:grid;gap:5px;font-size:13.5px;color:var(--muted);align-content:start;min-width:0}
+.field label,.field .lbl{font-weight:700;color:var(--ink);font-size:14px}
+.field input,.field select,.inp{border:1.5px solid var(--edge);border-radius:5px;padding:9px 11px;min-height:44px;background:var(--panel);color:var(--ink);width:100%;font-size:15px}
+.field input[readonly],.field select:disabled,.field input:disabled{background:var(--sunk);border:1.5px dashed var(--edge);color:var(--ink)}
+.field.off input:disabled,.field.off select:disabled{color:var(--muted)}
+.field .ro{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;border:1.5px dashed var(--edge);border-radius:5px;padding:6px 6px 6px 11px;min-height:44px;background:var(--sunk);color:var(--ink);font-size:15px}
+.slotpick{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 10px;border:0;padding:0;min-inline-size:0}
+.slotpick legend{font-weight:700;color:var(--ink);font-size:14px;padding:0;margin-bottom:4px}
+.slotpick label{display:flex;align-items:center;gap:8px;min-height:36px;font-size:14px;color:var(--ink)}
+.slotpick label.taken{color:var(--muted)}
+.slotpick label.taken em{font-style:normal;font-size:12.5px}
+.slotpick input{width:18px;height:18px;accent-color:var(--accent);flex:none}
+.choice{display:grid;gap:6px}
+.choice label{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-height:40px;font-size:14.5px;color:var(--ink)}
+.choice label.blocked{color:var(--muted)}
+.choice input{width:18px;height:18px;accent-color:var(--accent);flex:none}
+.field .ro.static{padding-right:11px}
+.bayhead{font-size:14px;font-weight:700;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.bayhead span{font-weight:400;color:var(--muted)}
+.baygrid{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:6px}
+.baygrid button{border:1px solid var(--line);border-radius:5px;padding:6px 2px;min-height:48px;font-size:12px;color:var(--muted);background:var(--panel);display:grid;gap:3px;justify-items:center}
+.baygrid button i{width:16px;height:18px;border-radius:2px;border:1.5px solid var(--bay);background:repeating-linear-gradient(135deg,var(--bay) 0 1.5px,transparent 1.5px 4px)}
+.baygrid button.e i{background:transparent;border:1.5px dashed var(--bay-empty-line)}
+.edit:disabled .baygrid button{cursor:not-allowed;border-style:dashed;border-color:var(--edge);background:var(--sunk)}
+.foot{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--line2);padding-top:16px}
+.foot .spacer{flex:1}
+
+/* ---------- connect & drives ---------- */
+.form2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px 18px;align-items:start}
+.form2 .wide{grid-column:1/-1}
+.switch{display:inline-flex;align-items:center;gap:10px;font-weight:700;color:var(--ink);min-height:44px}
+.switch i{width:42px;height:24px;border-radius:12px;background:var(--edge);position:relative;flex:none}
+.switch i::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--panel);box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.switch.on i{background:var(--accent)}
+.switch.on i::after{left:21px}
+.switch small{font-weight:400;color:var(--muted)}
+.sechead{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px 16px;border-top:2px solid var(--ink);padding-top:14px;margin-top:6px}
+.sechead h3{font-size:21px}
+.result{border:1px solid var(--line);border-left:5px solid var(--ink);background:var(--panel);border-radius:6px;padding:18px 20px;display:grid;gap:12px}
+.result .rhead{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.result h4{font-size:20px;display:flex;gap:10px;align-items:center}
+.result h4::before{content:"✓";display:grid;place-items:center;width:28px;height:28px;border-radius:50%;border:2px solid var(--ink);color:var(--ink);font-size:15px;flex:none}
+.stages{display:flex;gap:8px;flex-wrap:wrap;font-size:14px;color:var(--ink);list-style:none;padding:0}
+.stages li{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:4px;padding:5px 10px;background:var(--sunk)}
+.stages li::before{content:"✓";font-weight:800}
+.rnote{font-size:14px;color:var(--muted);max-width:70ch}
+.tscroll{overflow-x:auto;min-width:0}
+th{text-align:left;font-weight:700;color:var(--muted);font-size:13px;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:9px 10px;border-bottom:1px solid var(--line2);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td .gl{margin-top:2px}
+td strong{font-weight:700}
+.alerts{border:1px solid var(--warn);border-left:5px solid var(--warn);border-radius:6px;background:var(--panel);padding:18px 20px;display:grid;gap:10px;scroll-margin-top:20px}
+.alerts .ahead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:10px 16px}
+.alerts h4{font-size:18px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+.sev{display:inline-flex;align-items:center;gap:6px;font-weight:700;white-space:nowrap}
+.sev::before{content:"";width:9px;height:9px;border-radius:2px;background:var(--muted)}
+.sev.c::before{background:var(--warn)}
+.sev.i::before{background:transparent;border:1.5px solid var(--muted)}
+.more{border:1px solid var(--line);border-radius:6px;background:var(--sunk);padding:14px 16px;display:grid;gap:12px}
+.more h3{font-size:16px}
+.more .groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.more .grp{display:grid;gap:8px;align-content:start;border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:12px 14px}
+.more .grp.destr{border-color:var(--danger);border-style:dashed}
+.more .grp p{font-size:13.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.more .grp .links{gap:8px}
+.guard{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;border:1px solid var(--line);border-radius:6px;padding:12px 14px;background:var(--sunk);font-size:14px;color:var(--muted);align-self:start}
+.guard i{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--paper);font-style:normal;font-weight:800;font-size:13px}
+.guard b{color:var(--ink)}
+.twin{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.twin>div{border:1px solid var(--line);border-radius:6px;padding:12px 14px;font-size:13.5px;color:var(--muted);display:grid;gap:6px;align-content:start;justify-items:start}
+.twin strong{display:block;color:var(--ink);font-size:15px}
+
+/* ---------- network ---------- */
+.svc{display:grid;gap:12px;align-content:start}
+.svc .row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:center}
+.pill-list{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pill-list span{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:4px;padding:4px 4px 4px 12px;font-size:14px;background:var(--panel);min-height:44px}
+.pill-list span button{display:grid;place-items:center;width:36px;height:36px;border-radius:4px;background:var(--sunk);color:var(--muted);font-size:14px;border:1px solid transparent}
+.pill-list span button:disabled{border:1px dashed var(--edge);background:transparent;cursor:not-allowed}
+.lockreason{font-size:13px;color:var(--muted)}
+.view:not(.locked) .lockreason{display:none}
+.lockline{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+
+/* ---------- firmware ---------- */
+.dev{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-start;justify-content:space-between}
+.order{display:grid;gap:10px;counter-reset:o;list-style:none;padding:0;margin-top:8px}
+.order li{display:grid;grid-template-columns:26px minmax(0,1fr);gap:10px;font-size:14px;color:var(--muted);align-items:start}
+.order li::before{counter-increment:o;content:counter(o);display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--edge);font-size:12px;font-weight:700}
+.order li.now{color:var(--ink)}
+.order li.now::before{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.order li.lock::before{border-style:dashed}
+.order li b{display:block;color:var(--ink)}
+.order li .links{margin-top:6px}
+
+/* ---------- failure ---------- */
+.fail{border:1px solid var(--danger);border-left:5px solid var(--danger);background:var(--panel);border-radius:6px;padding:18px 20px;display:grid;gap:12px}
+.fail h3{color:var(--danger);font-size:20px}
+.fail ol{padding-left:22px;display:grid;gap:10px}
+.fail li .links{margin-top:6px}
+.msg{border:1px dashed var(--edge);border-radius:6px;padding:12px 14px;background:var(--sunk);font-size:14.5px;display:grid;gap:10px;justify-items:start}
+.ways{display:grid;gap:6px;font-size:13.5px;color:var(--muted)}
+.ways div{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:baseline}
+.ways div.this{color:var(--ink);font-weight:700}
+.ways i{width:8px;height:8px;border-radius:50%;background:var(--edge);display:inline-block;transform:translateY(-1px)}
+.ways div.this i{background:var(--danger)}
+
+/* ---------- guarded dialog (erase again) ---------- */
+.dialog{border:1px solid var(--line);border-top:5px solid var(--danger);border-radius:6px;background:var(--panel);box-shadow:var(--shadow);display:grid}
+.dialog header{padding:16px 20px;border-bottom:1px solid var(--line2);display:flex;flex-wrap:wrap;gap:8px 14px;justify-content:space-between;align-items:center}
+.dialog header h3{font-size:19px}
+.panes{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}
+.pane{padding:16px 20px;display:grid;gap:10px;align-content:start;min-width:0}
+.pane+.pane{border-left:1px solid var(--line2);background:var(--sunk)}
+.pane h4{font-size:15px;display:flex;gap:8px;align-items:center}
+.pane h4 b{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--paper);font-size:12.5px}
+.pane.wait h4 b{background:transparent;border:1.5px dashed var(--edge);color:var(--muted)}
+.pane pre{font-family:var(--mono);font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--sunk);border:1px solid var(--line);border-radius:5px;padding:10px 12px;color:var(--ink)}
+.pane ul{padding-left:18px;font-size:14px;color:var(--muted)}
+.warnline{font-weight:700;color:var(--danger)}
+.after{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.aftlabel{grid-column:1/-1;font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;margin-top:4px}
+.after>div{border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:grid;gap:8px;align-content:start;justify-items:start;font-size:13.5px;color:var(--muted);background:var(--panel)}
+.after strong{color:var(--ink);font-size:15px}
+.spin{width:16px;height:16px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--ink);display:inline-block}
+
+/* ---------- designer's note ---------- */
+.dnote{margin-top:40px;display:grid;gap:22px;min-width:0}
+.dnote>*{min-width:0}
+.dnote h2{font-family:var(--voice);font-weight:500;font-size:32px}
+.dnote .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
+.dnote .card p{color:var(--muted);font-size:14.5px}
+.dnote .card p+p{margin-top:8px}
+.swatches{display:grid;gap:8px}
+.swatches div{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:10px;align-items:center;font-size:14px}
+.swatches i{width:34px;height:26px;border-radius:4px;border:1px solid var(--line)}
+.swatches code{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+.tablewrap table{min-width:640px}
+.tablewrap td:first-child{font-weight:700;width:34%}
+
+/* ---------- tablet and narrower ---------- */
+@media (max-width:1200px){
+  .screen{grid-template-columns:minmax(280px,32fr) minmax(0,68fr)}
+  .step{grid-template-columns:minmax(0,1fr);gap:2px}
+  .cols.rk{grid-template-columns:minmax(0,1fr)}
+  .build{grid-template-columns:180px minmax(0,1fr)}
+  fieldset.edit{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .said.now{font-size:20px}
+  .after{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .panes{grid-template-columns:minmax(0,1fr)}
+  .pane+.pane{border-left:0;border-top:1px solid var(--line2)}
+}
+@media (max-width:1100px){
+  .screen{grid-template-columns:minmax(0,1fr);min-height:0}
+  .narrator{border-right:0;border-bottom:1px solid var(--line)}
+  .nbody{position:static;max-height:none;padding:14px 20px 14px}
+  .trail{overflow:visible}
+  .said.now{font-size:19px}
+  .after{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:900px){
+  .cols{grid-template-columns:minmax(0,1fr)}
+  .twin{grid-template-columns:minmax(0,1fr)}
+  .topbar{padding:6px 16px;gap:4px 14px}
+  .journey{padding:6px 16px}
+  .step small{display:none}
+  .step.is-here small,.step.now small,.step.locked small{display:block}
+  .view{padding:18px 18px 28px}
+  .intro p{font-size:14px}
+}
+@media (max-width:640px){
+  .stage{overflow-x:auto}
+  .app{min-width:620px}
+  .intro h1{font-size:28px}
+}
+</style>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400..600&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+
+<div class="wrap">
+  <header class="intro">
+    <p class="eyebrow">Design direction 3 of 6 · Companion</p>
+    <h1>Rack Companion</h1>
+    <p>Lab Builder as a guided conversation. A calm narrator says one plain sentence at a time and offers one button, beside the thing it talks about. Earlier sentences wait behind "How we got here". Made for a tablet in the hands of someone who has never opened a server.</p>
+  </header>
+
+  <div class="controls">
+    <div class="tabs" role="tablist" aria-label="Screens">
+      <button role="tab" id="tab-rack" aria-selected="true" aria-controls="scr-rack" data-screen="rack">My Rack</button>
+      <button role="tab" id="tab-build" aria-selected="false" aria-controls="scr-build" data-screen="build">Add equipment</button>
+      <button role="tab" id="tab-connect" aria-selected="false" aria-controls="scr-connect" data-screen="connect">Connect equipment</button>
+      <button role="tab" id="tab-network" aria-selected="false" aria-controls="scr-network" data-screen="network">Network settings</button>
+      <button role="tab" id="tab-firmware" aria-selected="false" aria-controls="scr-firmware" data-screen="firmware">Check firmware</button>
+      <button role="tab" id="tab-fail" aria-selected="false" aria-controls="scr-fail" data-screen="fail">First contact failed</button>
+      <button role="tab" id="tab-erase" aria-selected="false" aria-controls="scr-erase" data-screen="erase">Erase disks again</button>
+    </div>
+    <label class="toggle"><input type="checkbox" id="darkToggle"> Dark theme</label>
+  </div>
+
+  <div class="stage">
+    <div class="app">
+      <div class="topbar">
+        <div class="brand"><i></i>Lab Builder</div>
+        <div class="kitbar">
+          <button class="kitname" aria-label="Choose kit (a kit is one saved rack plan). Current kit: Kit Single Gen 10">Kit Single Gen 10</button>
+          <button class="qbtn">Rename</button>
+          <button class="qbtn">Save as new kit</button>
+        </div>
+        <div class="right">
+          <button class="qbtn">Build reports</button>
+          <button class="qbtn">Run history</button>
+          <button class="qbtn">Report an issue</button>
+        </div>
+      </div>
+      <nav class="journey" aria-label="Build steps">
+        <p class="jlabel"><strong>Where the build is up to</strong><span id="hereText">You are on My Rack, the home screen. The build is up to step 3.</span><span class="gloss">A kit is one saved rack plan · U = one shelf height in the rack · firmware = the software built into a device · ESXi = the system that runs virtual machines (VMs)</span></p>
+        <ol class="steps">
+          <li class="step done" data-step="build"><b>✓</b><span><strong>1 · Add equipment</strong><small>Done · 4 pieces in 8 U</small><em class="here">You are here</em></span></li>
+          <li class="step done" data-step="network"><b>✓</b><span><strong>2 · Network settings</strong><small>Done · saved 08:12</small><em class="here">You are here</em></span></li>
+          <li class="step now" data-step="connect"><b>3</b><span><strong>3 · Connect equipment</strong><small>In progress</small><em class="here">You are here</em></span></li>
+          <li class="step" data-step="firmware"><b>4</b><span><strong>4 · Check firmware</strong><small>Next · not compared yet</small><em class="here">You are here</em></span></li>
+          <li class="step locked" data-step="esxi"><b></b><span><strong>5 · Prepare ESXi</strong><small>Locked · needs firmware review</small></span></li>
+          <li class="step locked" data-step="windows"><b></b><span><strong>6 · Install Windows</strong><small>Locked · needs ESXi</small></span></li>
+        </ol>
+      </nav>
+
+      <!-- ================= 1. MY RACK ================= -->
+      <section class="screen" id="scr-rack" role="tabpanel" aria-labelledby="tab-rack">
+        <aside class="narrator"><div class="nbody">
+          <div class="who"><i></i>Your companion</div>
+          <div class="nowline"><div class="thread">
+            <p class="said now">You picked <span class="name">HPE DL360 3</span>. The build is up to connecting it, so that is the next step.</p>
+          </div></div>
+          <div class="one">
+            <button class="btn primary big" data-go="connect">Continue with Connect equipment</button>
+            <small>This opens the server's connection. Nothing on the hardware changes.</small>
+          </div>
+          <details class="labels">
+            <summary>What the small labels mean</summary>
+            <div class="explain">
+              <div><span class="chip proof"><i></i>server said · 08:35</span><p><strong>Green with a time</strong> means this server itself told us, today at that time. Only that is ever green.</p></div>
+              <div><span class="chip rec"><i></i>recorded 24/09 16:22 · not a live check</span><p><strong>A tick with a date</strong> is a recorded result from back then. It is not today's check, so it is not green.</p></div>
+              <div><span class="chip saved"><i></i>in the plan</span><p><strong>A pencil</strong> means it is written in your plan. Nobody has checked it against the machine.</p></div>
+              <div><span class="chip sugg"><i></i>suggested</span><p><strong>A hollow dot</strong> means the app suggested it. You can change it.</p></div>
+              <div><span class="chip blank"><i></i>not known yet</span><p><strong>A dotted outline</strong> means nothing knows it yet. Nobody has guessed.</p></div>
+            </div>
+          </details>
+          <button class="trailtoggle" aria-expanded="false">How we got here · 3 earlier sentences</button>
+          <div class="trail"><div class="thread">
+            <p class="said">Good morning. This is <span class="name">Kit Single Gen 10</span>: four pieces in a rack eight units tall.</p>
+            <p class="said">The rack and the network settings are done. Connecting the equipment is where the build is up to.</p>
+            <p class="said">At 08:35 today, the server <span class="name">HPE DL360 3</span> answered when we asked.</p>
+          </div></div>
+        </div></aside>
+
+        <div class="view">
+          <div class="vhead">
+            <div><h2>My Rack</h2><p class="sub">4 pieces · 8 units (U) tall · one server answered today · ESXi and Windows not checked yet</p></div>
+            <div class="seg" role="group" aria-label="How to show the rack">
+              <button aria-pressed="true" data-view="rack">Rack</button>
+              <button aria-pressed="false" data-view="list">List</button>
+            </div>
+          </div>
+          <div class="cols rk">
+            <div>
+              <div class="rackbox" id="rackViewRack">
+                <div class="cap"><span>Front of the rack</span><span>8 units <span class="chip saved"><i></i>in the plan</span></span></div>
+                <div class="rack">
+                  <div class="ruler"><span>U8</span><span>U7</span><span>U6</span><span>U5</span><span>U4</span><span>U3</span><span>U2</span><span>U1</span></div>
+                  <div class="frame">
+                    <div class="slot first" style="grid-row:1">empty</div>
+                    <div class="slot" style="grid-row:2">empty</div>
+                    <div class="slot" style="grid-row:3">empty</div>
+                    <div class="slot" style="grid-row:4">empty</div>
+                    <div class="slot" style="grid-row:5"></div>
+                    <div class="slot" style="grid-row:6"></div>
+                    <div class="slot" style="grid-row:7"></div>
+                    <div class="slot" style="grid-row:8"></div>
+                    <button class="unit" style="grid-row:5"><span class="nm">PDU 5</span><span class="kd">Power strip</span><span class="art outlets"><i></i><i></i><i></i><i></i><i></i><i></i></span></button>
+                    <button class="unit" style="grid-row:6"><span class="nm">Cisco switch 6</span><span class="kd">Switch</span><span class="art ports"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="art sfp"><i></i><i></i><i></i><i></i></span></button>
+                    <button class="unit" style="grid-row:7"><span class="nm">PDU 4</span><span class="kd">Power strip</span><span class="art outlets"><i></i><i></i><i></i><i></i><i></i><i></i></span></button>
+                    <button class="unit sel" style="grid-row:8" aria-pressed="true"><i class="dot" aria-label="answered today at 08:35"></i><span class="nm">HPE DL360 3</span><span class="kd">Server</span><span class="art bays" aria-label="Planned bays"><i></i><i></i><i></i><i></i><i class="e"></i><i></i><i></i><i></i><i></i><i class="e"></i></span></button>
+                  </div>
+                </div>
+                <div class="legend"><span><i class="p"></i>answered today at 08:35</span><span><i></i>planned drive (in the plan)</span><span><i class="e"></i>empty bay (in the plan)</span><span>Tap a piece to open its card.</span></div>
+              </div>
+              <div class="listview" id="rackViewList" hidden>
+                <div class="row"><b>U4</b><span><strong>PDU 5</strong> · power strip<span class="gl">Not connected. Power strips are not read by the app.</span></span><span class="chip saved"><i></i>in the plan</span></div>
+                <div class="row"><b>U3</b><span><strong>Cisco switch 6</strong> · Cisco switch, 24 ports + 4 SFP (glass-cable ports)<span class="gl">Not connected yet. Its model and software are not known until it first answers.</span></span><span class="chip saved"><i></i>in the plan</span></div>
+                <div class="row"><b>U2</b><span><strong>PDU 4</strong> · power strip<span class="gl">Not connected. Power strips are not read by the app.</span></span><span class="chip saved"><i></i>in the plan</span></div>
+                <div class="row sel"><b>U1</b><span><strong>HPE DL360 3</strong> · server, HPE DL360 Gen10 (in the plan)<span class="gl">Selected.</span></span><span class="chip proof"><i></i>answered · 08:35</span></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>HPE DL360 3</h3>
+              <p class="sub">Server · bottom slot U1 <span class="chip saved"><i></i>in the plan</span></p>
+              <dl class="facts">
+                <div><dt>Last answered</dt><dd>Today 08:35<span class="chip proof"><i></i>server said · 08:35</span></dd></div>
+                <div><dt>Model</dt><dd>HPE DL360 Gen10<span class="chip saved"><i></i>in the plan</span></dd></div>
+                <div><dt>iLO address<span class="gl">its built-in management chip</span></dt><dd>192.0.2.27<span class="chip proof"><i></i>answered here · 08:35</span><span class="gl">Same as the plan.</span></dd></div>
+                <div><dt>iLO firmware<span class="gl">its built-in software</span></dt><dd>iLO 5 v1.37<span class="chip proof"><i></i>server said · 08:35</span></dd></div>
+                <div><dt>System ROM<span class="gl">start-up firmware</span></dt><dd>U32 v1.46<span class="chip proof"><i></i>server said · 08:35</span></dd></div>
+                <div><dt>Drive bays</dt><dd>Planned: 8 of 10 bays<span class="chip saved"><i></i>in the plan</span></dd></div>
+                <div><dt>Drives today</dt><dd class="dim">Not read yet<span class="chip blank"><i></i>not known yet</span><button class="link" data-go="connect">Refresh drive inventory</button></dd></div>
+                <div><dt>Last erase</dt><dd>The controller reported the 6 reviewed disks erased on 24/09 at 16:22<span class="chip rec"><i></i>recorded result, not a live check</span><span class="gl">The plan marks 8 bays; the erase record covers 6 reviewed disks.</span></dd></div>
+                <div><dt>ESXi<span class="gl">runs virtual machines</span></dt><dd class="dim">Not known yet<span class="chip blank"><i></i>not known yet</span></dd></div>
+                <div><dt>Windows VM<span class="gl">a computer that runs inside ESXi</span></dt><dd class="dim">Not known yet<span class="chip blank"><i></i>not known yet</span></dd></div>
+              </dl>
+              <h3 style="font-size:16px;margin-top:14px">Is it ready?</h3>
+              <div class="ready">
+                <div class="ok"><strong>Connection</strong>Answered today 08:35</div>
+                <div><strong>Firmware</strong>Not compared yet</div>
+                <div><strong>ESXi</strong>Waits for firmware</div>
+                <div><strong>Windows</strong>Waits for ESXi</div>
+              </div>
+              <details class="tech" open>
+                <summary>Technical details</summary>
+                <dl class="facts">
+                  <div><dt>How we asked</dt><dd class="plain">A read-only Redfish request, the standard way servers answer questions. Nothing was changed.</dd></div>
+                  <div><dt>Answered as</dt><dd>iLO 5 v1.37<span class="chip proof"><i></i>server said · 08:35</span></dd></div>
+                  <div><dt>Certificate<span class="gl">the iLO's ID card</span></dt><dd>Self-signed<span class="chip warn"><i></i>identity not checked</span><span class="gl">Verify TLS certificate is off because this iLO's certificate is self-signed. The connection is still encrypted, but the server's identity is not checked. Turn it on once a trusted certificate is installed.</span></dd></div>
+                  <div><dt>Storage controller</dt><dd class="dim">Not known yet<span class="chip blank"><i></i>not known yet</span></dd></div>
+                  <div><dt>Serial number</dt><dd class="dim">Not known yet<span class="chip blank"><i></i>not known yet</span></dd></div>
+                </dl>
+              </details>
+              <div class="links" style="margin-top:14px"><button class="btn small">Report an issue with this server</button></div>
+            </div>
+          </div>
+          <div class="guard"><i>!</i><span><b>Nothing here touches the hardware.</b> Every change is shown to you first, with the exact command, and waits for a separate yes.</span></div>
+        </div>
+      </section>
+
+      <!-- ================= 2. ADD EQUIPMENT ================= -->
+      <section class="screen" id="scr-build" role="tabpanel" aria-labelledby="tab-build" hidden>
+        <aside class="narrator"><div class="nbody">
+          <div class="who"><i></i>Your companion</div>
+          <div class="nowline"><div class="thread">
+            <p class="said now" data-place="before">If the <span class="name">HPE DL380</span> goes in U5, it takes U5 and U6, and nothing else has to move.</p>
+            <p class="said now" data-place="after" hidden><span class="name">HPE DL380 7</span> is in U5 and U6. Save the layout so it is kept.</p>
+            <p class="said now" data-place="saved" hidden>The layout is saved with <span class="name">HPE DL380 7</span> in U5 and U6.</p>
+          </div></div>
+          <div class="one">
+            <button class="btn primary big" data-place="before" id="placeBtn">Place it in U5 and U6</button>
+            <small data-place="before">Or tap the shelf card to put it back. Nothing is kept until you save.</small>
+            <button class="btn primary big" data-place="after" id="saveBtn" hidden>Save layout</button>
+            <small data-place="after" hidden>Saving writes the plan only. No hardware is touched.</small>
+            <button class="btn primary big" data-place="saved" data-go="network" hidden>Continue to Network settings</button>
+            <small data-place="saved" hidden>Saved just now. The plan changed; no hardware was touched.</small>
+          </div>
+          <div class="nowline upnext" data-place="before"><div class="thread"><p class="said next"><b>Coming next</b>Once it is in, I will ask you to save the layout.</p></div></div>
+          <button class="trailtoggle" aria-expanded="false">How we got here · 3 earlier sentences</button>
+          <div class="trail"><div class="thread">
+            <p class="said">You came back to arrange the rack. This is a drawing of what goes where; it touches no hardware.</p>
+            <p class="said">The rack is eight units tall. You can make it anything from 4 to 60 units with the − and + beside the rack height.</p>
+            <p class="said">You picked up an <span class="name">HPE DL380</span> from the shelf. It is two units tall.</p>
+            <p class="said" data-place="after saved" hidden>If it goes in U5, it takes U5 and U6, and nothing else has to move.</p>
+          </div></div>
+        </div></aside>
+
+        <div class="view">
+          <div class="vhead">
+            <div><h2>Add equipment</h2><p class="sub">Drag a card onto a slot, or tap a card and then a slot. Drag a piece out of the rack to take it out.</p></div>
+            <div class="heightctl" role="group" aria-label="Rack height, 4 to 60 units"><span class="dim" style="padding:0 4px 0 6px;font-weight:700;color:var(--ink)">Rack height</span><button aria-label="One unit shorter">−</button><b>8 U</b><button aria-label="One unit taller">+</button><span class="dim" style="padding:0 6px">4 to 60</span></div>
+          </div>
+          <div class="build">
+            <div class="shelf">
+              <h3>The shelf</h3>
+              <button class="hcard held" aria-pressed="true"><span class="face two"></span><span><strong>HPE DL380</strong>2U · up to 24 bays<span class="hold">Holding this one</span></span></button>
+              <button class="hcard"><span class="face"></span><span><strong>HPE DL360</strong>1U · up to 10 bays</span></button>
+              <button class="hcard"><span class="face sw"></span><span><strong>Cisco switch</strong>24 or 48 ports · 4 SFP (glass-cable) ports</span></button>
+              <button class="hcard"><span class="face ups two"></span><span><strong>UPS</strong>2U battery backup</span></button>
+              <button class="hcard"><span class="face ups"></span><span><strong>Eaton 5P 1550</strong>1U battery backup</span></button>
+              <button class="hcard"><span class="face pdu"></span><span><strong>PDU</strong>power strip · rack or side mount</span></button>
+              <button class="hcard"><span class="face two"></span><span><strong>NetApp storage</strong>2U · 24 bays</span></button>
+              <div class="removezone"><strong>Take out of the rack</strong>Drop a piece here. Its saved connection is kept.</div>
+            </div>
+
+            <div class="rackbox">
+              <div class="cap"><span>Front of the rack · placing HPE DL380</span><span>8 units</span></div>
+              <div class="rack">
+                <div class="ruler"><span>U8</span><span>U7</span><span>U6</span><span>U5</span><span>U4</span><span>U3</span><span>U2</span><span>U1</span></div>
+                <div class="frame">
+                  <div class="slot first" style="grid-row:1">empty</div>
+                  <div class="slot" style="grid-row:2">empty</div>
+                  <div class="slot drop" style="grid-row:3/span 2" data-place="before">HPE DL380 would go in U5 and U6<span>Nothing else moves.</span><span>Name: HPE DL380 7 <em class="chip sugg"><i></i>suggested</em></span></div>
+                  <div class="unit new" style="grid-row:3/span 2" data-place="after saved" hidden><span class="nm">HPE DL380 7</span><span class="kd" id="newKd">Server · not saved yet</span><span class="chip saved" style="margin-left:auto"><i></i>in the plan</span></div>
+                  <div class="slot" style="grid-row:5"></div>
+                  <div class="slot" style="grid-row:6"></div>
+                  <div class="slot" style="grid-row:7"></div>
+                  <div class="slot" style="grid-row:8"></div>
+                  <button class="unit" style="grid-row:5"><span class="nm">PDU 5</span><span class="kd">Power strip</span><span class="art outlets"><i></i><i></i><i></i><i></i><i></i><i></i></span></button>
+                  <button class="unit" style="grid-row:6"><span class="nm">Cisco switch 6</span><span class="kd">Switch</span><span class="art ports"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="art sfp"><i></i><i></i><i></i><i></i></span></button>
+                  <button class="unit" style="grid-row:7"><span class="nm">PDU 4</span><span class="kd">Power strip</span><span class="art outlets"><i></i><i></i><i></i><i></i><i></i><i></i></span></button>
+                  <button class="unit sel" style="grid-row:8" aria-pressed="true"><span class="nm">HPE DL360 3</span><span class="kd">Server</span><span class="art bays" aria-label="Planned bays"><i></i><i></i><i></i><i></i><i class="e"></i><i></i><i></i><i></i><i></i><i class="e"></i></span></button>
+                </div>
+              </div>
+              <div class="legend"><span><i></i>planned drive (in the plan)</span><span><i class="e"></i>empty bay (in the plan)</span><span>A unit (U) is one shelf height, counted from the bottom, U1 upwards.</span></div>
+            </div>
+
+            <fieldset class="edit card" id="editPanel" disabled>
+              <h3>HPE DL360 3 <span class="chip saved"><i></i>in the plan</span></h3>
+              <div class="paused" data-place="before"><i></i><span>Editing <strong>HPE DL360 3</strong> is paused while you place the HPE DL380. Place it or put it back first.</span></div>
+              <div class="field"><label for="ename">Name</label><input id="ename" value="HPE DL360 3"><span>Your name for it. Any name works.</span></div>
+              <div class="field"><span class="lbl">Model</span><span class="ro static">HPE DL360 Gen10</span><span class="chip saved"><i></i>in the plan</span></div>
+              <div class="field"><label for="ebays">Drive bays</label><input id="ebays" value="10" inputmode="numeric"><span class="chip saved"><i></i>in the plan</span><span>In your plan. A DL360 plan allows up to 10 bays.</span></div>
+              <div class="field"><label for="eh">Height</label><select id="eh"><option selected>1 U</option><option>2 U</option></select><span>A DL360 is 1 U.</span></div>
+              <div class="field"><span class="lbl">Where it sits</span><span class="ro static">Front of the rack, U1</span><span class="chip saved"><i></i>in the plan</span></div>
+              <fieldset class="slotpick" style="grid-column:1/-1"><legend>Bottom slot</legend>
+                <label><input type="radio" name="eslot" checked> U1 · here now</label>
+                <label class="taken"><input type="radio" name="eslot" disabled> U2 <em>· taken: PDU 4 is there</em></label>
+                <label class="taken"><input type="radio" name="eslot" disabled> U3 <em>· taken: Cisco switch 6 is there</em></label>
+                <label class="taken"><input type="radio" name="eslot" disabled> U4 <em>· taken: PDU 5 is there</em></label>
+                <label><input type="radio" name="eslot"> U5 · free</label>
+                <label><input type="radio" name="eslot"> U6 · free</label>
+                <label><input type="radio" name="eslot"> U7 · free</label>
+                <label><input type="radio" name="eslot"> U8 · free</label>
+              </fieldset>
+              <p class="bayhead">Which bays hold a drive <span class="chip saved"><i></i>in the plan</span> <span>Tap a bay to mark it occupied or empty. Your plan marks bays 1–4 and 6–9. This is not a detected inventory.</span></p>
+              <div class="baygrid" aria-label="Bays, occupied or empty">
+                <button aria-label="Bay 1, planned occupied"><i></i>1</button><button aria-label="Bay 2, planned occupied"><i></i>2</button><button aria-label="Bay 3, planned occupied"><i></i>3</button><button aria-label="Bay 4, planned occupied"><i></i>4</button><button class="e" aria-label="Bay 5, planned empty"><i></i>5</button>
+                <button aria-label="Bay 6, planned occupied"><i></i>6</button><button aria-label="Bay 7, planned occupied"><i></i>7</button><button aria-label="Bay 8, planned occupied"><i></i>8</button><button aria-label="Bay 9, planned occupied"><i></i>9</button><button class="e" aria-label="Bay 10, planned empty"><i></i>10</button>
+              </div>
+              <div class="links"><button class="btn small">Move to another slot</button><button class="btn small danger">Remove equipment…</button><span class="reason" data-place="before">Paused while you place the DL380.</span></div>
+            </fieldset>
+          </div>
+          <div class="foot">
+            <button class="btn" id="footSave" disabled>Save layout</button>
+            <button class="btn">Save a copy</button>
+            <button class="btn">Load plan</button>
+            <span class="reason" id="footReason">Save layout waits until the DL380 is placed or put back.</span>
+            <span class="spacer"></span>
+            <button class="btn" id="footContinue" data-go="network" disabled>Continue to Network settings →</button>
+            <span class="reason" id="contReason">Waits until the layout is saved, so nothing unsaved is lost.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= 3. CONNECT EQUIPMENT ================= -->
+      <section class="screen" id="scr-connect" role="tabpanel" aria-labelledby="tab-connect" hidden>
+        <aside class="narrator"><div class="nbody">
+          <div class="who"><i></i>Your companion</div>
+          <div class="nowline"><div class="thread">
+            <p class="said now">The controller reported the 6 reviewed disks erased on 24/09, so the next step is to plan the new RAID: two disks for ESXi to start from, the rest for your data.</p>
+          </div></div>
+          <div class="one">
+            <button class="btn primary big" id="planRaid">Plan new RAID</button>
+            <small>Planning writes nothing. It reads the server again, then lets you choose the boot pair and the data drives.</small>
+          </div>
+          <div class="need upnext"><b>Required before firmware approval</b><span>Review the 10 hardware alerts, in the Hardware alerts box. This does not hold up planning the RAID.</span></div>
+          <button class="trailtoggle" aria-expanded="false">How we got here · 3 earlier sentences</button>
+          <div class="trail"><div class="thread">
+            <p class="said">We are connecting to <span class="name">HPE DL360 3</span> at 192.0.2.27, the address it answers on right now.</p>
+            <p class="said">It answered at 08:35 as an iLO 5, version 1.37, the server's own small management chip, with System ROM U32 v1.46. That is why those values are green.</p>
+            <p class="said">On 24/09 at 16:22 the controller reported all 6 reviewed disks erased. That is a recorded result, not a live check, so it has a tick and a date, not green.</p>
+          </div></div>
+        </div></aside>
+
+        <div class="view">
+          <div class="vhead">
+            <div><h2 id="connectH">Connect equipment</h2><p class="sub">Pick a piece. Its connection comes first, then its drives.</p></div>
+            <div class="seg" role="group" aria-label="Which piece of equipment"><button aria-pressed="true">HPE DL360 3</button><button aria-pressed="false">Cisco switch 6</button><button aria-pressed="false">PDU 4</button><button aria-pressed="false">PDU 5</button></div>
+          </div>
+
+          <div class="card">
+            <div class="vhead"><div><h3>Connection</h3><p class="sub">How the app reaches the server's iLO, its built-in management chip. It answers even when the server is off.</p></div><span class="chip proof"><i></i>answered today · 08:35</span></div>
+            <div class="form2" style="margin-top:14px">
+              <div class="field"><label for="ilo">Current iLO address</label><input id="ilo" value="192.0.2.27" inputmode="decimal"><span class="chip proof"><i></i>answered here · 08:35</span><span>The address it answers on right now. Same as the plan.</span></div>
+              <div class="field"><label for="user">Username</label><input id="user" value="administrator" autocomplete="off"><span>The iLO account we sign in with.</span></div>
+              <div class="field"><label for="pw">Password</label><span class="ro">•••••••••• <button class="btn small">Change</button></span><span>Saved on this kit. Never shown.</span></div>
+              <div class="field"><span class="lbl">Certificate check<span class="gl">a certificate is the iLO's ID card; TLS is the encrypted connection</span></span><span class="switch" role="switch" aria-checked="false" tabindex="0"><i></i>Verify TLS certificate <small>off</small></span><span>Off because this iLO's certificate is self-signed. The connection is still encrypted, but the server's identity is not checked. Turn this on once a trusted certificate is installed. It only changes when you switch it.</span></div>
+              <div class="wide links"><button class="btn">Check connection</button><span class="reason">Reads only. Installs nothing, changes nothing.</span></div>
+            </div>
+          </div>
+
+          <div class="sechead">
+            <div><h3>Drives &amp; RAID</h3><p class="gl" style="font-size:14px">RAID means grouping drives so they act as one, and keep working if one fails.</p>
+              <p class="sub">No current drive count yet. Saved plan: 8 of 10 bays <span class="chip saved"><i></i>in the plan</span> · Recorded erase scope: 6 reviewed disks</p></div>
+            <div style="display:grid;gap:4px;justify-items:start"><button class="btn">Refresh drive inventory</button><span class="reason">Gets today's count. Inventory = the list of what is inside. Reads only.</span></div>
+          </div>
+
+          <div class="result" role="status">
+            <div class="rhead"><h4>Disk erasure verified · 6 of 6 reviewed disks</h4><span class="chip rec"><i></i>recorded result, not a live check · 24/09 16:22</span></div>
+            <ol class="stages" aria-label="Stages"><li>Requested 24/09 14:34</li><li>Power-on requested 14:35</li><li>Verified 16:22</li></ol>
+            <p class="rnote">The controller (the card the drives plug into) reported erase completion for each of the 6 reviewed disks after erase activity was observed. This is a recorded result, not a live check and not current health. No arrays (drive groups) were created by this erase, and ESXi was not installed.</p>
+            <p class="rnote"><strong style="color:var(--ink)">Plan versus record.</strong> Your plan marks 8 bays; this erase record lists 6 reviewed disks. Refresh drive inventory to see what is there now. Controller locations are not matched to front bay numbers.</p>
+            <div class="tscroll"><table>
+              <thead><tr><th>Disk · controller location</th><th>Size</th><th>Result, recorded 24/09</th></tr></thead>
+              <tbody>
+                <tr><td><strong>1I:1:1</strong><span class="gl">part EG000300JWEBF · spinning disk (HDD)</span></td><td>300 GB</td><td><strong>Erase reported complete</strong><span class="gl">Overwrite (device sanitize: the drive overwrites itself)</span><span class="chip rec" style="margin-top:4px"><i></i>rec. 24/09 16:22</span></td></tr>
+                <tr><td><strong>1I:1:2</strong><span class="gl">part EG000300JWEBF · HDD</span></td><td>300 GB</td><td><strong>Erase reported complete</strong><span class="gl">Overwrite (device sanitize)</span><span class="chip rec" style="margin-top:4px"><i></i>rec. 24/09 16:22</span></td></tr>
+                <tr><td><strong>2I:1:5</strong><span class="gl">part EG001200JWJNQ · HDD</span></td><td>1200 GB</td><td><strong>Erase reported complete</strong><span class="gl">Overwrite (device sanitize)</span><span class="chip rec" style="margin-top:4px"><i></i>rec. 24/09 16:22</span></td></tr>
+                <tr><td><strong>2I:1:6</strong><span class="gl">part EG001200JWJNQ · HDD</span></td><td>1200 GB</td><td><strong>Erase reported complete</strong><span class="gl">Overwrite (device sanitize)</span><span class="chip rec" style="margin-top:4px"><i></i>rec. 24/09 16:22</span></td></tr>
+                <tr><td><strong>2I:1:7</strong><span class="gl">part EG001200JWJNQ · HDD</span></td><td>1200 GB</td><td><strong>Erase reported complete</strong><span class="gl">Overwrite (device sanitize)</span><span class="chip rec" style="margin-top:4px"><i></i>rec. 24/09 16:22</span></td></tr>
+                <tr><td><strong>2I:1:8</strong><span class="gl">part EG001200JWJNQ · HDD</span></td><td>1200 GB</td><td><strong>Erase reported complete</strong><span class="gl">Overwrite (device sanitize)</span><span class="chip rec" style="margin-top:4px"><i></i>rec. 24/09 16:22</span></td></tr>
+              </tbody>
+            </table></div>
+          </div>
+
+          <div class="alerts" id="alerts">
+            <div class="ahead">
+              <div><h4>Hardware alerts · 10 <span class="chip warn"><i></i>current state unknown</span></h4>
+                <p class="sub">10 hardware alerts recorded before the erase · current state unknown · needs a current check before firmware approval. An alert is a note the server wrote about its own health.</p></div>
+            </div>
+            <div class="need"><b>Required before firmware approval</b><span>Review the 10 alerts. Not done yet.</span></div>
+            <div class="links"><button class="btn">Review the 10 alerts</button><span class="reason">Reads the alerts again now and shows the server's own text. Reading changes nothing; marking one as seen does not clear it.</span></div>
+            <p class="reason">Planning the RAID does not wait for this. Firmware approval does.</p>
+          </div>
+
+          <div>
+            <h3 style="font-size:17px">The new RAID, when you plan it</h3>
+            <p class="sub" style="font-size:14px;margin-bottom:10px">Each disk gets one job. Nothing is written until you confirm the plan.</p>
+            <div class="twin">
+              <div><strong>Boot pair · 0 of 2 chosen</strong>Two disks mirrored so ESXi, the system that runs virtual machines, can start. Never counted as space.<span>The two 300 GB disks <span class="chip sugg"><i></i>suggested</span></span></div>
+              <div><strong>Data drives · none chosen</strong>Every other disk gets one job: hold data, or be left alone.</div>
+              <div><strong>Hot spare · optional</strong>A disk kept ready to step in. Not a backup copy.</div>
+            </div>
+          </div>
+
+          <div class="more" aria-labelledby="moreH">
+            <h3 id="moreH">More storage actions</h3>
+            <div class="groups">
+              <div class="grp">
+                <p>Reports · read only</p>
+                <div class="links"><button class="btn small">Erasure report</button><button class="btn small">Diagnostics</button></div>
+              </div>
+              <div class="grp destr">
+                <p><span class="chip danger"><i></i>destructive</span>Each opens a preview, then a separate yes.</p>
+                <div class="links"><button class="btn small danger" data-go="erase">Erase disks again…</button><button class="btn small danger">Advanced recovery…</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+<!-- ================= 4. NETWORK SETTINGS ================= -->
+      <section class="screen" id="scr-network" role="tabpanel" aria-labelledby="tab-network" hidden>
+        <aside class="narrator"><div class="nbody">
+          <div class="who"><i></i>Your companion</div>
+          <div class="nowline"><div class="thread">
+            <p class="said now">You do not need to change anything here. Each setting has a line saying what it is for.</p>
+          </div></div>
+          <div class="one">
+            <button class="btn primary big" data-go="connect">Continue to Connect equipment</button>
+            <small>To change something, press the Change these settings button above the settings first.</small>
+          </div>
+          <button class="trailtoggle" aria-expanded="false">How we got here · 2 earlier sentences</button>
+          <div class="trail"><div class="thread">
+            <p class="said">These settings are shared by the switch, the server and, later, ESXi. Nothing is sent to any device from this page.</p>
+            <p class="said">You saved them today at 08:12. The time service is off. That is allowed: the server keeps its own clock until you switch it on.</p>
+          </div></div>
+        </div></aside>
+
+        <div class="view locked" id="netView">
+          <div class="vhead">
+            <div><h2>Network settings</h2><p class="sub">Saved today 08:12 <span class="chip saved"><i></i>in the plan</span></p></div>
+            <div class="lockline"><button class="btn" id="netEdit" aria-pressed="false">Change these settings</button></div>
+          </div>
+          <div class="card">
+            <h3>Management network</h3>
+            <p class="sub">The network the app uses to talk to the equipment.</p>
+            <div class="form2" style="margin-top:12px">
+              <div class="field"><label for="subnet">Subnet</label><input id="subnet" value="192.0.2.0/27" readonly><span>The block of addresses this lab uses. /27 means 32 addresses.</span></div>
+              <div class="field"><label for="gw">Gateway</label><input id="gw" value="192.0.2.1" readonly><span>The door to other networks.</span></div>
+              <div class="field"><label for="vlan">VLAN</label><input id="vlan" value="100" inputmode="numeric" readonly><span>A lane number that keeps this lab's traffic apart on the switch.</span></div>
+              <div class="field"><label for="mtu">MTU</label><input id="mtu" value="1500" inputmode="numeric" readonly><span>Largest packet (one chunk of data) size. Leave 1500 unless told otherwise.</span></div>
+              <fieldset class="field wide choice" style="border:0;padding:0;min-inline-size:0"><legend class="lbl" style="padding:0">Where virtual machines are stored</legend>
+                <label><input type="radio" name="vmst" id="vmst" checked disabled> Local datastore: the server's own drives</label>
+                <label class="blocked"><input type="radio" name="vmst" disabled> vSAN (storage shared across servers) <span class="chip"><i></i>blocked · needs 3 servers — you have 1</span></label>
+                <span>Where the Windows machine's disk will live.</span></fieldset>
+            </div>
+          </div>
+          <div class="cols">
+            <div class="card svc">
+              <div class="row"><span class="switch on" role="switch" aria-checked="true" aria-disabled="true"><i></i>DNS <small>on · 3 of 8 servers</small></span></div>
+              <p class="gl">The phone book that turns names into addresses.</p>
+              <div class="pill-list"><span>198.51.100.10 <button class="editonly" aria-label="Remove 198.51.100.10" disabled>×</button></span><span>198.51.100.11 <button class="editonly" aria-label="Remove 198.51.100.11" disabled>×</button></span><span>198.51.100.12 <button class="editonly" aria-label="Remove 198.51.100.12" disabled>×</button></span></div>
+              <p class="gl">Up to 8 servers. 3 are used.</p>
+              <div class="links"><button class="btn small editonly" disabled>Add server</button><span class="lockreason">Press Change these settings first.</span></div>
+              <div class="field"><label for="dom">Domain</label><input id="dom" placeholder="none set" readonly><span>Optional. The family name added to short computer names.</span></div>
+            </div>
+            <div class="card svc">
+              <div class="row"><span class="switch" role="switch" aria-checked="false" aria-disabled="true"><i></i>NTP <small>off</small></span></div>
+              <p class="gl">A time service that keeps every clock the same.</p>
+              <div class="field off"><label for="ntps">Time servers</label><input id="ntps" disabled placeholder="none"><span>Switch the time service on to add servers.</span></div>
+              <div class="field off"><label for="tz">Timezone</label><select id="tz" disabled><option>Only with time service on</option></select><span>Only used while the time service is on.</span></div>
+            </div>
+          </div>
+          <div class="card svc">
+            <div class="row"><span class="switch on" role="switch" aria-checked="true" aria-disabled="true"><i></i>SNMP <small>on · version 3 · 1 manager</small></span>
+              <span class="seg" role="group" aria-label="SNMP version"><button aria-pressed="false" disabled>v2c</button><button aria-pressed="true" disabled>v3</button></span></div>
+            <p class="gl">Lets a monitoring tool ask the devices how they are. Version 3 signs in with a password; v2c does not, so keep v3.</p>
+            <div class="field"><span class="lbl">Managers</span><div class="pill-list"><span>198.51.100.20 <button class="editonly" aria-label="Remove 198.51.100.20" disabled>×</button></span><button class="btn small editonly" disabled>Add manager</button><span class="lockreason">Press Change these settings first.</span></div><span>The monitoring computers allowed to ask.</span></div>
+          </div>
+          <div class="foot">
+            <button class="btn" disabled>Reset</button>
+            <button class="btn" disabled>Save defaults</button>
+            <span class="reason" id="netReason">Nothing has changed since 08:12, so there is nothing to save or reset.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= 5. CHECK FIRMWARE ================= -->
+      <section class="screen" id="scr-firmware" role="tabpanel" aria-labelledby="tab-firmware" hidden>
+        <aside class="narrator"><div class="nbody">
+          <div class="who"><i></i>Your companion</div>
+          <div class="nowline"><div class="thread">
+            <p class="said now">We have not compared <span class="name">HPE DL360 3</span>'s firmware, the software built into it, with the package yet.</p>
+          </div></div>
+          <div class="one">
+            <button class="btn primary big">Check HPE DL360 3 against the package</button>
+            <small>Reads versions only. Installs nothing. Approving any upgrade still waits for the 10 alerts.</small>
+          </div>
+          <button class="trailtoggle" aria-expanded="false">How we got here · 4 earlier sentences</button>
+          <div class="trail"><div class="thread">
+            <p class="said">Firmware is the software that lives inside each device. Before ESXi can go on, we compare it with a tested bundle from HPE.</p>
+            <p class="said">HPE calls that bundle a Service Pack for ProLiant, or SPP. Yours is: <span class="spp">P95170_001_gen10spp-2026.05.00.00</span></p>
+            <p class="said">The switch cannot be read this way yet, so its firmware is checked by hand. That is not something you did wrong.</p>
+            <p class="said">Comparing only reads, so it can happen now. Approving any upgrade waits until the 10 alerts have had a current look.</p>
+          </div></div>
+        </div></aside>
+
+        <div class="view">
+          <div class="vhead"><div><h2>Check firmware</h2><p class="sub">Compare what each device reports with the chosen package.</p></div></div>
+          <div class="card dev">
+            <div style="min-width:0"><h3>Service pack (SPP)</h3><p class="sub">HPE's bundle of tested firmware for this server.</p><p style="margin-top:6px"><span class="mono" style="overflow-wrap:anywhere">P95170_001_gen10spp-2026.05.00.00</span> <span class="chip saved"><i></i>in the plan</span></p></div>
+            <div class="links"><button class="btn small">Change package</button><button class="btn small">Get HPE SPP link ↗</button></div>
+          </div>
+          <div class="card">
+            <div class="dev">
+              <div><h3>HPE DL360 3</h3><p class="sub" style="display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center"><span>HPE DL360 Gen10 <span class="chip saved"><i></i>in the plan</span></span><span>iLO 5 v1.37 <span class="chip proof"><i></i>server said · 08:35</span></span><span>System ROM U32 v1.46 <span class="chip proof"><i></i>server said · 08:35</span></span></p></div>
+              <span class="chip warn"><i></i>not compared yet</span>
+            </div>
+            <div class="links" style="margin-top:12px">
+              <button class="btn" disabled>Review upgrades</button><span class="reason">Nothing to review until the check has run.</span>
+              <button class="btn small" style="margin-left:auto">Saved readings · 08:35</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="dev">
+              <div><h3>Cisco switch 6</h3><p class="sub">Cisco switch · 24 ports + 4 SFP <span class="chip saved"><i></i>in the plan</span> · model <span class="chip blank"><i></i>not known yet</span></p></div>
+              <span class="chip"><i></i>reading not supported yet</span>
+            </div>
+            <p class="dim" style="margin-top:8px">This switch has never answered, so its model and software are not known until first contact. The app cannot read a switch's firmware yet either. Check it by hand for now; this does not block the server.</p>
+            <div class="links" style="margin-top:10px"><button class="btn small">Open its connection settings</button></div>
+          </div>
+          <div class="cols">
+            <div class="card">
+              <h3 style="font-size:16px">Order of work</h3>
+              <ol class="order">
+                <li class="now"><span><b>Inspect drives and health alerts</b>Drives: recorded erase, 24 Sep. Alerts: 10 need a current check.<span class="links"><button class="btn small" data-go="connect">Review the 10 alerts</button></span></span></li>
+                <li class="lock"><span><b>Approve firmware</b>Waits for a current alert check.</span></li>
+                <li class="lock"><span><b>Create RAID</b>Waits for firmware approval.</span></li>
+                <li class="lock"><span><b>Install ESXi</b>Waits for the RAID.</span></li>
+                <li class="lock"><span><b>Deploy Windows</b>Waits for ESXi.</span></li>
+              </ol>
+            </div>
+            <div class="guard"><i>!</i><span><b>A check only reads.</b> Upgrades are previewed with the exact command and confirmed one at a time.</span></div>
+          </div>
+          <div class="foot">
+            <span class="spacer"></span>
+            <button class="btn" disabled>Continue to Prepare ESXi →</button>
+            <span class="reason">Blocked until HPE DL360 3 has been compared with the package and its upgrades reviewed.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= 6. FIRST CONTACT FAILED ================= -->
+      <section class="screen" id="scr-fail" role="tabpanel" aria-labelledby="tab-fail" hidden>
+        <aside class="narrator"><div class="nbody">
+          <div class="who"><i></i>Your companion</div>
+          <div class="nowline"><div class="thread">
+            <p class="said now">The quickest fix is an account that is allowed to read. Do you have one?</p>
+          </div></div>
+          <div class="one">
+            <button class="btn primary big" id="otherAccount">Use a different account</button>
+            <small>No other account? Ask whoever manages the server. The "Message for whoever manages the server" box is ready to copy.</small>
+          </div>
+          <button class="trailtoggle" aria-expanded="false">How we got here · 3 earlier sentences</button>
+          <div class="trail"><div class="thread">
+            <p class="said">In this example, we asked 192.0.2.27 to introduce itself, signing in as <span class="name">administrator</span>.</p>
+            <p class="said">It answered, and it is an iLO, the server's built-in management chip. The sign-in was accepted, so the password is right.</p>
+            <p class="said">But this account is not allowed to read the inventory, the list of what is inside the server. Until it can, I will not guess the model or the drives.</p>
+          </div></div>
+        </div></aside>
+
+        <div class="view">
+          <div class="vhead"><div><h2>Connect equipment</h2><p class="sub">Example: what you would see if first contact with HPE DL360 3 could not read its inventory.</p></div><span class="chip danger"><i></i>could not read inventory</span></div>
+          <div class="cols">
+            <div style="display:grid;gap:18px;min-width:0">
+              <div class="fail" role="alert">
+                <h3>The account cannot read the inventory</h3>
+                <p><strong>What we tried.</strong> A read-only request to 192.0.2.27, signed in as administrator, asking for the list of what is inside the server.</p>
+                <p><strong>What it means.</strong> The server is an iLO and the password is right. The account simply lacks permission. This is not a password problem.</p>
+                <p><strong>What to do, in order.</strong></p>
+                <ol>
+                  <li>Use an account that is allowed to read. Type it into the Saved details box. <button class="link" id="toSaved">Go to Saved details</button></li>
+                  <li>No such account? Send the message below to whoever manages the server.</li>
+                  <li>If you manage the iLO yourself: open its own page, go to Administration, then User Administration, and give administrator the read-only Login permission.<span class="links"><button class="btn small">Open the iLO page (192.0.2.27) ↗</button></span></li>
+                  <li>Then press Check connection again.</li>
+                </ol>
+              </div>
+              <div class="msg">
+                <strong>Message for whoever manages the server</strong>
+                <span>Please give the iLO account "administrator" on 192.0.2.27 the read-only Login permission, so Lab Builder can read the server's inventory. Its password already works.</span>
+                <button class="btn small">Copy message</button>
+              </div>
+              <div class="card">
+                <h3 style="font-size:16px">The seven things I might say after first contact</h3>
+                <div class="ways" style="margin-top:8px">
+                  <div><i></i>Nothing answered: off, wrong network, or the address moved.</div>
+                  <div><i></i>Not an iLO: a web page answered, usually the operating system's address.</div>
+                  <div><i></i>Sign-in refused: it is an iLO, the username or password was wrong.</div>
+                  <div class="this"><i></i>No inventory permission: the sign-in worked; the account lacks the role. ← this time</div>
+                  <div><i></i>Certificate not trusted: the iLO's certificate is self-signed. The connection is still encrypted, but its identity is not checked.</div>
+                  <div><i></i>Older iLO: real, but too old to be read or to join a cluster.</div>
+                  <div><i></i>Target mismatch: it answered as a device already in the rack.</div>
+                </div>
+              </div>
+            </div>
+            <div style="display:grid;gap:18px;min-width:0">
+              <div class="card" id="savedDetails" tabindex="-1">
+                <h3>Saved details</h3>
+                <p class="sub">Still editable. Nothing here has been proven.</p>
+                <div class="form2" style="margin-top:12px">
+                  <div class="field wide"><label for="filo">Current iLO address</label><input id="filo" value="192.0.2.27" inputmode="decimal"><span class="chip saved"><i></i>in the plan</span></div>
+                  <div class="field"><label for="fuser">Username</label><input id="fuser" value="administrator" autocomplete="off"><span>An account allowed to read.</span></div>
+                  <div class="field"><label for="fpw">Password</label><span class="ro">•••••••••• <button class="btn small">Change</button></span><span>Saved. It works.</span></div>
+                  <div class="field wide"><span class="lbl">Certificate check</span><span class="switch" role="switch" aria-checked="false" tabindex="0"><i></i>Verify TLS certificate <small>off</small></span><span>Off because this iLO's certificate is self-signed. The connection is still encrypted, but the server's identity is not checked. Turn this on once a trusted certificate is installed.</span></div>
+                  <div class="wide links"><button class="btn" id="retryBtn" disabled>Check connection again</button><span class="reason" id="retryReason">It would fail the same way. Change the account first, or tell me the permission was changed.</span></div>
+                  <div class="wide links"><button class="btn small" id="changedBtn">I have changed the permission</button></div>
+                </div>
+              </div>
+              <div class="card">
+                <h3>HPE DL360 3</h3>
+                <p class="sub">Server · bottom slot U1 <span class="chip saved"><i></i>in the plan</span></p>
+                <dl class="facts">
+                  <div><dt>Model</dt><dd class="dim">Not known yet<span class="chip blank"><i></i>not known yet</span></dd></div>
+                  <div><dt>Drive bays</dt><dd class="dim">Not known yet<span class="chip blank"><i></i>not known yet</span></dd></div>
+                  <div><dt>Drives</dt><dd class="dim">Not known yet<span class="chip blank"><i></i>not known yet</span></dd></div>
+                  <div><dt>Firmware</dt><dd class="dim">Not known yet<span class="chip blank"><i></i>not known yet</span></dd></div>
+                </dl>
+                <p class="dim" style="margin-top:10px;font-size:13.5px">The name is yours; the model, bays and drives only appear once the server itself reports them.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= 7. ERASE DISKS AGAIN (GUARDED) ================= -->
+      <section class="screen" id="scr-erase" role="tabpanel" aria-labelledby="tab-erase" hidden>
+        <aside class="narrator"><div class="nbody">
+          <div class="who"><i></i>Your companion</div>
+          <div class="nowline"><div class="thread">
+            <p class="said now">Here is what the app's preview would send to <span class="name">HPE DL360 3</span>. Nothing has been sent.</p>
+          </div></div>
+          <div class="one">
+            <button class="btn primary big">Continue to confirm the erase of 6 disks</button>
+            <small>You can cancel at any point before the final send.</small>
+          </div>
+          <div class="nowline upnext"><div class="thread"><p class="said next"><b>Coming next</b>A separate step asks you to type the server's name before anything is sent. Starting the server afterwards is another separate yes.</p></div></div>
+          <button class="trailtoggle" aria-expanded="false">How we got here · 2 earlier sentences</button>
+          <div class="trail"><div class="thread">
+            <p class="said">You pressed Erase disks again, under More storage actions.</p>
+            <p class="said">The controller reported the 6 reviewed disks erased on 24/09 at 16:22. Erasing again is only needed if something was written to these disks since.</p>
+          </div></div>
+        </div></aside>
+
+        <div class="view">
+          <div class="vhead"><div><h2>Erase disks again</h2><p class="sub">A guarded action: a preview, then a separate yes. After sending, the result replaces this form.</p></div><button class="btn" data-go="connect">Cancel and go back</button></div>
+          <div class="dialog" role="dialog" aria-labelledby="dlgTitle">
+            <header><h3 id="dlgTitle">Erase 6 reviewed disks on HPE DL360 3</h3><span class="chip danger"><i></i>destructive · cannot be undone</span></header>
+            <div class="panes">
+              <div class="pane">
+                <h4><b>1</b>Preview: what would be sent</h4>
+                <p class="warnline">The 6 reviewed disks are overwritten using the drives' own sanitize (Overwrite). This cannot be undone.</p>
+                <ul><li>Disks at controller locations 1I:1:1 and 1I:1:2 (300 GB each)</li><li>Disks at 2I:1:5, 2I:1:6, 2I:1:7 and 2I:1:8 (1200 GB each)</li><li>Method: Overwrite (device sanitize)</li></ul>
+                <p class="dim" style="font-size:14px"><strong style="color:var(--ink)">Shown from the app's preview.</strong> One grouped, conditional PATCH to this server's SmartStorageConfig settings, with this body:</p>
+<pre>{
+  "DataGuard": "Disabled",
+  "LogicalDrives": [],
+  "Actions": [{
+    "Action": "PhysicalDriveErase",
+    "ErasePattern": "SanitizeRestrictedOverwrite",
+    "PhysicalDriveList": ["1I:1:1","1I:1:2","2I:1:5",
+                          "2I:1:6","2I:1:7","2I:1:8"]
+  }]
+}</pre>
+                <p class="dim" style="font-size:14px">It takes effect when the server next starts. Starting it is its own guarded step, with its own preview and yes.</p>
+              </div>
+              <div class="pane wait">
+                <h4><b>2</b>A separate yes</h4>
+                <p class="dim" style="font-size:14px">Opens after the preview. Type the server's name exactly to confirm.</p>
+                <div class="field"><label for="confirmName">Server name</label><input id="confirmName" placeholder="HPE DL360 3" disabled></div>
+                <button class="btn send" disabled>Send the erase to HPE DL360 3</button>
+                <span class="reason">Waits for the preview step, then for the name typed exactly.</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h3 style="font-size:17px">After you send, this form is replaced by one of these</h3>
+            <p class="sub" style="font-size:14px;margin-bottom:10px">Completion needs each of the 6 reviewed disks to show erase activity and then report completion. A progress percentage may not be reported. None of these is green.</p>
+            <div class="after">
+              <p class="aftlabel">Sending the settings</p>
+              <div><span class="spin" aria-hidden="true"></span><strong>Sending</strong>Sending the request to 192.0.2.27. Please keep this page open.</div>
+              <div><span class="chip warn"><i></i>accepted · waiting</span><strong>Accepted</strong>The iLO took the request, with the time it did. Nothing erases until the server starts.<button class="btn small">Review power-on…</button></div>
+              <div><span class="chip warn"><i></i>no answer</span><strong>Uncertain</strong>No answer came back, so it may or may not have been accepted. I will not send it again on my own.<button class="btn small">Read the server's state</button></div>
+              <div><span class="chip danger"><i></i>refused</span><strong>Failed</strong>The iLO refused it and said why. Nothing was staged. Read the drives to confirm no erase started. The message stays here until you clear it.<button class="btn small">Show operation details</button></div>
+              <p class="aftlabel">After the separately confirmed power-on</p>
+              <div><span class="chip warn"><i></i>erasing</span><strong>Erasing</strong>Disks are showing erase activity. Each one is listed until it reports completion. No second erase or restart is sent while this runs.</div>
+              <div><span class="chip rec"><i></i>with its time</span><strong>Verified</strong>All 6 reviewed disks showed erase activity and then reported completion. Kept as a recorded result, with its time.<button class="btn small">Erasure report</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+<!-- ================= DESIGNER'S NOTE ================= -->
+  <section class="dnote">
+    <h2>Designer's note</h2>
+    <div class="grid">
+      <div class="card"><h3>Audience</h3><p>A complete non-IT person holding a tablet, who wants a calm colleague beside them. They should never have to guess the next step: the narrator says it, and offers exactly one filled button for it. Everything else on the screen is there to look at, with a one-line plain meaning at the first use of every technical word.</p></div>
+      <div class="card"><h3>Metaphor</h3><p>A guided conversation. The narrator's voice is in a serif; each state is one sentence and one button, at the top of the narrator column, with a dim "Coming next" line or a required item under it when that matters. Earlier sentences wait behind "How we got here". The main area shows the thing being talked about, in flat, square-edged panels that never blink.</p></div>
+      <div class="card"><h3>Signature detail</h3><p>On My Rack the narrator explains each label in words, behind "What the small labels mean". Five marks, the same everywhere: green with a time (this server said it today: reached 08:35, iLO 5 v1.37, System ROM U32 v1.46, nothing else), a tick with a date (a recorded result, not a live check), a pencil (in your plan, such as the 8 of 10 planned bays and the model), a hollow dot (suggested), a dotted outline (not known yet, such as today's drive count). Green never appears without a time from today, and never on switches or decoration.</p><p>Corrected 2026-09-25 after evidence review: erase wording, plan vs recorded disk count, commands, proof colour, alerts.</p></div>
+      <div class="card"><h3>Palette</h3>
+        <div class="swatches">
+          <div><i style="background:#eeede8"></i>Chalk · page<code>#eeede8</code></div>
+          <div><i style="background:#fbfaf7"></i>Sheet · panels<code>#fbfaf7</code></div>
+          <div><i style="background:#e5e3dc"></i>Margin · narrator column<code>#e5e3dc</code></div>
+          <div><i style="background:#212128"></i>Soot · ink, records<code>#212128</code></div>
+          <div><i style="background:#55545b"></i>Slate · secondary text (7:1)<code>#55545b</code></div>
+          <div><i style="background:#343c8c"></i>Ink blue · the one button (9:1 with white)<code>#343c8c</code></div>
+          <div><i style="background:#2d6b4b"></i>Moss · this server's proof today, with a time<code>#2d6b4b</code></div>
+          <div><i style="background:#83571a"></i>Honey · needs a look<code>#83571a</code></div>
+          <div><i style="background:#a3392a"></i>Brick · failed, and the final destructive send<code>#a3392a</code></div>
+          <div><i style="background:#15161a"></i>Night · dark page<code>#15161a</code></div>
+        </div>
+      </div>
+      <div class="card"><h3>Type pairing</h3><p><strong>Newsreader</strong>, a reading serif, is used only for the narrator's voice and this page's title, at 17 to 22 px, so the voice reads like a person. <strong>Atkinson Hyperlegible</strong>, drawn for low-vision readers, carries every heading, label, value and button in the screens. The system monospace appears only for the package name and the request body shown from the app's preview.</p></div>
+      <div class="card"><h3>Tablet first</h3><p>At every width the current sentence and its one button come first in the narrator, under a compact intro and a one-row journey strip, so the button sits inside the first 900 px at 1440, 1024 and 768 wide. Above 1100 px the narrator is a sticky column beside the screen; from 1100 px down it becomes a band on top and the screen takes the full width. The rack stacks above its card at 1200 px and below; two-column cards stack below 900 px. Only the rack drawing and wide tables scroll inside their own box. Every tappable control is at least 44 px.</p></div>
+      <div class="card"><h3>What makes it distinct</h3><p>Not an appliance wizard (Front Door), not pictures with labels (Picture Book), not a console. The difference is voice: the app talks, keeps its thread, and the interface is what it points at. Chalk paper, a margin column, a serif voice beside a plain sans interface, and one ink-blue button.</p></div>
+    </div>
+
+    <div class="card">
+      <h3>Where every control lives</h3>
+      <div class="tablewrap" style="margin-top:10px">
+        <table>
+          <thead><tr><th>Functionality</th><th>Where it is in these screens</th></tr></thead>
+          <tbody>
+            <tr><td>Kit: choose, rename, save as new kit, build reports, run history</td><td>Top bar on every screen: kit name button (choose), Rename, Save as new kit, Build reports, Run history.</td></tr>
+            <tr><td>Where you are, and where the build is</td><td>Journey strip: "You are here" follows the open screen; step 3 is filled and captioned "In progress"; step 1 reads "Editing · 1 unsaved change" while a piece is placed but unsaved; steps 5 and 6 locked with reasons. A one-line gloss explains kit, U, firmware and ESXi.</td></tr>
+            <tr><td>Rack elevation and list view</td><td>My Rack: Rack / List control above the drawing; List shows the same four pieces as rows.</td></tr>
+            <tr><td>Select equipment, details with provenance</td><td>My Rack: tap a unit; the card shows every value with its mark: planned bays (in the plan), drives today (not read yet, with Refresh drive inventory), and the last erase as a recorded result, not a live check.</td></tr>
+            <tr><td>Readiness: Connection, Firmware, ESXi, Windows</td><td>My Rack: "Is it ready?" 2 × 2 tiles.</td></tr>
+            <tr><td>Technical details behind a disclosure</td><td>My Rack: "Technical details", drawn open.</td></tr>
+            <tr><td>Report an issue</td><td>Top bar on every screen, and "Report an issue with this server" on the My Rack card.</td></tr>
+            <tr><td>Rack height 4 to 60 U</td><td>Add equipment: − 8 U + stepper (44 px buttons) with the range beside it.</td></tr>
+            <tr><td>Hardware palette (DL360, DL380, Cisco switch, UPS, Eaton 5P 1550, PDU, NetApp)</td><td>Add equipment: "The shelf", seven cards; the held DL380 is highlighted.</td></tr>
+            <tr><td>Drag or tap-then-slot; drop preview naming slots and what moves</td><td>Add equipment: U5–U6 preview, "Nothing else moves", suggested name; the narrator's button places it, then becomes Save layout, then Continue.</td></tr>
+            <tr><td>Remove-from-rack zone; move; remove equipment</td><td>Add equipment: "Take out of the rack" under the shelf; Move to another slot and Remove equipment in the edit panel (paused, with reason, during a drop).</td></tr>
+            <tr><td>Edit name, model, bottom slot, height, bay count, per-bay grid</td><td>Add equipment: edit panel; the bottom slot is a visible radio list with taken slots disabled and who is there; bays are marked as in the plan, not detected.</td></tr>
+            <tr><td>Save layout, save a copy, load plan, continue</td><td>Add equipment: footer Save a copy and Load plan; Save layout is in the footer (disabled with reason) while a piece is held, then is the narrator's one button once placed; Continue waits, with its reason, until the layout is saved.</td></tr>
+            <tr><td>Connect: pick equipment, iLO address, username, password (saved, changeable), verify TLS, check connection</td><td>Connect equipment: equipment picker and Connection card; the address is an editable field with its "answered here · 08:35" mark; Verify TLS certificate is off with the self-signed reason and what it means. Also editable on First contact failed.</td></tr>
+            <tr><td>Drives &amp; RAID: refresh drive inventory, recorded erase result, per-disk results, plan new RAID</td><td>Connect equipment: "No current drive count yet" with Refresh drive inventory; the recorded result (tick and date, "recorded result, not a live check") with three stages and the 6 reviewed disks by controller location; a plan-versus-record line (plan marks 8 bays, record lists 6 disks). Plan new RAID is the narrator's one primary, shown once.</td></tr>
+            <tr><td>Hardware alerts needing a current check</td><td>Connect equipment: Hardware alerts box with the count (10, recorded before the erase, current state unknown), a visible "Required before firmware approval" item, and a secondary Review the 10 alerts button. No alert text is invented. The narrator repeats the required item under its button.</td></tr>
+            <tr><td>Erasure report, erase disks again, diagnostics, advanced recovery (each a guarded dialog)</td><td>Connect equipment: boxed "More storage actions" with two groups: Reports (Erasure report, Diagnostics) and Destructive (Erase disks again…, Advanced recovery…, danger style). Erase disks again opens its own screen: the app's preview of one grouped conditional PATCH, a separate typed yes with a Brick send, then sending / accepted / uncertain / failed, and after the separately confirmed power-on, erasing and verified.</td></tr>
+            <tr><td>Suggested values</td><td>Add equipment: the new piece's name. Connect equipment: the boot pair (the two 300 GB drives).</td></tr>
+            <tr><td>Network: subnet, gateway, VLAN, MTU, VM storage; DNS up to 8 + domain; NTP servers + timezone; SNMP version + managers; reset; save defaults; continue</td><td>Network settings: read-only until "Change these settings", with Add server, Add manager and remove buttons shown disabled with that reason; a plain line under every setting; vSAN a visible disabled choice with its reason; footer Reset and Save defaults (disabled, reason beside); Continue is the narrator's one button.</td></tr>
+            <tr><td>Firmware: selected SPP, change package, get HPE SPP, per-device check, review upgrades, saved readings, continue blocked with reason</td><td>Check firmware: package card; the narrator's one button runs the check; the server card has Review upgrades (disabled, with reason) and Saved readings · 08:35; the switch card shows only its planned type, model not known yet; order of work with alerts still open; Continue disabled with its reason.</td></tr>
+            <tr><td>Prepare ESXi, Install Windows as locked steps</td><td>Journey strip on every screen, and the order of work on Check firmware.</td></tr>
+            <tr><td>A first-contact failure, said plainly</td><td>First contact failed (labelled as an example state): "No inventory permission", with an in-app fix first (Use a different account), a link to the Saved details box, a copyable message, the iLO page as the outside step, and retry disabled until something changed.</td></tr>
+            <tr><td>Tablet layout</td><td>Built into every screen: sticky narrator column above 1100 px, top band at 1100 px and below, the current sentence and button first at every width.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  var tabs = document.querySelectorAll('.tabs[role="tablist"] [role="tab"]');
+  var panels = {rack:'scr-rack', build:'scr-build', connect:'scr-connect', network:'scr-network', firmware:'scr-firmware', fail:'scr-fail', erase:'scr-erase'};
+  var stepOf = {rack:null, build:'build', network:'network', connect:'connect', fail:'connect', erase:'connect', firmware:'firmware'};
+  var names = {rack:'My Rack, the home screen', build:'Add equipment (step 1)', network:'Network settings (step 2)', connect:'Connect equipment (step 3)', fail:'Connect equipment (step 3), first contact', erase:'Connect equipment (step 3), erase disks again', firmware:'Check firmware (step 4)'};
+  var steps = document.querySelectorAll('.steps .step');
+  var hereText = document.getElementById('hereText');
+  var buildState = 'before';
+  var step1 = document.querySelector('.step[data-step="build"]');
+  function paintStep1(onBuild){
+    var editing = onBuild && buildState !== 'saved';
+    step1.classList.toggle('done', !editing);
+    step1.querySelector('b').textContent = editing ? '1' : '✓';
+    step1.querySelector('small').textContent = editing ? (buildState === 'after' ? 'Editing · 1 unsaved change' : 'Editing · placing a piece') : (buildState === 'saved' ? 'Done · 5 pieces in 8 U' : 'Done · 4 pieces in 8 U');
+  }
+  function show(key){
+    if(!panels[key]) key = 'rack';
+    Object.keys(panels).forEach(function(k){ document.getElementById(panels[k]).hidden = (k !== key); });
+    tabs.forEach(function(t){ t.setAttribute('aria-selected', String(t.dataset.screen === key)); });
+    steps.forEach(function(s){
+      var here = s.dataset.step === stepOf[key];
+      s.classList.toggle('is-here', here);
+      if(here) s.setAttribute('aria-current','step'); else s.removeAttribute('aria-current');
+    });
+    hereText.textContent = 'You are on ' + names[key] + '. The build is up to step 3.';
+    paintStep1(key === 'build');
+    var panel = document.getElementById(panels[key]);
+    panel.querySelectorAll('.trail').forEach(function(t){ t.scrollTop = 0; });
+    try{ localStorage.setItem('companion-screen', key); }catch(e){}
+  }
+  tabs.forEach(function(t){ t.addEventListener('click', function(){ show(t.dataset.screen); }); });
+  document.querySelectorAll('[data-go]').forEach(function(b){
+    b.addEventListener('click', function(){ show(b.dataset.go); window.scrollTo({top:0}); });
+  });
+  document.querySelectorAll('[data-view]').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('[data-view]').forEach(function(x){ x.setAttribute('aria-pressed', String(x === b)); });
+      document.getElementById('rackViewRack').hidden = b.dataset.view !== 'rack';
+      document.getElementById('rackViewList').hidden = b.dataset.view !== 'list';
+    });
+  });
+  function trailLabel(b){
+    var n = b.closest('.narrator');
+    var count = 0;
+    n.querySelectorAll('.trail .said').forEach(function(p){ if(!p.hidden) count++; });
+    return 'How we got here · ' + count + ' earlier sentence' + (count === 1 ? '' : 's');
+  }
+  document.querySelectorAll('.trailtoggle').forEach(function(b){
+    b.addEventListener('click', function(){
+      var n = b.closest('.narrator');
+      var open = n.classList.toggle('show-trail');
+      b.setAttribute('aria-expanded', String(open));
+      b.textContent = open ? 'Hide how we got here' : trailLabel(b);
+    });
+  });
+  // Add equipment: place, then Save layout, then Continue. One entry point for each.
+  function setBuild(state){
+    buildState = state;
+    document.querySelectorAll('#scr-build [data-place]').forEach(function(el){
+      el.hidden = el.dataset.place.split(' ').indexOf(state) < 0;
+    });
+    var tt = document.querySelector('#scr-build .trailtoggle');
+    if(!document.querySelector('#scr-build .narrator').classList.contains('show-trail')) tt.textContent = trailLabel(tt);
+    document.getElementById('editPanel').disabled = (state === 'before');
+    var fs = document.getElementById('footSave'), fc = document.getElementById('footContinue'), cr = document.getElementById('contReason');
+    fs.hidden = (state !== 'before');
+    fc.hidden = cr.hidden = (state === 'saved');
+    fc.disabled = true;
+    document.getElementById('footReason').textContent = state === 'after' ? 'Unsaved: HPE DL380 7 placed in U5 and U6. Save layout is the filled button.' : (state === 'saved' ? 'Saved. Nothing on the hardware changed.' : 'Save layout waits until the DL380 is placed or put back.');
+    if(state === 'saved') document.getElementById('newKd').textContent = 'Server · saved';
+    paintStep1(true);
+  }
+  document.getElementById('placeBtn').addEventListener('click', function(){ setBuild('after'); });
+  document.getElementById('saveBtn').addEventListener('click', function(){ setBuild('saved'); });
+  var toSaved = document.getElementById('toSaved');
+  toSaved.addEventListener('click', function(){
+    var t = document.getElementById('savedDetails');
+    t.scrollIntoView({behavior:'smooth', block:'start'}); t.focus({preventScroll:true});
+  });
+  // Network: read-only until asked
+  var netEdit = document.getElementById('netEdit'), netView = document.getElementById('netView');
+  netEdit.addEventListener('click', function(){
+    var editing = netView.classList.toggle('locked') === false;
+    netEdit.setAttribute('aria-pressed', String(editing));
+    netEdit.textContent = editing ? 'Stop changing' : 'Change these settings';
+    netView.querySelectorAll('#subnet,#gw,#vlan,#mtu,#dom').forEach(function(i){ i.readOnly = !editing; });
+    document.getElementById('vmst').disabled = !editing;
+    netView.querySelectorAll('.seg button').forEach(function(b){ b.disabled = !editing; });
+    netView.querySelectorAll('.switch').forEach(function(s){ s.setAttribute('aria-disabled', String(!editing)); });
+    netView.querySelectorAll('.editonly').forEach(function(b){ b.disabled = !editing; });
+    document.getElementById('netReason').textContent = editing ? 'Save defaults turns on once a value differs from 08:12.' : 'Nothing has changed since 08:12, so there is nothing to save or reset.';
+  });
+  // First contact failed: in-app fix first, retry only once something changed
+  var retry = document.getElementById('retryBtn'), retryReason = document.getElementById('retryReason');
+  function allowRetry(why){ retry.disabled = false; retryReason.textContent = why; }
+  document.getElementById('otherAccount').addEventListener('click', function(){
+    var u = document.getElementById('fuser'); u.scrollIntoView({behavior:'smooth', block:'center'}); u.focus({preventScroll:true}); u.select();
+  });
+  document.getElementById('fuser').addEventListener('input', function(){ allowRetry('The username changed, so a new check makes sense.'); });
+  document.getElementById('changedBtn').addEventListener('click', function(){ allowRetry('You said the permission was changed. The check reads only.'); });
+  // Theme
+  var dark = document.getElementById('darkToggle');
+  function applyTheme(on){ document.documentElement.setAttribute('data-theme', on ? 'dark' : 'light'); }
+  dark.addEventListener('change', function(){ applyTheme(dark.checked); try{ localStorage.setItem('companion-theme', dark.checked ? 'dark' : 'light'); }catch(e){} });
+  var saved = null; try{ saved = localStorage.getItem('companion-theme'); }catch(e){}
+  if(saved === 'dark' || saved === 'light'){ dark.checked = (saved === 'dark'); applyTheme(dark.checked); }
+  else if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches){ dark.checked = true; }
+  var initial = 'rack';
+  try{ initial = localStorage.getItem('companion-screen') || 'rack'; }catch(e){}
+  if(location.hash && panels[location.hash.slice(1)]) initial = location.hash.slice(1);
+  show(initial);
+})();
+</script>

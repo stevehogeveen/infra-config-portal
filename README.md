@@ -603,3 +603,123 @@ fallback command that requires it.
   explicit Codex wrapper environment variables and acknowledgement above.
 - Future real provider adapters must require explicit configuration, dry-run or
   planning, approval, and audit logging.
+
+### Named Kits and Build Reports
+
+The kit toolbar on My Rack and Setup can rename a saved kit, reopen a saved kit,
+or save the last persisted rack and shared network design as a new named kit.
+Save unfinished form edits before copying or switching. Copies get independent
+equipment identities, no target addresses or credentials, and no inherited checks
+or reports. Copying does not activate the new kit or contact hardware.
+
+Build reports store immutable snapshots in the local database. They can be reopened
+from the kit toolbar or the final setup step, and printed to PDF. Snapshots contain
+planned equipment, current device-scoped iLO version observations, and explicitly
+linked audit metadata, excluding credential payloads and raw logs. They are not
+completion certificates: legacy unlinked runs, verified before/after upgrade changes,
+and Windows verification still need a unified per-build execution evidence contract.
+The report states these limits rather than implying those actions succeeded.
+Keep the database and `.local` profile store together in backups.
+
+### Guided Connection Behavior
+
+The guided firmware page now runs the same explicitly triggered, device-scoped
+read-only iLO probe using saved credentials and shows the returned versions.
+It does not use the legacy lab-wide `config/firmware-baselines/real-lab.yml`
+as a per-kit baseline. Kit-specific SPP ISO selection and structural inspection
+are available; manifest/component validation and upgrade approval are not.
+Switch/NetApp device-scoped reads also remain
+unavailable, rather than invoking a potentially unrelated lab-wide scan.
+
+### Firmware Media Folder
+
+Place downloaded HPE SPP ISOs in `artifacts/Media` (subfolders are supported).
+The default Compose mount exposes this as `/workspace/artifacts/Media`.
+Set `FIRMWARE_MEDIA_HOST_PATH` to the full host path to display it in the UI.
+Setup > Check firmware now includes HPE download/documentation links, host and
+Docker paths, folder browsing, scanning, and Inspect and select package.
+Selections are saved per kit and captured in report data, but not inherited by
+Save as new kit. No ISO execution, mount or hardware contact occurs.
+The ISO drop zone and file picker copy one file at a time into the browsed folder,
+with progress and cancellation (20 GB limit). Uploads are streamed to hidden
+temporary files and published without overwriting an existing filename. Interrupted
+uploads are cleaned up; available disk space is checked before transfer. The folder
+must be writable and support hard links for atomic publication. Read-only mounts
+remain usable for browsing and inspection, but cannot accept uploads.
+An upload is not an ISO/SPP validation or a package selection; inspection is separate.
+
+To use another host folder, add a read-only bind mount in a local Compose override:
+
+```yaml
+services:
+  backend:
+    volumes:
+      - type: bind
+        source: ${FIRMWARE_HOST_FOLDER}
+        target: /media/firmware
+        read_only: true
+    environment:
+      FIRMWARE_MEDIA_ROOT: /media/firmware
+      FIRMWARE_MEDIA_HOST_PATH: ${FIRMWARE_HOST_FOLDER}
+```
+
+Include the override with the existing Compose files when recreating the backend.
+Typing a Windows path into a browser cannot create a Docker mount.
+The pinned `pycdlib` dependency reads ISO structures and locates HPE baseline XML
+without extracting or running software. Release/generation hints remain unverified;
+finding a baseline file does not establish vendor authenticity, component versions,
+server compatibility or update approval. Missing/changed files invalidate selection
+freshness (path, size and modification time, not a cryptographic integrity check).
+
+Connect equipment reuses device-scoped saved credentials. Check connection runs
+the existing read-only Redfish probe explicitly; changed details are saved first,
+and an omitted password preserves the saved password. Nothing probes on page load.
+Results include backend blockers and reported iLO, BIOS and firmware versions.
+This does not assess SPP compatibility or install updates. Mock mode and missing
+lab acknowledgements remain blocked by the backend's existing safety policy.
+
+### Applying staged RAID during boot
+
+Connect equipment > Drives & RAID keeps the last submitted RAID operation in a
+persistent status area, even when inventory is stale. An accepted staged operation
+offers **Start server and verify RAID**. This reads the exact target identity,
+pending RAID configuration, power state and advertised Redfish power-on action.
+The confirmation shows the pending RAID payload and exact power command. Operators
+must review other pending server changes, data loss and the maintenance window.
+Only an already-powered-off, supported HPE Gen10 SR server can be started here;
+running servers are never forcibly restarted or shut down.
+
+The default mock/read-only policy still blocks hardware writes. An explicitly
+configured isolated lab needs `LAB_ALLOW_POWER_ACTIONS=true`, the existing RAID
+write acknowledgements and `HPE_RAID_ALLOW_DESTRUCTIVE=true`. When restricting
+`LAB_ALLOWED_WRITE_ACTIONS`, include `ilo-redfish.raid-boot` alongside
+`ilo-redfish.hpe-raid-apply`; this does not authorize other power workflows.
+
+Power-on is single-use per staged operation, with a committed audit claim before
+the network request. Missing responses never trigger a retry. The page checks
+readback sequentially after power-on for up to 20 minutes while open; returning
+within that window resumes read-only checks, never power-on. A timeout or unknown
+result is not success. Check RAID result remains available for manual recovery.
+Verified results are recorded history, not a claim of current live health.
+Creation of the replacement arrays requires its own reviewed confirmation after
+deletion is verified. No firmware installation, secure erase, forced restart or
+automatic second RAID operation is included.
+
+Power action semantics follow [HPE Redfish examples](https://servermanagementportal.ext.hpe.com/docs/examples/redfishexamples).
+
+### Storage troubleshooting
+
+Connect equipment > Drives & RAID includes **Diagnose this server**, **Review
+recovery steps**, and **Verify recovery**. Diagnosis and verification only read
+the exact device and record an audit event; they never send a repair, power or
+log-clear command. Current controller messages and array membership are separate
+from timestamped IML history. The log reader is bounded to the first page (up to
+200 embedded entries and 16 linked reads), and explicitly labels partial reads.
+Old/repaired cache events are not presented as proven active faults.
+
+Cache discard and manual controller recovery currently require HPE SSA outside
+the app. The guided panel says this explicitly and does not expose a fake repair
+button. After an external repair, Verify recovery rereads hardware and reconciles
+recorded RAID operations only through the existing strict readback verifier.
+The most recent on-screen diagnosis ages out after five minutes and is removed
+when a new read fails. Findings do not grant approval for destructive changes.

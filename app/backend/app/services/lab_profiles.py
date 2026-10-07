@@ -5,6 +5,7 @@ import json
 import os
 import re
 from copy import deepcopy
+from ipaddress import ip_address, ip_network
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,10 @@ from app.services.json_file_store import read_json_object, write_json_object, wr
 from app.services.list_utils import unique_strings
 from app.services.path_utils import display_path, path_exists, safe_read_text
 from app.services.lab_topology import (
+    ADDRESS_PLAN_SCALAR_FIELDS,
+    ADDRESS_PLAN_LIST_FIELDS,
+    DEVICE_TO_ADDRESS_FIELD,
+    NETAPP_DEVICE_TO_ADDRESS_FIELD,
     HIGH_ADDRESS_LAB,
     LabTopologyError,
     derive_lab_topology,
@@ -100,7 +105,7 @@ def list_lab_profiles() -> dict[str, Any]:
     }
 
 
-def create_lab_profile(payload: dict[str, Any]) -> dict[str, Any]:
+def create_lab_profile(payload: dict[str, Any], *, activate: bool = True) -> dict[str, Any]:
     store = _read_store()
     now = _now()
     validate_lab_shape(payload)
@@ -119,14 +124,37 @@ def create_lab_profile(payload: dict[str, Any]) -> dict[str, Any]:
         "history": [],
     }
     store["profiles"].append(profile)
-    store["active_profile_id"] = profile["id"]
+    if activate:
+        store["active_profile_id"] = profile["id"]
     _write_store(store)
-    return _profile_read(profile, active=True)
+    return _profile_read(profile, active=activate)
+
+
+def rename_kit(profile_id: str, name: str) -> dict[str, Any]:
+    store = _read_store()
+    profile = _find_profile(store, profile_id)
+    profile["name"] = name
+    profile["updated_at"] = _now()
+    _write_store(store)
+    return _profile_read(profile, active=store.get("active_profile_id") == profile_id)
+
+
+def discard_unfinished_kit(profile_id: str) -> None:
+    # Compensation when the rack database transaction for a new copy fails.
+    store = _read_store()
+    store["profiles"] = [p for p in store["profiles"] if p.get("id") != profile_id]
+    _write_store(store)
 
 
 def update_lab_profile(profile_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     store = _read_store()
     profile = _find_profile(store, profile_id)
+    # A subnet edit is an explicit address plan, not a request to reapply offsets.
+    requested_subnet = payload.get("subnet_cidr") or (payload.get("address_plan") or {}).get("subnet")
+    if requested_subnet and requested_subnet != profile.get("subnet_cidr"):
+        if payload.get("profile_topology") == profile.get("profile_topology"):
+            payload = {**payload, "profile_topology": "custom"}
+            payload = _retire_previous_network_addresses(profile, payload, requested_subnet)
     now = _now()
     profile.setdefault("history", []).append(
         {
@@ -158,6 +186,46 @@ def update_lab_profile(profile_id: str, payload: dict[str, Any]) -> dict[str, An
     profile["updated_at"] = now
     _write_store(store)
     return _profile_read(profile, active=store.get("active_profile_id") == profile_id)
+
+
+def _retire_previous_network_addresses(
+    profile: dict[str, Any], payload: dict[str, Any], subnet: str
+) -> dict[str, Any]:
+    """Keep the old plan in revision history, not as targets in the new network."""
+    try:
+        network = ip_network(subnet, strict=False)
+    except ValueError:
+        return payload  # Normal validation supplies the user-facing error.
+    previous = _normalize_profile_components(profile)["address_plan"]
+    result = deepcopy(payload)
+    plan = result.setdefault("address_plan", {})
+    devices = result.setdefault("devices", {})
+
+    def outside(value: Any) -> bool:
+        try:
+            return bool(value) and ip_address(value) not in network
+        except ValueError:
+            return False  # Never hide an invalid value from validation.
+
+    for field in (*ADDRESS_PLAN_SCALAR_FIELDS, *ADDRESS_PLAN_LIST_FIELDS):
+        if field == "subnet":
+            continue
+        old = previous.get(field)
+        values = old if isinstance(old, list) else [old]
+        if not any(outside(value) for value in values):
+            continue
+        retained = [value for value in old if not outside(value)] if isinstance(old, list) else None
+        if plan.get(field) == old:
+            plan[field] = retained
+        for alias, mapped_field in DEVICE_TO_ADDRESS_FIELD.items():
+            if mapped_field == field and devices.get(alias) == old:
+                devices[alias] = None
+        netapp = devices.get("netapp")
+        if isinstance(netapp, dict):
+            for alias, mapped_field in NETAPP_DEVICE_TO_ADDRESS_FIELD.items():
+                if mapped_field == field and netapp.get(alias) == old:
+                    netapp[alias] = retained
+    return result
 
 
 def activate_lab_profile(profile_id: str) -> dict[str, Any]:

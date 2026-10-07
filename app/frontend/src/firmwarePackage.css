@@ -1,0 +1,27 @@
+.firmware-assessment-row { padding:16px 0; border-bottom:1px solid #bacdd3; overflow-wrap:anywhere; }
+.firmware-assessment-row h4 { margin:0 0 6px; font-size:17px; }
+.firmware-assessment-row dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.firmware-assessment-row dt { font-size:13px; color:#476574; }
+.firmware-assessment-row dd { margin:6px 0 0; font-weight:600; }
+.firmware-assessment-row p { line-height:1.5; }
+@media(max-width:600px) { .firmware-assessment-row dl { grid-template-columns:1fr; } }
+.firmware-package-source { padding:20px 0; border-bottom:1px solid #bacdd3; margin-bottom:20px; color:#173b49; }
+.media-drop-zone { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; min-height:180px; padding:18px; margin:18px 0; border:2px dashed #6f98a7; border-radius:6px; background:#f1f8fb; text-align:center; overflow-wrap:anywhere; }
+.media-drop-zone.dragging { background:#e2f3ed; border-color:#178568; }
+.media-upload-progress { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.media-upload-progress progress { width:220px; max-width:100%; accent-color:#178568; }
+.firmware-package-source header,.firmware-folder-form,.firmware-file-picker,.firmware-folders { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.firmware-package-source h2 { font-size:22px; margin:0; }
+.firmware-package-source a,.firmware-package-source button { display:inline-flex; align-items:center; gap:8px; }
+.firmware-package-source button { background:white; color:#173b49; border:1px solid #839da8; border-radius:4px; padding:10px 12px; cursor:pointer; }
+.firmware-package-source button:disabled { opacity:.5; cursor:not-allowed; }
+.firmware-package-source label { display:grid; gap:7px; flex:1; min-width:0; }
+.firmware-package-source input,.firmware-package-source select { width:100%; box-sizing:border-box; padding:11px; background:#f2f8fb; border:1px solid #6c91a1; border-radius:4px; color:#183b48; min-width:0; }
+.firmware-package-source details { margin:16px 0; }
+.firmware-package-source summary { cursor:pointer; }
+.firmware-package-source dl div { display:grid; grid-template-columns:minmax(120px,1fr) minmax(0,2fr); gap:12px; padding:8px 0; }
+.firmware-package-source dd { margin:0; overflow-wrap:anywhere; }
+.firmware-folder-form,.firmware-file-picker { margin:18px 0; align-items:end; }
+.firmware-selected { padding:16px 0; border-top:2px solid #367b8e; }
+.firmware-package-source p,.firmware-package-source li { overflow-wrap:anywhere; line-height:1.5; }
+@media(max-width:600px) { .firmware-package-source dl div { grid-template-columns:1fr; gap:4px; } .firmware-folder-form,.firmware-file-picker { flex-direction:column; align-items:stretch; } .firmware-package-source header { align-items:start; flex-direction:column; } }

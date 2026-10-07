@@ -2234,7 +2234,7 @@ def test_merged_provider_preview_endpoints_smoke_in_mock_mode(client: TestClient
 def test_ilo_setup_apply_endpoint_blocked_by_default(client: TestClient) -> None:
     response = client.post(
         "/api/v1/providers/ilo-redfish/setup-apply",
-        json={"confirmation_phrase": "APPLY ILO HOSTNAME SETUP"},
+        json={"ilo_host": "192.168.1.201", "confirmation_phrase": "APPLY ILO HOSTNAME SETUP"},
     )
 
     assert response.status_code == 200

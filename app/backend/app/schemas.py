@@ -1187,6 +1187,8 @@ class IloAccessSettingsRead(BaseModel):
     last_probe_target_matches_access_host: bool = False
     last_probe_target_matches_configured_candidates: bool = False
     last_probe_target_fingerprint_present: bool = False
+    observed_ilo_firmware: str | None = None
+    observed_bios_version: str | None = None
     next_safe_action: str
 
 

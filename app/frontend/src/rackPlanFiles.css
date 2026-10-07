@@ -1,0 +1,19 @@
+.rack-file-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.rack-file-actions > button,.rack-file-dialog button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:42px; padding:10px 14px; border:1px solid #b7c4ca; border-radius:4px; background:#fff; color:#263238; font:600 14px/20px Arial,sans-serif; cursor:pointer; }
+.rack-file-actions > button:first-child,.rack-file-dialog button[type=submit] { background:#c84b06; border-color:#c84b06; color:#fff; }
+.rack-file-actions > button:hover,.rack-file-dialog button:hover { filter:brightness(.96); }
+.rack-file-actions > button:disabled,.rack-file-dialog button:disabled { opacity:.5; cursor:not-allowed; }
+.rack-plan-footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-top:24px; padding-top:20px; border-top:1px solid #cbd4d9; }
+.rack-plan-footer > .journey-next { margin:0; padding:0; border:0; }
+.rack-plan-footer > .journey-next p { margin:0; }
+.rack-file-dialog { width:440px; max-width:calc(100vw - 32px); padding:24px; box-sizing:border-box; border:1px solid #b7c4ca; border-radius:6px; background:#fff; color:#263238; }
+.rack-file-dialog::backdrop { background:#15242b99; }
+.rack-file-dialog header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:24px; }
+.rack-file-dialog header h2 { margin:0; font-size:20px; }
+.rack-file-dialog header button { padding:8px; }
+.rack-planner .rack-file-dialog label { display:grid; gap:8px; font-size:14px; font-weight:600; }
+.rack-planner .rack-file-dialog input { width:100%; max-width:none; min-width:0; box-sizing:border-box; }
+.rack-file-dialog label + label { margin-top:18px; }
+.rack-file-dialog select { width:100%; min-width:0; padding:10px; box-sizing:border-box; }
+.rack-file-dialog p { font-size:13px; color:#596970; }
+.rack-file-dialog footer { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:24px; }

@@ -59,6 +59,45 @@ def test_media_inventory_scans_configured_directory_metadata_only(tmp_path) -> N
     assert "customer-host-install" not in repr(inventory)
 
 
+def test_live_inventory_uses_app_media_mount(monkeypatch, tmp_path) -> None:
+    (tmp_path / "VMware-ESXi-8.0.3.iso").write_bytes(b"iso")
+    monkeypatch.setenv("FIRMWARE_MEDIA_ROOT", str(tmp_path))
+    monkeypatch.setattr(mi, "settings", SimpleNamespace(provider_mode="local-lab-readwrite", media_inventory_dirs=()))
+    inventory = mi.get_media_inventory()
+    assert inventory.mode == "local"
+    assert inventory.configured_directory_paths == [str(tmp_path)]
+    assert len(inventory.items) == 1
+    assert "vmware-esxi" in inventory.items[0].product_hints
+
+
+def test_app_media_mount_does_not_override_explicit_roots(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("FIRMWARE_MEDIA_ROOT", str(tmp_path / "mounted"))
+    roots = (str(tmp_path / "restricted"),)
+    assert mi.configured_media_directories(roots, "local-lab-readwrite") == roots
+
+
+def test_mock_inventory_does_not_scan_app_media_mount(monkeypatch, tmp_path) -> None:
+    (tmp_path / "private.iso").write_bytes(b"iso")
+    monkeypatch.setenv("FIRMWARE_MEDIA_ROOT", str(tmp_path))
+    monkeypatch.setattr(mi, "settings", SimpleNamespace(provider_mode="mock", media_inventory_dirs=()))
+    assert mi.get_media_inventory().mode == "sample"
+
+
+def test_explicit_empty_inventory_does_not_scan_mount(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("FIRMWARE_MEDIA_ROOT", str(tmp_path))
+    monkeypatch.setattr(mi, "settings", SimpleNamespace(provider_mode="local-lab-readwrite", media_inventory_dirs=()))
+    assert mi.get_media_inventory(()).mode == "unavailable"
+
+
+def test_missing_app_media_mount_is_reported_without_sample_data(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("FIRMWARE_MEDIA_ROOT", str(tmp_path / "missing"))
+    monkeypatch.setattr(mi, "settings", SimpleNamespace(provider_mode="local-readonly", media_inventory_dirs=()))
+    inventory = mi.get_media_inventory()
+    assert inventory.mode == "unavailable"
+    assert inventory.items == []
+    assert inventory.warnings == ["configured-directory-1 does not exist."]
+
+
 def test_media_inventory_redacts_strange_and_long_file_names(tmp_path) -> None:
     strange_name = "customer [secret]; $(whoami) ilo-5_v0319 snowman-\u2603.bin"
     long_name = f"{'private-product-name-' * 5}VMware-VCSA-all-8.0.3.iso"

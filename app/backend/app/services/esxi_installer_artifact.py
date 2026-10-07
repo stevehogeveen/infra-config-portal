@@ -47,6 +47,7 @@ MINIMUM_XORRISO_VERSION_LABEL = "1.5.8.pl02"
 PROFILE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$")
 HOST_LABEL_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+NO_SYSTEM_AREA_RE = re.compile(r"^xorriso : NOTE : No System Area was loaded\s*$", re.MULTILINE)
 XORRISO_VERSION_RE = re.compile(
     r"\bxorriso(?:\s+version\s*:)?\s+"
     r"(?P<version>[0-9]+\.[0-9]+\.[0-9]+(?:\.pl[0-9]+)?)\b",
@@ -151,11 +152,14 @@ class EsxiInstallerArtifactRequest(_StrictModel):
     source_iso_path: Path
     expected_source_iso_sha256: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
     hostname: str = Field(min_length=3, max_length=253)
-    management_ip: ipaddress.IPv4Address
+    # "dhcp": the management address comes from the network's DHCP server; no IP or gateway.
+    bootproto: Literal["static", "dhcp"] = "static"
+    management_ip: ipaddress.IPv4Address | None = None
     subnet_cidr: ipaddress.IPv4Network
-    gateway: ipaddress.IPv4Address
+    gateway: ipaddress.IPv4Address | None = None
     dns_servers: tuple[ipaddress.IPv4Address, ...] = Field(min_length=1, max_length=4)
-    ntp_servers: tuple[str, ...] = Field(min_length=1, max_length=4)
+    # Empty only when the saved kit has NTP turned off; the binding check enforces that.
+    ntp_servers: tuple[str, ...] = Field(min_length=0, max_length=4)
     management_nic: str = Field(min_length=1, max_length=128)
     management_vlan_id: int = Field(ge=0, le=4094)
     install_disk_id: str = Field(min_length=1, max_length=128)
@@ -220,6 +224,12 @@ class EsxiInstallerArtifactRequest(_StrictModel):
 
     @model_validator(mode="after")
     def _network_is_coherent(self) -> EsxiInstallerArtifactRequest:
+        if self.bootproto == "dhcp":
+            if self.management_ip is not None or self.gateway is not None:
+                raise ValueError("a DHCP install takes its address and gateway from DHCP")
+            return self
+        if self.management_ip is None or self.gateway is None:
+            raise ValueError("a static install needs management_ip and gateway")
         subnet = self.subnet_cidr
         if self.management_ip not in subnet:
             raise ValueError("management_ip must belong to subnet_cidr")
@@ -366,6 +376,12 @@ class XorrisoEsxiIsoBuilder:
             )
             derived_boot_report = self._boot_report(output_iso)
             derived_boot_equipment = _parse_boot_equipment(derived_boot_report)
+            derived_boot_equipment = _BootEquipmentSignature(
+                el_torito=_accept_full_uefi_load_size(
+                    source_boot_equipment.el_torito, derived_boot_equipment.el_torito, output_iso
+                ),
+                system_area=derived_boot_equipment.system_area,
+            )
 
             kickstart_sha256 = _sha256_file(kickstart_readback)
             bios_verified = _boot_cfg_has_options(_read_ascii(bios_readback), boot_options)
@@ -726,17 +742,26 @@ def prepare_esxi_installer_artifact(
 
 def _render_kickstart(request: EsxiInstallerArtifactRequest) -> str:
     netmask = str(request.subnet_cidr.netmask)
-    network_parts = [
-        "network",
-        "--bootproto=static",
-        f"--device={request.management_nic}",
-        f"--ip={request.management_ip}",
-        f"--netmask={netmask}",
-        f"--gateway={request.gateway}",
-        f"--nameserver={request.dns_servers[0]}",
-        f"--hostname={request.hostname}",
-        "--addvmportgroup=1",
-    ]
+    if request.bootproto == "dhcp":
+        # ESXi's kickstart accepts --hostname only with a static address; the name is set at first boot.
+        network_parts = [
+            "network",
+            "--bootproto=dhcp",
+            f"--device={request.management_nic}",
+            "--addvmportgroup=1",
+        ]
+    else:
+        network_parts = [
+            "network",
+            "--bootproto=static",
+            f"--device={request.management_nic}",
+            f"--ip={request.management_ip}",
+            f"--netmask={netmask}",
+            f"--gateway={request.gateway}",
+            f"--nameserver={request.dns_servers[0]}",
+            f"--hostname={request.hostname}",
+            "--addvmportgroup=1",
+        ]
     if request.management_vlan_id:
         network_parts.append(f"--vlanid={request.management_vlan_id}")
 
@@ -747,18 +772,23 @@ def _render_kickstart(request: EsxiInstallerArtifactRequest) -> str:
         " ".join(network_parts),
         "reboot",
         "",
-        "%firstboot --interpreter=busybox",
     ]
-    for dns_server in request.dns_servers[1:]:
-        lines.append(f"localcli network ip dns server add --server={dns_server}")
-    ntp_arguments = " ".join(f"-s {server}" for server in request.ntp_servers)
-    lines.extend(
-        [
-            "localcli network firewall ruleset set --enabled=true --ruleset-id=ntpClient",
-            f"localcli system ntp set {ntp_arguments} -e 1",
-            "",
-        ]
+    firstboot = (
+        [f"localcli system hostname set --fqdn={request.hostname}"]
+        if request.bootproto == "dhcp"
+        else [f"localcli network ip dns server add --server={dns_server}" for dns_server in request.dns_servers[1:]]
     )
+    if request.ntp_servers:
+        ntp_arguments = " ".join(f"-s {server}" for server in request.ntp_servers)
+        firstboot.extend(
+            [
+                "localcli network firewall ruleset set --enabled=true --ruleset-id=ntpClient",
+                f"localcli system ntp set {ntp_arguments} -e 1",
+            ]
+        )
+    # The first-boot section only exists when there is something to configure after install.
+    if firstboot:
+        lines.extend(["%firstboot --interpreter=busybox", *firstboot, ""])
     return "\n".join(lines)
 
 
@@ -823,12 +853,23 @@ def _profile_binding_blockers(
             else active.get("ntp") or []
         )
     )
+    if features.get("enable_ntp") is False:
+        # The kit has NTP turned off: the installer must not configure any time source.
+        expected_ntp = ()
     profile_vlan = global_settings.get("vlan_id", active.get("vlan_id"))
     expected_vlan = int(profile_vlan) if str(profile_vlan or "").isdigit() else 0
+    # The ESXi management VLAN is saved with the server's ESXi settings when the caller has them
+    # (an untagged management port is common even when the kit plans a VLAN).
+    saved_vlan = context.get("esxi_management_vlan_id")
+    if isinstance(saved_vlan, int) and not isinstance(saved_vlan, bool):
+        expected_vlan = saved_vlan
+    dhcp = request.bootproto == "dhcp"
+    if dhcp and expected_ip:
+        blockers.append("A DHCP install needs the kit's ESXi management address cleared.")
     comparisons = (
         ("subnet_cidr", str(request.subnet_cidr), expected_subnet),
-        ("management_ip", str(request.management_ip), expected_ip),
-        ("gateway", str(request.gateway), expected_gateway),
+        ("management_ip", str(request.management_ip), str(request.management_ip) if dhcp else expected_ip),
+        ("gateway", str(request.gateway), str(request.gateway) if dhcp else expected_gateway),
         ("dns_servers", tuple(str(value) for value in request.dns_servers), expected_dns),
         ("ntp_servers", request.ntp_servers, expected_ntp),
         ("management_vlan_id", request.management_vlan_id, expected_vlan),
@@ -977,9 +1018,10 @@ def _artifact_manifest(
         },
         "install_intent": {
             "hostname_redacted": True,
-            "management_ip": str(request.management_ip),
+            "bootproto": request.bootproto,
+            "management_ip": str(request.management_ip) if request.management_ip else "dhcp",
             "subnet_cidr": str(request.subnet_cidr),
-            "gateway": str(request.gateway),
+            "gateway": str(request.gateway) if request.gateway else "dhcp",
             "dns_servers": [str(value) for value in request.dns_servers],
             "ntp_servers": list(request.ntp_servers),
             "management_nic": request.management_nic,
@@ -1270,6 +1312,53 @@ def _parse_boot_equipment(report: str) -> _BootEquipmentSignature:
     )
 
 
+def _iso_file_size(iso_path: Path, image_path: str) -> int | None:
+    import pycdlib
+
+    iso = pycdlib.PyCdlib()
+    try:
+        iso.open(str(iso_path))
+        return iso.get_record(iso_path=image_path.upper() + ";1").get_data_length()
+    except Exception:
+        return None
+    finally:
+        try:
+            iso.close()
+        except Exception:
+            pass
+
+
+def _accept_full_uefi_load_size(
+    source: _ElToritoSignature, derived: _ElToritoSignature, derived_iso: Path
+) -> _ElToritoSignature:
+    """Replay records a UEFI no-emulation image's real size where VMware's catalog carries a
+    placeholder (1 sector). VMware's documented kickstart-ISO procedure (genisoimage -e
+    efiboot.img -no-emul-boot) produces the same full size. Accept exactly that change: the same
+    entry and image, and a load size equal to the image's real size in 512-byte sectors. Any
+    other difference still fails the equivalence check."""
+    if len(source.entries) != len(derived.entries):
+        return derived
+    entries = []
+    for before, after in zip(source.entries, derived.entries):
+        if (
+            before.load_size != after.load_size
+            and before.platform == after.platform == "UEFI"
+            and before.emulation == after.emulation == "none"
+            and before.image_path == after.image_path
+            and (before.number, before.bootable, before.load_segment, before.partition_type, before.image_options)
+            == (after.number, after.bootable, after.load_segment, after.partition_type, after.image_options)
+        ):
+            size = _iso_file_size(derived_iso, after.image_path)
+            if size and after.load_size == -(-size // 512):
+                after = _ElToritoEntry(**{**after.__dict__, "load_size": before.load_size})
+        entries.append(after)
+    return _ElToritoSignature(
+        catalog_path=derived.catalog_path,
+        catalog_block_count=derived.catalog_block_count,
+        entries=tuple(entries),
+    )
+
+
 def _parse_el_torito_signature(report: str) -> _ElToritoSignature:
     catalog_path: str | None = None
     catalog_block_count: int | None = None
@@ -1413,6 +1502,20 @@ def _parse_system_area_signature(report: str) -> _SystemAreaSignature:
                 raise IsoBuilderError("system_area_inspection_invalid")
             indexed[key] = value.lower()
 
+    if options is None and summary is None and not indexed and not mbr_partitions and (
+        partition_offset is None and mbr_heads is None and mbr_sectors is None
+    ) and NO_SYSTEM_AREA_RE.search(report):
+        # A plain El Torito CD image (VMware/HPE ESXi ISOs) has no system area at all. That is a
+        # definite signature, and the derived ISO must match it exactly (no MBR/GPT added).
+        return _SystemAreaSignature(
+            options="none",
+            summary=("none",),
+            partition_offset=None,
+            mbr_heads_per_cylinder=None,
+            mbr_sectors_per_head=None,
+            mbr_partitions=(),
+            indexed_characteristics=(),
+        )
     if options is None or summary is None:
         raise IsoBuilderError("system_area_inspection_invalid")
     summary_words = {value.upper() for value in summary}

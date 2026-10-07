@@ -62,6 +62,7 @@ def resolve_ilo_write_target_context(
     ilo_host: str | None,
     *,
     now: datetime | None = None,
+    scope: str | None = None,
 ) -> tuple[IloWriteTargetContext | None, list[str]]:
     """Resolve only fresh, exact-target, authenticated cache evidence.
 
@@ -76,7 +77,7 @@ def resolve_ilo_write_target_context(
             "An explicit current-access ilo_host IP is required for every iLO-backed write."
         ]
 
-    result, checked_at_value = get_probe_result(PROVIDER_ID)
+    result, checked_at_value = get_probe_result(PROVIDER_ID, scope=scope) if scope else get_probe_result(PROVIDER_ID)
     if not isinstance(result, dict):
         return None, [
             "Fresh exact-target iLO Inventory Read evidence is required before any iLO-backed write."

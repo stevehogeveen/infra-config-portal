@@ -1,0 +1,75 @@
+.hw-art { position:relative; display:block; width:100%; aspect-ratio:6.94; isolation:isolate; overflow:hidden; flex-shrink:0; pointer-events:none; background:#202223; border-radius:2px; }
+.rack-plan-frame { container-type:inline-size; }
+.hw-switch { aspect-ratio:10.52; background:#c7c9ca; }
+.hw-ups { aspect-ratio:5.52; }
+.hw-pdu { aspect-ratio:11.44; }
+.hw-storage { aspect-ratio:6.34; }
+.hw-dl380 { aspect-ratio:5.77; }
+.hw-netapp { aspect-ratio:5.48; }
+.hw-eaton { aspect-ratio:10.08; }
+.hw-dl380 .hw-drive-field { left:6.5%; top:2%; width:83.2%; height:96%; }
+.hw-netapp .hw-drive-field { left:4.1%; top:7%; width:92.1%; height:87%; }
+.hw-sfp-ports { position:absolute; left:77.5%; top:46%; width:13.8%; height:24%; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4%; }
+.hw-sfp-port { position:relative; min-width:0; }
+.hw-photo { position:absolute; inset:0; display:block; overflow:hidden; pointer-events:none; }
+.hw-photo img { position:absolute; display:block; max-width:none; max-height:none; object-fit:fill; user-select:none; pointer-events:none; }
+.hw-drive-field { position:absolute; left:7.3%; top:4.8%; width:85.5%; height:92%; background:#151616; overflow:hidden; }
+.hw-bays { position:absolute; inset:0; display:grid; gap:1.2% .35%; background:#141515; }
+.hw-bay { position:relative; min-width:0; min-height:0; overflow:hidden; }
+.hw-bay-number { position:absolute; right:3%; bottom:5%; color:#ebeeee; background:#202323; padding:0 2px; border:1px solid #686c6c; border-radius:1px; font:500 8px/1.3 Arial,sans-serif; }
+.hw-network-field { position:absolute; left:11.3%; top:8%; width:61.2%; height:86%; overflow:hidden; background:#c6c8c9; }
+.hw-ports { position:absolute; inset:0 auto 0 0; display:grid; grid-template-rows:repeat(2,minmax(0,1fr)); grid-auto-flow:column; column-gap:.24%; row-gap:10%; padding:8px 0; box-sizing:border-box; }
+.hw-port { position:relative; min-width:0; min-height:0; display:block; font-style:normal; }
+.hw-port:nth-child(even) > .hw-photo { transform:rotate(180deg); }
+.hw-port > span:last-child { position:absolute; top:-8px; left:0; right:0; font:500 6px/7px Arial,sans-serif; color:#303333; text-align:center; }
+.hw-port:nth-child(even) > span:last-child { top:auto; bottom:-8px; }
+.hardware-picker .hw-art { width:100%; max-width:260px; margin:auto 0; filter:drop-shadow(0 3px 2px #0002); }
+.rack-planner .hardware-picker.drag-palette { gap:16px; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); }
+.hw-catalog-label { display:grid; gap:4px; text-align:center; }
+.hw-catalog-label strong { font:600 12px/1.3 Arial,sans-serif; }
+.hw-catalog-label small { font:11px/1.3 Arial,sans-serif; color:#62717a; }
+.rack-planner .hardware-picker.drag-palette > button { min-height:114px; display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:20px 8px 10px; gap:16px; background:#fff; border:0; border-bottom:2px solid #c9d0d4; border-radius:0; }
+.rack-planner .hardware-picker.drag-palette > button:hover { background:#f0f3f4; border-bottom-color:#e65b19; }
+.hardware-picker .hw-bay-number,.equipment-checklist .hw-bay-number { display:none; }
+.hardware-picker .hw-ports,.equipment-checklist .hw-ports { padding:1px 0; }
+.hardware-picker .hw-port > span:last-child,.equipment-checklist .hw-port > span:last-child { display:none; }
+.equipment-checklist .hw-art { width:100%; max-width:160px; }
+.rack-planner .hw-preview-button { display:block; position:relative; width:100%; padding:24px 0; margin:8px 0; background:transparent; border:0; border-radius:0; }
+.hw-preview-button > svg { position:absolute; right:0; bottom:0; color:#53646c; }
+.rack-planner .hw-preview-button:hover { background:#f5f7f8; }
+.hw-detail-dialog { width:min(1180px,94vw); max-width:94vw; box-sizing:border-box; max-height:90vh; padding:28px; border:1px solid #bbc3c7; border-radius:6px; background:#f8fafb; color:#202a30; box-shadow:0 16px 80px #0005; }
+.hw-detail-dialog::backdrop { background:#141c24a6; }
+.hw-detail-dialog header { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:48px; }
+.hw-detail-dialog header h2 { font:600 22px/1.3 Arial,sans-serif; margin:0 0 8px; overflow-wrap:anywhere; }
+.hw-detail-dialog header p { font:13px/1.5 Arial,sans-serif; color:#657179; margin:0; }
+.hw-detail-dialog header button { flex-shrink:0; display:grid; place-items:center; width:40px; height:40px; border:1px solid #bfc8ce; border-radius:4px; background:#fff; }
+.hw-detail-dialog .hw-art { box-shadow:0 12px 20px -12px #0007; }
+.hw-detail-dialog .hw-bay-number { font-size:10px; }
+.hw-detail-dialog footer { display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-top:32px; font:13px/1.5 Arial,sans-serif; color:#6d501f; }
+.rack-planner .rack-plan-equipment.hw-equipment { display:flex; flex-direction:column; padding:0; gap:0; border:0; border-radius:2px; background:#dce0e2; color:#202a30; box-shadow:0 2px 3px #0005; overflow:hidden; }
+.rack-planner .rack-plan-equipment.hw-equipment.selected { border:0; outline:2px solid #eb651e; outline-offset:1px; box-shadow:0 2px 5px #0004; }
+.hw-equipment .hw-rack-label { display:flex; align-items:center; gap:8px; height:18px; flex:0 0 18px; box-sizing:border-box; padding:0 6px; background:#f0f2f3; color:#2b343a; border-bottom:1px solid #adb3b6; }
+.rack-planner .hw-equipment .hw-rack-label strong { font:600 10px/16px Arial,sans-serif; margin:0; color:inherit; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rack-planner .hw-equipment .hw-rack-label strong::before { content:none; }
+.hw-rack-label > span { margin-left:auto; font:500 9px/16px Arial,sans-serif; color:#626c72; white-space:nowrap; }
+.hw-equipment .hw-art { flex:1; width:100%; min-height:0; aspect-ratio:auto; }
+.hw-equipment .hw-bay-number { font-size:7px; }
+.hw-equipment .hw-ports { padding:5px 0; }
+.hw-equipment .hw-port > span:last-child { top:-5px; font:500 5px/5px Arial,sans-serif; }
+.hw-equipment .hw-port:nth-child(even) > span:last-child { top:auto; bottom:-5px; }
+.rack-planner .hw-equipment:not(.mount-rack) { overflow:visible; background:transparent; box-shadow:none; }
+.hw-equipment:not(.mount-rack) .hw-rack-label { display:none; }
+.hw-equipment:not(.mount-rack) .hw-art { position:absolute; top:50%; left:50%; width:var(--rack-device-height); height:100%; max-height:28px; flex:none; transform:translate(-50%,-50%) rotate(90deg); transform-origin:center; }
+@container (max-width:420px) {
+  .hw-equipment .hw-rack-label,.hw-equipment .hw-bay-number,.hw-equipment .hw-port > span:last-child { display:none; }
+  .hw-equipment .hw-ports { padding:1px 0; }
+}
+@media(max-width:700px) {
+  .rack-planner .hardware-picker.drag-palette { gap:10px; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .rack-planner .hardware-picker.drag-palette > button { min-height:90px; padding:16px 4px 8px; }
+  .hw-equipment .hw-rack-label { padding:0 3px; }
+  .hw-rack-label > span { display:none; }
+  .hw-detail-dialog { padding:18px; }
+  .hw-detail-dialog header { margin-bottom:32px; }
+  .hw-detail-dialog .hw-bay-number { font-size:7px; }
+}

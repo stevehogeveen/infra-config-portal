@@ -1314,10 +1314,56 @@ def _populate_inventory_result(
         result["systems"],
         requests,
     )
+    result["pci_devices"] = _pci_device_summaries(client, base_url, result["systems"], requests)
     result["network_identity"] = _manager_network_identity(client, base_url, root, requests)
     result["time_and_dns"] = _manager_time_and_dns_settings(client, base_url, root, requests)
     result["licenses"] = _manager_license_summaries(client, base_url, root, requests)
     result["local_users"] = _account_service_users(client, base_url, root, requests)
+    result["diagnostic_log"] = _iml_diagnostics(client, base_url, result["systems"], requests)
+
+
+def _iml_diagnostics(client, base_url, systems, requests):
+    """Bounded, optional GET-only log sample; log history is not current fault proof."""
+    entries, notes = [], []
+    for system in systems[:1]:
+        path = system.get("@odata.id", "")
+        if not isinstance(path, str) or not path.lower().startswith("/redfish/v1/systems/"):
+            continue
+        collection_path = path.rstrip("/") + "/LogServices/IML/Entries/"
+        try:
+            payload = _get_json(client, base_url, collection_path, requests)
+            members = payload.get("Members")
+            if not isinstance(members, list):
+                notes.append("IML did not return a readable entries collection.")
+                continue
+            for member in members[:16]:
+                if not isinstance(member, dict):
+                    continue
+                event = member
+                if "Message" not in event:
+                    member_path = _odata_id(member)
+                    if not member_path or not member_path.lower().startswith(collection_path.lower()):
+                        continue
+                    event = _get_json(client, base_url, member_path, requests)
+                oem = event.get("Oem") or {}
+                hpe = (oem.get("Hpe") or {}) if isinstance(oem, dict) else {}
+                if not isinstance(hpe, dict):
+                    hpe = {}
+                summary = {key: str(event[key])[:2048] for key in ("Id", "Message", "Severity", "Created") if event.get(key) is not None}
+                for key in ("RecommendedAction", "Updated", "Severity", "UserAction"):
+                    if isinstance(hpe.get(key), str):
+                        summary["Hpe" + key] = hpe[key][:2048]
+                if isinstance(hpe.get("Repaired"), bool):
+                    summary["Repaired"] = hpe["Repaired"]
+                entries.append(summary)
+            notes.append("IML sample: up to 16 entries from the first returned page, not the full log or necessarily the newest events. Historical events do not establish the cause of a current warning.")
+        except httpx.HTTPStatusError as exc:
+            code = exc.response.status_code
+            notes.append("IML access denied. This iLO account needs permission to read the server log." if code in {401, 403} else
+                         "IML endpoint is not available on this iLO." if code == 404 else f"IML read failed (HTTP {code}).")
+        except (RedfishJsonDecodeError, httpx.HTTPError):
+            notes.append("IML could not be read: the request failed or returned invalid data. Inventory remains available, but the warning cause is not verified.")
+    return {"entries": entries, "message": " ".join(notes) or "IML was not available for this system.", "complete": False}
 
 
 def _account_service_users(
@@ -1915,8 +1961,50 @@ def _linked_summaries(
         links = summary.get("_links")
         path = _odata_id(links.get(link_name)) if isinstance(links, dict) else None
         if path:
-            linked.append(_resource_summary(_get_json(client, base_url, path, requests)))
+            payload = _get_json(client, base_url, path, requests)
+            linked.append(_power_summary(payload) if link_name == "Power" else
+                          _thermal_summary(payload) if link_name == "Thermal" else _resource_summary(payload))
     return linked
+
+
+def _thermal_summary(payload):
+    summary = _resource_summary(payload)
+    complete = True
+    for key in ("Fans", "Temperatures"):
+        values = payload.get(key)
+        valid = isinstance(values, list) and 0 < len(values) <= 128 and all(isinstance(v, dict) for v in values)
+        complete = complete and valid
+        summary[key] = [_resource_summary(v) for v in values] if valid else []
+    summary["sensor_inventory_complete"] = complete
+    return summary
+
+
+def _power_summary(payload):
+    summary = _resource_summary(payload)
+    supplies = payload.get("PowerSupplies")
+    summary["PowerSupplies"] = []
+    for supply in (supplies if isinstance(supplies, list) else [])[:32]:
+        if not isinstance(supply, dict):
+            continue
+        row = _resource_summary(supply)
+        for key in ("MemberId", "PowerSupplyType", "LineInputVoltage", "PowerOutputWatts"):
+            if key in supply:
+                row[key] = supply[key]
+        oem = supply.get("Oem") or {}
+        hpe = (oem.get("Hpe") or {}) if isinstance(oem, dict) else {}
+        if isinstance(hpe, dict):
+            if hpe.get("BayNumber") is not None:
+                row["Location"] = str(hpe["BayNumber"])
+            state = hpe.get("PowerSupplyStatus")
+            if isinstance(state, dict) and isinstance(state.get("State"), str):
+                row["PowerSupplyStatus"] = {"State": state["State"]}
+        summary["PowerSupplies"].append(row)
+    redundancy = payload.get("Redundancy")
+    summary["Redundancy"] = [
+        {k: value[k] for k in ("@odata.id", "MemberId", "Name", "Status", "Mode", "MinNumNeeded", "MaxNumSupported") if k in value}
+        for value in (redundancy if isinstance(redundancy, list) else [])[:32] if isinstance(value, dict)
+    ]
+    return summary
 
 
 def _firmware_summaries(
@@ -1931,6 +2019,28 @@ def _firmware_summaries(
     update_service = _get_json(client, base_url, update_service_path, requests)
     firmware_path = _odata_id(update_service.get("FirmwareInventory"))
     return _collection_summaries(client, base_url, firmware_path, requests)
+
+
+def _pci_device_summaries(client, base_url, systems, requests):
+    devices = []
+    for system in systems:
+        path = system.get("@odata.id")
+        if not isinstance(path, str):
+            continue
+        collection_path = path.rstrip("/") + "/PCIDevices/"
+        try:
+            collection = _get_json(client, base_url, collection_path, requests)
+            for member in _member_paths(collection.get("Members") or [], limit=64):
+                payload = _get_json(client, base_url, member, requests)
+                summary = _resource_summary(payload)
+                for key in ("VendorID", "DeviceID", "SubsystemVendorID", "SubsystemDeviceID", "ClassCode", "Location", "FirmwareVersion"):
+                    if key in payload:
+                        summary[key] = payload[key]
+                devices.append(summary)
+        except httpx.HTTPError:
+            # Optional inventory is absent on some iLO versions; never invent identity.
+            continue
+    return devices
 
 
 def _network_adapter_summaries(
@@ -1953,6 +2063,11 @@ def _network_adapter_summaries(
 
 def _network_collection_paths(system_payload: dict[str, Any], system_path: str) -> list[str]:
     paths: list[str] = []
+    oem_links = (system_payload.get("Oem") or {}).get("Hpe", {}).get("Links", {})
+    for key in ("NetworkAdapters", "EthernetInterfaces"):
+        path = _odata_id(oem_links.get(key))
+        if path:
+            paths.append(path)
     for key in ("NetworkAdapters", "EthernetInterfaces"):
         path = _odata_id(system_payload.get(key))
         if path:
@@ -2009,6 +2124,12 @@ def _network_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "LinkStatus",
         "InterfaceEnabled",
         "PhysicalPortNumber",
+        "FirmwareVersion",
+        "FirmwarePackageVersion",
+        "StructuredName",
+        "Firmware",
+        "Location",
+        "PartNumber",
     ):
         if key in payload:
             summary[key] = payload[key]
@@ -2037,11 +2158,21 @@ def _storage_discovery(
         if not isinstance(system_path, str):
             continue
         system_payload = _get_json(client, base_url, system_path, requests)
-        for path in _storage_collection_paths(system_payload, system_path):
-            _merge_storage_discovery(
-                discovery,
-                _discover_storage_path(client, base_url, path, requests),
-            )
+        results = [
+            (path, _discover_storage_path(client, base_url, path, requests))
+            for path in _storage_collection_paths(system_payload, system_path)
+        ]
+        # The DMTF Storage collection answers 4xx on iLO 5 3.x when the controller firmware has no
+        # PLDM-for-RDE support (observed: P408i-a 1.66, HTTP 400). If HPE SmartStorage returned a
+        # complete read (controller and drives), that refusal is "not supported", not a gap.
+        complete = any(r["controllers"] and r["physical_drives"] for _, r in results)
+        for path, result in results:
+            standard = path.rstrip("/").rsplit("/", 1)[-1] == "Storage"
+            empty = not (result["controllers"] or result["physical_drives"] or result["logical_drives"])
+            if complete and standard and empty and result["warnings"]:
+                discovery.setdefault("notes", []).extend(result["warnings"])
+                result = {**result, "warnings": []}
+            _merge_storage_discovery(discovery, result)
 
     if discovery["controllers"] or discovery["physical_drives"] or discovery["logical_drives"]:
         discovery["status"] = "available"
@@ -2259,7 +2390,20 @@ def _storage_collection_summaries(
         return []
     summaries = []
     for member_path in _member_paths(members, limit=64):
-        summaries.append(summarizer(_get_json(client, base_url, member_path, requests)))
+        payload = _get_json(client, base_url, member_path, requests)
+        summary = summarizer(payload)
+        if summarizer is _logical_drive_summary:
+            links = payload.get("Links") or {}
+            data = links.get("DataDrives") or links.get("Drives") or payload.get("DataDrives")
+            if isinstance(data, list):
+                summary["physical_drive_paths"] = _member_paths(data, limit=64)
+            elif _odata_id(data):
+                try:
+                    collection = _get_json(client, base_url, _odata_id(data), requests)
+                    summary["physical_drive_paths"] = _member_paths(collection.get("Members") or [], limit=64)
+                except httpx.HTTPError:
+                    summary["physical_drive_paths"] = []
+        summaries.append(summary)
     return summaries
 
 
@@ -2269,8 +2413,10 @@ def _storage_controller_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "ControllerProtocol",
         "AdapterType",
         "CurrentOperatingMode",
+        "OperatingModeAfterReboot",
         "BackupPowerSourceStatus",
         "CacheMemorySizeMiB",
+        "CacheModuleStatus",
         "PartNumber",
         "ControllerPartNumber",
         "SKU",
@@ -2280,6 +2426,9 @@ def _storage_controller_summary(payload: dict[str, Any]) -> dict[str, Any]:
     ):
         if key in payload:
             summary[key] = payload[key]
+    board = payload.get("ControllerBoard")
+    if isinstance(board, dict) and isinstance(board.get("Status"), dict):
+        summary["ControllerBoard"] = {"Status": board["Status"]}
     return summary
 
 
@@ -2299,6 +2448,10 @@ def _drive_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "Status",
         "BlockSizeBytes",
         "PredictedMediaLifeLeftPercent",
+        "DiskDriveStatusReasons",
+        "DiskDriveUse",
+        "ErasePattern",
+        "EraseCompletionPercentage",
     ):
         if key in payload:
             summary[key] = payload[key]
@@ -2327,6 +2480,9 @@ def _logical_drive_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "LogicalDriveName",
         "LogicalDriveNumber",
         "LogicalDriveType",
+        # The volume WWN: ESXi names this disk naa.<id>, so the installer can target it exactly.
+        "VolumeUniqueIdentifier",
+        "LogicalDriveStatusReasons",
         "InterfaceType",
         "MediaType",
         "DataDrives",
@@ -2356,6 +2512,7 @@ def _merge_storage_discovery(target: dict[str, Any], source: dict[str, Any]) -> 
 
 def _resource_summary(payload: dict[str, Any]) -> dict[str, Any]:
     keys = (
+        "Version",
         "@odata.id",
         "Id",
         "Name",
@@ -2371,6 +2528,21 @@ def _resource_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "Status",
     )
     summary = {key: payload[key] for key in keys if key in payload}
+    aggregate = ((payload.get("Oem") or {}).get("Hpe") or {}).get("AggregateHealthStatus") or {}
+    battery = ((aggregate.get("SmartStorageBattery") or {}).get("Status") or {}).get("Health")
+    if battery in {"OK", "Warning", "Critical"}:
+        summary["smart_storage_battery_health"] = battery
+    self_tests = ((payload.get("Oem") or {}).get("Hpe") or {}).get("iLOSelfTestResults")
+    if isinstance(self_tests, list):
+        summary["ilo_self_tests"] = [
+            {
+                "name": str(test.get("SelfTestName") or ""),
+                "status": str(test.get("Status") or ""),
+                "notes": str(test.get("Notes") or "").strip(),
+            }
+            for test in self_tests[:32]
+            if isinstance(test, dict)
+        ]
     if "SerialNumber" in payload:
         summary["serial_number_present"] = bool(payload["SerialNumber"])
     identity_values = {

@@ -869,6 +869,32 @@ def test_select_esxi_iso_explicit_path_reports_unresolvable_path(monkeypatch, tm
         raise AssertionError("expected unresolvable explicit ISO error")
 
 
+def test_select_esxi_iso_uses_app_media_mount(monkeypatch, tmp_path: Path) -> None:
+    iso = tmp_path / "VMware-ESXi-8.0.3.iso"
+    iso.write_bytes(b"iso")
+    monkeypatch.delenv("ESXI_INSTALL_ISO", raising=False)
+    monkeypatch.delenv("ESXI_ISO_PATH", raising=False)
+    monkeypatch.setenv("FIRMWARE_MEDIA_ROOT", str(tmp_path))
+    monkeypatch.setattr(esxi_boot_workflow, "settings", replace(settings, provider_mode="local-lab-readwrite", media_inventory_dirs=()))
+    assert esxi_boot_workflow._select_esxi_iso()["path"] == iso.resolve()
+
+
+def test_explicit_esxi_iso_cannot_escape_restricted_roots_via_mount(monkeypatch, tmp_path: Path) -> None:
+    restricted = tmp_path / "restricted"
+    restricted.mkdir()
+    iso = tmp_path / "VMware-ESXi-8.0.3.iso"
+    iso.write_bytes(b"iso")
+    monkeypatch.setenv("ESXI_INSTALL_ISO", str(iso))
+    monkeypatch.setenv("FIRMWARE_MEDIA_ROOT", str(tmp_path))
+    monkeypatch.setattr(esxi_boot_workflow, "settings", replace(settings, provider_mode="local-lab-readwrite", media_inventory_dirs=(str(restricted),)))
+    try:
+        esxi_boot_workflow._select_esxi_iso()
+    except RuntimeError as exc:
+        assert "must be under" in str(exc)
+    else:
+        raise AssertionError("the mount must not widen an explicit media allowlist")
+
+
 def _redirect_reports(monkeypatch, tmp_path: Path) -> None:
     repo_root = tmp_path
     codex_runs = repo_root / "artifacts" / "codex-runs"

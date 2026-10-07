@@ -90,6 +90,13 @@ Future integrations:
 
 ## Architecture expectations
 
+Supported operator workflows must be completable inside the app: do not require
+manual JSON/env edits or shell commands to resolve normal prerequisites. Provide
+in-app actions with scoped approvals and audit records. Genuine external work
+(hardware replacement or obtaining vendor evidence) must be clearly explained.
+Never treat operator approval as hardware capability evidence or bypass
+destructive confirmation. See lab-build-rules.md section 9.
+
 Use clean separation between:
 
 - API routes

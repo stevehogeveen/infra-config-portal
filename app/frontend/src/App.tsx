@@ -1,3 +1,4 @@
+import { KitLibrary } from "./components/KitLibrary";
 import {
   Activity,
   AlertTriangle,
@@ -42,6 +43,18 @@ import {
   OperatorVirtualizationPage
 } from "./operatorPages";
 import { RackRail, SimpleLabPage, SimpleStepsPage } from "./simplePages";
+import { RackWorkbench } from "./components/RackWorkbench";
+import { SetupJourney, SetupReview, RackHomeFrame } from "./components/SetupJourney";
+import { StudioProvider } from "./components/studio/StudioContext";
+import { StudioTopBar } from "./components/studio/StudioTopBar";
+import { CommandPalette } from "./components/studio/CommandPalette";
+import { REPORT_ISSUE_EVENT } from "./components/studio/studioEvents";
+import { RackFirmwareReview } from "./components/RackFirmwareReview";
+import { DisksRaidStep } from "./components/StorageSteps";
+import { PageErrorBoundary } from "./components/PageErrorBoundary";
+import { EsxiStep } from "./components/EsxiStep";
+import { WindowsStep } from "./components/WindowsStep";
+import { ActivityPage } from "./components/ActivityPage";
 import type {
   ArtifactRecord,
   AuditEvent,
@@ -746,19 +759,30 @@ function App() {
       >
         <AppShell
           health={health}
+          kitMenu={<KitLibrary variant="menu" state={labProfileState} onReload={loadLabProfileState} />}
         >
           <OperatorTabStateProvider>
+            <PageErrorBoundary>
             <Routes>
               <RouterRoute path="/" element={<Navigate to="/simple" replace />} />
               <RouterRoute path="/overview" element={<Navigate to="/simple" replace />} />
-              <RouterRoute path="/simple" element={<SimpleLabPage />} />
+              <RouterRoute path="/simple" element={<RackHomeFrame><RackWorkbench /></RackHomeFrame>} />
+              <RouterRoute path="/equipment" element={<Navigate to="/simple" replace />} />
+              <RouterRoute path="/setup/guide" element={<SetupJourney step={0}><RackWorkbench mode="equipment" /></SetupJourney>} />
+              <RouterRoute path="/setup/connect" element={<SetupJourney step={1}><RackWorkbench mode="connect" /></SetupJourney>} />
+              <RouterRoute path="/setup/disks" element={<SetupJourney step={3}><DisksRaidStep key={labProfileState?.active_profile?.id} profileId={labProfileState?.active_profile?.id} /></SetupJourney>} />
+              <RouterRoute path="/setup/raid" element={<SetupJourney step={3}><DisksRaidStep key={labProfileState?.active_profile?.id} profileId={labProfileState?.active_profile?.id} /></SetupJourney>} />
+              <RouterRoute path="/setup/check-firmware" element={<SetupReview step={2}><RackFirmwareReview key={labProfileState?.active_profile?.id} profileId={labProfileState?.active_profile?.id} /></SetupReview>} />
+              <RouterRoute path="/setup/prepare-esxi" element={<SetupJourney step={4}><EsxiStep key={labProfileState?.active_profile?.id} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} /></SetupJourney>} />
+              <RouterRoute path="/setup/install-windows" element={<SetupJourney step={5}><WindowsStep key={labProfileState?.active_profile?.id} labProfileState={labProfileState} /></SetupJourney>} />
+              <RouterRoute path="/rack-inventory" element={<SimpleLabPage />} />
               <RouterRoute path="/rack" element={<Navigate to="/simple" replace />} />
               <RouterRoute path="/simple-steps" element={<SimpleStepsPage />} />
               <RouterRoute path="/network" element={<OperatorNetworkPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/server" element={<OperatorServerPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/storage" element={<OperatorStoragePage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/virtualization" element={<OperatorVirtualizationPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
-              <RouterRoute path="/setup/defaults" element={<OperatorLabDefaultsPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/defaults" element={<SetupJourney step="defaults"><OperatorLabDefaultsPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} /></SetupJourney>} />
               <RouterRoute path="/setup/global" element={<Navigate to="/setup/defaults" replace />} />
               <RouterRoute path="/setup/cisco" element={<OperatorNetworkPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/setup/ilo" element={<OperatorServerPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
@@ -777,7 +801,9 @@ function App() {
               <RouterRoute path="/dashboard" element={<Navigate to="/simple" replace />} />
               <RouterRoute path="/lab-setup" element={<Navigate to="/simple" replace />} />
               <RouterRoute path="/hardware" element={<Navigate to="/simple" replace />} />
-              <RouterRoute path="/run-center" element={<RunCenter />} />
+              <RouterRoute path="/run-center" element={<Navigate to="/setup/history" replace />} />
+              <RouterRoute path="/setup/history" element={<SetupJourney step="history"><ActivityPage /></SetupJourney>} />
+              <RouterRoute path="/run-tools" element={<RunCenter />} />
               <RouterRoute path="/run" element={<RunCenter />} />
               <RouterRoute path="/control-center" element={<Navigate to="/simple" replace />} />
               <RouterRoute path="/firmware" element={<Navigate to="/firmware-upgrades" replace />} />
@@ -786,7 +812,7 @@ function App() {
               <RouterRoute path="/verification" element={<Navigate to="/validation" replace />} />
               <RouterRoute path="/lab-validation" element={<Navigate to="/validation" replace />} />
               <RouterRoute path="/reports" element={<Navigate to="/validation" replace />} />
-              <RouterRoute path="/settings" element={<Navigate to="/simple" replace />} />
+              <RouterRoute path="/settings" element={<Navigate to="/setup/defaults" replace />} />
               <RouterRoute path="/requests" element={<RequestListPage />} />
               <RouterRoute path="/requests/new" element={<NewRequest />} />
               <RouterRoute path="/requests/:id" element={<RequestDetail />} />
@@ -822,6 +848,7 @@ function App() {
               <RouterRoute path="/media" element={<MediaInventoryPage />} />
               <RouterRoute path="/providers" element={<Navigate to="/simple" replace />} />
             </Routes>
+            </PageErrorBoundary>
           </OperatorTabStateProvider>
         </AppShell>
       </ReportIssuesContext.Provider>
@@ -837,23 +864,30 @@ function AdvancedRouteGate({ children }: { children: ReactNode }) {
 
 function AppShell({
   children,
-  health
+  health,
+  kitMenu
 }: {
   children: ReactNode;
   health: HealthStatus | null;
+  kitMenu?: ReactNode;
 }) {
+  const { activeProfile } = useLabProfileContext();
   const { uiMode } = useUiMode();
   const location = useLocation();
-  const isRackWorkspace = location.pathname === "/simple";
+  const isRackWorkspace = true;
+  void location;
   return (
-    <div className={`app-shell app-shell-${uiMode}`}>
-      <RackRail />
+    <StudioProvider profile={activeProfile}>
+    <div className={`app-shell app-shell-${uiMode} ${isRackWorkspace ? "app-shell-workbench" : ""}`}>
+      <StudioTopBar kitMenu={kitMenu} />
       <main className={`content ${isRackWorkspace ? "content-rack" : ""}`}>
         {health?.dev_test_banner && <DevTestBanner message={health.dev_test_banner} />}
         {children}
       </main>
-      <OperatorIssueReporter />
+      <OperatorIssueReporter showTrigger={false} />
+      <CommandPalette />
     </div>
+    </StudioProvider>
   );
 }
 
@@ -876,9 +910,14 @@ function humanizeDevTestBanner(message: string): string {
   return humanizeAction(message);
 }
 
-function OperatorIssueReporter() {
+function OperatorIssueReporter({ showTrigger = true }: { showTrigger?: boolean }) {
   const location = useLocation();
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const openReporter = () => setOpen(true);
+    window.addEventListener(REPORT_ISSUE_EVENT, openReporter);
+    return () => window.removeEventListener(REPORT_ISSUE_EVENT, openReporter);
+  }, []);
   const [note, setNote] = useState("");
   const [targetRegionId, setTargetRegionId] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -955,10 +994,10 @@ function OperatorIssueReporter() {
 
   return (
     <>
-      <button className="operator-issue-trigger" onClick={() => setOpen(true)} type="button">
+      {showTrigger && <button className="operator-issue-trigger" onClick={() => setOpen(true)} type="button">
         <AlertTriangle size={16} />
         Report issue
-      </button>
+      </button>}
       {open && createPortal(
         <div className="operator-issue-overlay" role="dialog" aria-modal="true" aria-label="Testing Assistant">
           <form className="operator-issue-panel" onSubmit={submit}>

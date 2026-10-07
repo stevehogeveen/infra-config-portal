@@ -1,0 +1,723 @@
+<title>Lab Builder Candidates</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  color-scheme:light;
+  --bg:#ECEFF1;
+  --surface:#FFFFFF;
+  --sunk:#F4F6F7;
+  --ink:#171B20;
+  --ink-2:#4F5761;
+  --line:#D3D9DE;
+  --line-2:#E4E8EB;
+  --accent:#24508F;
+  --accent-wash:#E1E9F5;
+  --track:#E3E7EA;
+  --bar:#46525F;
+  --pro-bg:#171B20;
+  --pro-ink:#FFFFFF;
+  --shot-edge:#C4CCD3;
+  --shadow:0 1px 2px rgba(23,27,32,.05), 0 10px 24px -20px rgba(23,27,32,.35);
+  --display:"Schibsted Grotesk","Segoe UI Variable Display","Segoe UI",system-ui,-apple-system,Arial,sans-serif;
+  --text:"Schibsted Grotesk","Segoe UI",system-ui,-apple-system,Arial,sans-serif;
+  --mono:"Spline Sans Mono","Cascadia Mono",Consolas,ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#111417;
+    --surface:#191D21;
+    --sunk:#1F2428;
+    --ink:#E7EAED;
+    --ink-2:#A7B0B9;
+    --line:#2E353B;
+    --line-2:#262C31;
+    --accent:#95B8EE;
+    --accent-wash:#1F2C40;
+    --track:#2A3137;
+    --bar:#B9C3CD;
+    --pro-bg:#E7EAED;
+    --pro-ink:#111417;
+    --shot-edge:#3A424A;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#111417;
+  --surface:#191D21;
+  --sunk:#1F2428;
+  --ink:#E7EAED;
+  --ink-2:#A7B0B9;
+  --line:#2E353B;
+  --line-2:#262C31;
+  --accent:#95B8EE;
+  --accent-wash:#1F2C40;
+  --track:#2A3137;
+  --bar:#B9C3CD;
+  --pro-bg:#E7EAED;
+  --pro-ink:#111417;
+  --shot-edge:#3A424A;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+}
+[hidden]{display:none!important}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.55 var(--text);-webkit-font-smoothing:antialiased}
+table{font:inherit;color:inherit;border-collapse:collapse}
+img{display:block;max-width:100%}
+a{color:var(--accent);text-underline-offset:2px}
+a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+h1,h2,h3,h4{font-family:var(--display);text-wrap:balance;margin:0}
+p{margin:0}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+.page{max-width:1440px;margin:0 auto;padding-inline:clamp(16px,3vw,40px);padding-block:40px 72px;display:grid;gap:56px}
+
+.intro{display:grid;gap:20px;max-width:78ch}
+.eyebrow{font:500 12.5px/1.4 var(--mono);letter-spacing:.04em;color:var(--ink-2)}
+.intro h1{font-size:clamp(30px,4vw,42px);line-height:1.1;font-weight:700;letter-spacing:-.015em}
+.lede{font-size:17px;line-height:1.6;max-width:68ch}
+.lede + .lede{margin-top:-6px}
+.key{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px 28px;margin:4px 0 0;padding:16px 0 0;border-top:1px solid var(--line)}
+.key div{display:grid;gap:2px}
+.key dt{font:600 12.5px/1.4 var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2)}
+.key dd{margin:0;font-size:14px;line-height:1.5}
+.jump{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:14px}
+
+.cohort{display:grid;gap:22px}
+.cohort-head{display:grid;gap:6px;max-width:72ch;padding-top:18px;border-top:2px solid var(--ink)}
+.cohort-head h2{font-size:26px;line-height:1.2;font-weight:700;letter-spacing:-.01em}
+.cohort-head p{color:var(--ink-2);font-size:15px}
+
+.cards{display:grid;grid-template-columns:minmax(0,1fr);gap:24px}
+.card{display:grid;row-gap:20px;align-content:start;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;box-shadow:var(--shadow);min-width:0}
+@media (min-width:1080px){
+  .cards{grid-template-columns:repeat(3,minmax(0,1fr));column-gap:24px;row-gap:0}
+  @supports (grid-template-rows:subgrid){
+    .card{grid-row:span 6;grid-template-rows:subgrid}
+  }
+}
+
+.c-head{display:grid;gap:6px;align-content:start}
+.c-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.tag{font:600 12px/1 var(--mono);letter-spacing:.03em;padding:5px 8px 4px;border-radius:4px;white-space:nowrap}
+.tag-novice{background:var(--accent-wash);color:var(--accent)}
+.tag-pro{background:var(--pro-bg);color:var(--pro-ink)}
+.file{font:400 12.5px/1.3 var(--mono);color:var(--ink-2);overflow-wrap:anywhere}
+.c-head h3{font-size:24px;line-height:1.2;font-weight:700;letter-spacing:-.01em;margin-top:4px}
+.c-title{font-size:13.5px;color:var(--ink-2)}
+.c-title span{color:var(--ink);font-weight:600;margin-left:4px}
+.open{font-weight:600;font-size:14.5px;justify-self:start;margin-top:2px}
+
+.c-shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;align-content:start}
+.c-shots figure{margin:0;display:grid;gap:6px;min-width:0}
+.c-shots a{display:block;border:1px solid var(--shot-edge);border-radius:6px;overflow:hidden;background:var(--sunk);transition:border-color .15s ease}
+.c-shots a:hover{border-color:var(--accent)}
+.c-shots img{width:100%;max-width:100%;height:auto;aspect-ratio:1440/900;object-fit:cover;object-position:top center}
+.c-shots figcaption{font-size:13px;color:var(--ink-2)}
+
+.c-verdicts{margin:0;display:grid;gap:12px;align-content:start}
+.c-verdicts div{display:grid;gap:2px}
+.c-verdicts dt{font:600 12px/1.4 var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2)}
+.c-verdicts dd{margin:0;font-size:14.5px;line-height:1.5}
+
+.c-scores{overflow-x:auto;align-self:start}
+.scores{width:100%;font-size:13.5px;font-variant-numeric:tabular-nums}
+.scores caption{caption-side:top;text-align:left;font-size:12.5px;color:var(--ink-2);padding-bottom:6px}
+.scores th,.scores td{padding:5px 0;border-bottom:1px solid var(--line-2);text-align:left;vertical-align:middle}
+.scores thead th{font:600 11.5px/1.3 var(--mono);letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2);border-bottom-color:var(--line)}
+.scores tbody th{font-weight:500;padding-right:10px}
+.scores .meter{width:28%;padding-right:10px}
+.scores tbody .meter span{display:block;height:6px;border-radius:3px;background:linear-gradient(90deg,var(--bar) calc(var(--v) * 10%),var(--track) 0)}
+.scores .avg{width:3.6em;padding-left:8px;text-align:right;font-weight:600}
+.scores .split{width:7.6em;padding-left:14px;text-align:right;color:var(--ink-2);white-space:nowrap}
+.scores thead .split,.scores thead .avg{text-align:right}
+
+.c-summary{display:grid;gap:6px;align-content:start}
+.c-summary h4,.c-open summary{font:600 12px/1.4 var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2)}
+.c-summary p{font-size:14px;line-height:1.6;max-width:70ch}
+
+.c-open{align-self:start;border-top:1px solid var(--line-2);padding-top:12px}
+.c-open summary{cursor:pointer;list-style-position:outside}
+.c-open ul{margin:10px 0 0;padding-left:18px;display:grid;gap:8px;font-size:13.5px;line-height:1.55;max-width:70ch}
+
+.foot{display:grid;gap:8px;max-width:78ch;padding-top:18px;border-top:1px solid var(--line);font-size:13.5px;color:var(--ink-2)}
+
+@media (prefers-reduced-motion: reduce){
+  .c-shots a{transition:none}
+}
+</style>
+
+<main class="page">
+  <header class="intro">
+    <p class="eyebrow">app/docs/design &#183; 07 &#183; 2026-09-25</p>
+    <h1>Six Lab Builder directions for usability sessions</h1>
+    <p class="lede">These six mockups are candidates for usability sessions. Three are drawn for complete non-IT participants who have never configured a server, and three for professional participants who run labs for a living. All six keep the same functionality: the rack and its kit actions, adding and editing equipment, connecting with the verified disk erase, network settings, checking firmware, first-contact failures, the guarded write steps, and the locked ESXi and Windows steps.</p>
+    <p class="lede">Nothing here is decided. Each direction was judged twice, on the same seven dimensions out of 10. The judges scored the version before each direction's last revision pass, so a verdict can name a problem the file has since fixed. What the designer left open after that pass is listed at the foot of each card.</p>
+    <dl class="key">
+      <div><dt>Novice lens</dt><dd>Reads every screen as a lab technician who has never configured a server would, for all six directions.</dd></div>
+      <div><dt>Craft lens</dt><dd>A studio-grade design review of layout, type, contrast, rendering, and whether the build rules hold.</dd></div>
+      <div><dt>Thumbnails</dt><dd>The top 1440 &#215; 900 of each full-page render. Select one to open the whole render.</dd></div>
+    </dl>
+    <nav class="jump" aria-label="Cohorts">
+      <a href="#non-it">For non-IT users: Front Door, Picture Book, Companion</a>
+      <a href="#studio">Studio grade: Instrument, Blueprint, Mission Control</a>
+    </nav>
+  </header>
+
+  <section class="cohort" id="non-it" aria-labelledby="h-non-it">
+    <div class="cohort-head">
+      <h2 id="h-non-it">For non-IT users</h2>
+      <p>Three directions for participants who have never configured a server, on a laptop or tablet. Plain words, one clear next step, and pictures of the equipment carry the design.</p>
+    </div>
+    <div class="cards">
+    <article class="card" id="front-door" aria-labelledby="h-front-door">
+      <header class="c-head">
+        <p class="c-meta"><span class="tag tag-novice">for non-IT users</span><span class="file">07-front-door.html</span></p>
+        <h3 id="h-front-door">Front Door</h3>
+        <p class="c-title">Page title <span>Front Door</span></p>
+        <a class="open" href="07-front-door.html">Open the Front Door design</a>
+      </header>
+      <div class="c-shots">
+        <figure>
+          <a href="07-front-door.png"><img src="07-front-door.png" width="1440" height="900" loading="lazy" alt="Front Door: the My Rack home screen, top of the full-page render"></a>
+          <figcaption>My Rack, the home screen</figcaption>
+        </figure>
+        <figure>
+          <a href="07-front-door-build.png"><img src="07-front-door-build.png" width="1440" height="900" loading="lazy" alt="Front Door: the Add equipment screen, top of the full-page render"></a>
+          <figcaption>Add equipment</figcaption>
+        </figure>
+      </div>
+      <dl class="c-verdicts">
+        <div><dt>Novice lens</dt><dd>The warmest, least console-like look in the set, but the one big button sits far below the fold, the Connect screen is full of controller jargon, and the drive counts disagree.</dd></div>
+        <div><dt>Craft lens</dt><dd>Keeps almost every control and invents nothing on its failure screen, but the guarded dialog renders pinned to the corner, dark mode hides the PDU labels, and cream with Fraunces reads as a generic look.</dd></div>
+      </dl>
+      <div class="c-scores">
+      <table class="scores">
+        <caption>Average of the two judges, out of 10</caption>
+        <thead><tr><th scope="col">Dimension</th><th scope="col" class="meter"><span class="sr">Scale</span></th><th scope="col" class="avg">Avg</th><th scope="col" class="split">Novice &#183; craft</th></tr></thead>
+        <tbody>
+        <tr>
+          <th scope="row">Next step is obvious</th>
+          <td class="meter" aria-hidden="true"><span style="--v:6.5"></span></td>
+          <td class="avg">6.5</td>
+          <td class="split">6 &#183; 7</td>
+        </tr>
+        <tr>
+          <th scope="row">Plain language</th>
+          <td class="meter" aria-hidden="true"><span style="--v:6.5"></span></td>
+          <td class="avg">6.5</td>
+          <td class="split">6 &#183; 7</td>
+        </tr>
+        <tr>
+          <th scope="row">Visual distinctiveness</th>
+          <td class="meter" aria-hidden="true"><span style="--v:6.5"></span></td>
+          <td class="avg">6.5</td>
+          <td class="split">8 &#183; 5</td>
+        </tr>
+        <tr>
+          <th scope="row">Craft</th>
+          <td class="meter" aria-hidden="true"><span style="--v:6"></span></td>
+          <td class="avg">6.0</td>
+          <td class="split">6 &#183; 6</td>
+        </tr>
+        <tr>
+          <th scope="row">Follows the build rules</th>
+          <td class="meter" aria-hidden="true"><span style="--v:6.5"></span></td>
+          <td class="avg">6.5</td>
+          <td class="split">7 &#183; 6</td>
+        </tr>
+        <tr>
+          <th scope="row">Functionality kept</th>
+          <td class="meter" aria-hidden="true"><span style="--v:8"></span></td>
+          <td class="avg">8.0</td>
+          <td class="split">8 &#183; 8</td>
+        </tr>
+        <tr>
+          <th scope="row">Renders cleanly</th>
+          <td class="meter" aria-hidden="true"><span style="--v:6.5"></span></td>
+          <td class="avg">6.5</td>
+          <td class="split">7 &#183; 6</td>
+        </tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="c-summary">
+        <h4>Designer's summary</h4>
+        <p>Lab Builder drawn as the companion app for a home appliance, for a complete non-IT user on a laptop or tablet. Warm cream surfaces, rounded 22-28px cards with soft shadows, 17px body and 44px Fraunces headlines, one cobalt primary button per screen whose label is a verb sentence (&quot;Carry on with the server's drives&quot;, &quot;Save this layout and continue&quot;, &quot;Plan the new RAID&quot;, &quot;Try the connection again&quot;, &quot;Compare the server with the package&quot;), a six-dot progress row reading &quot;2 of 6 done&quot; with the two locked steps carrying their reasons, and a plain-English line under every technical noun plus small &quot;What does this mean?&quot; expanders. Provenance is a chip on every value: green &quot;checked 08:35&quot; only for proven readings, sand &quot;from your plan&quot; for saved values, dashed &quot;not known yet&quot; for blanks; the never-answered server in the failure screen shows no model or bay count. The rack is a CSS cabinet with shelf numbers, LED dots and drive-bay/port faces; Add equipment keeps the full customization (4-60 U stepper, seven-card palette with CSS thumbnails, cobalt drop preview naming shelves 5 and 6 with &quot;Nothing else moves&quot;, red take-out zone, edit card with 10-bay tap grid, save layout/copy/load). Connect equipment shows the six-disk verified erase with its three timestamps, the two-drive boot-pair note, the 10-alert notice, and four side actions that open a shared guarded dialog (exact command, then a separate typed confirmation for writes). Blocked items (PDUs with no sign-in, the switch firmware, Review upgrades, Continue to Prepare ESXi) stay visible and disabled with their reason beside them. A designer's note maps every required control to its screen. Dark theme redefines the tokens as warm charcoal with cobalt lifted to a lighter tint.</p>
+      </div>
+      <details class="c-open">
+        <summary>Left open by the designer after revision (6)</summary>
+        <ul>
+          <li>VM storage ('Where virtual machines are stored') stays on the Network settings screen and is not moved into the RAID plan. The brief's functionality list places VM storage under Network settings, so moving it risks a 'missing from Network' finding. It now has a datastore plain line and the disabled NetApp option with its reason.</li>
+          <li>Network is not split into separate sub-step screens with their own verb buttons. It is two clearly headed sections, basics and optional extras, on one screen with one primary. Splitting further would add screens and buttons beyond the one-primary pattern.</li>
+          <li>My Rack still shows facts, readiness and the six steps below the fold instead of in a tap-to-open device sheet. The primary is now in the first view and the rack is sticky, which covers the next-step concern while keeping every reading visible at rest, as the page contract requires.</li>
+          <li>Fraunces is kept as the display face. The reviewer suggested a less default face, but Fraunces is part of this direction's identity. Distinctiveness was raised instead with manual-page folios and by reserving cobalt for the primary. Per-screen CSS device illustration headers were not added.</li>
+          <li>The bay mapping uses HPE's port:box:bay reading of the controller IDs (2I:1:5 = bay 5). The mismatch this produces against the brief's planned bays (1-4, 6-9) is shown honestly as amber plan-vs-server rows rather than hidden or reconciled by changing the given facts.</li>
+          <li>Hover tooltips (title attributes) on Build reports and Run history are the only explanation for those two pills. The kit menu explains 'kit' and the pill text says '8 shelves (8U)'.</li>
+        </ul>
+      </details>
+    </article>
+    <article class="card" id="picture-book" aria-labelledby="h-picture-book">
+      <header class="c-head">
+        <p class="c-meta"><span class="tag tag-novice">for non-IT users</span><span class="file">07-picture-book.html</span></p>
+        <h3 id="h-picture-book">Picture Book</h3>
+        <p class="c-title">Page title <span>Lab Picture Book</span></p>
+        <a class="open" href="07-picture-book.html">Open the Picture Book design</a>
+      </header>
+      <div class="c-shots">
+        <figure>
+          <a href="07-picture-book.png"><img src="07-picture-book.png" width="1440" height="900" loading="lazy" alt="Picture Book: the My Rack home screen, top of the full-page render"></a>
+          <figcaption>My Rack, the home screen</figcaption>
+        </figure>
+        <figure>
+          <a href="07-picture-book-build.png"><img src="07-picture-book-build.png" width="1440" height="900" loading="lazy" alt="Picture Book: the Add equipment screen, top of the full-page render"></a>
+          <figcaption>Add equipment</figcaption>
+        </figure>
+      </div>
+      <dl class="c-verdicts">
+        <div><dt>Novice lens</dt><dd>The most approachable metaphor, with the best failure screen for a newcomer, but Connect, Firmware and Network fall back into jargon, and green ticks mark steps that are only saved.</dd></div>
+        <div><dt>Craft lens</dt><dd>The most characterful direction for its audience, but it breaks its own green-means-proven rule, its drive facts contradict each other, and it ships visible CSS and contrast bugs.</dd></div>
+      </dl>
+      <div class="c-scores">
+      <table class="scores">
+        <caption>Average of the two judges, out of 10</caption>
+        <thead><tr><th scope="col">Dimension</th><th scope="col" class="meter"><span class="sr">Scale</span></th><th scope="col" class="avg">Avg</th><th scope="col" class="split">Novice &#183; craft</th></tr></thead>
+        <tbody>
+        <tr>
+          <th scope="row">Next step is obvious</th>
+          <td class="meter" aria-hidden="true"><span style="--v:6.5"></span></td>
+          <td class="avg">6.5</td>
+          <td class="split">6 &#183; 7</td>
+        </tr>
+        <tr>
+          <th scope="row">Plain language</th>
+          <td class="meter" aria-hidden="true"><span style="--v:5"></span></td>
+          <td class="avg">5.0</td>
+          <td class="split">4 &#183; 6</td>
+        </tr>
+        <tr>
+          <th scope="row">Visual distinctiveness</th>
+          <td class="meter" aria-hidden="true"><span style="--v:7.5"></span></td>
+          <td class="avg">7.5</td>
+          <td class="split">8 &#183; 7</td>
+        </tr>
+        <tr>
+          <th scope="row">Craft</th>
+          <td class="meter" aria-hidden="true"><span style="--v:5.5"></span></td>
+          <td class="avg">5.5</td>
+          <td class="split">6 &#183; 5</td>
+        </tr>
+        <tr>
+          <th scope="row">Follows the build rules</th>
+          <td class="meter" aria-hidden="true"><span style="--v:4.5"></span></td>
+          <td class="avg">4.5</td>
+          <td class="split">5 &#183; 4</td>
+        </tr>
+        <tr>
+          <th scope="row">Functionality kept</th>
+          <td class="meter" aria-hidden="true"><span style="--v:8"></span></td>
+          <td class="avg">8.0</td>
+          <td class="split">8 &#183; 8</td>
+        </tr>
+        <tr>
+          <th scope="row">Renders cleanly</th>
+          <td class="meter" aria-hidden="true"><span style="--v:6.5"></span></td>
+          <td class="avg">6.5</td>
+          <td class="split">7 &#183; 6</td>
+        </tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="c-summary">
+        <h4>Designer's summary</h4>
+        <p>An illustrated instruction-manual take on Lab Builder for a complete non-IT audience: manila-paper surfaces, 4px ink outlines with hard offset shadows, one flat colour per equipment kind (server blue, switch yellow, PDU coral, storage teal, power violet), pictograms built from CSS (bays, ports, outlets, batteries, drives, padlocks), numbered circles for sequence, and tilted green stickers that appear only for proven values and always carry their timestamp. The rack is drawn as a physical object with feet and numbered slot callouts you tap; Add equipment opens with a &quot;You have: 1 server, 1 switch, 2 PDUs, 0 storage&quot; parts sheet, a seven-card parts palette, a picked-up DL380 with a dashed drop preview over slots 5 + 6 (&quot;nothing moves&quot;), a red bin remove zone, the -/+ 4-to-60 U height control and an Edit card with a ten-square bay grid. Connect equipment shows the sign-in form, the proven answer, and the Drives &amp; RAID verified erase as a sticker with three stage stickers and six disk pictograms; Network, Check firmware (Continue dashed with &quot;Compare the server first&quot;) and an &quot;If it fails&quot; screen (Sign-in refused, with all seven failure kinds as pictures and a fully blank device card) complete the set. Prepare ESXi and Install Windows are padlocked steps with their reasons. A yellow &quot;1 see the command, 2 say yes, 3 it runs&quot; strip states the write guard once per screen. Six tabs (role=&quot;tab&quot;, aria-selected) toggle hidden sections; a page-level Dark/Light toggle exercises the second theme; the designer's note maps every required control to its screen. Only touched this one file.</p>
+      </div>
+      <details class="c-open">
+        <summary>Left open by the designer after revision (11)</summary>
+        <ul>
+          <li>No &lt;!doctype html&gt; and no &lt;html lang&gt;. The page contract forbids doctype, html, head and body tags. I added the charset and viewport meta tags, but opened raw from disk the page still renders in quirks mode. The artifact host is expected to supply the doctype.</li>
+          <li>Kept the step order the brief gives rather than the reviewer's 'next = 4 Check firmware'. The facts say step 3 is current, and rule &#167;7 requires diagnosing alerts before approving firmware. So the banner, the strip and the primary button all point to step 3 'look at the 10 alerts', and they agree with each other.</li>
+          <li>The drive facts in the brief contradict each other: occupied bays 1&#8211;4 and 6&#8211;9 against an erase record with a disk at 2I:1:5. I did not rewrite the facts. I show them as two provenances (your drawing = saved plan, erase record = recorded 24/09 16:22) with a warning naming the differing bays and 'Read drives now'. The 08:35 check no longer claims to have read the drives.</li>
+          <li>The recorded 24/09 erase is drawn in an ink double-ruled 'recorded' style rather than the outlined green one reviewer suggested. Rule &#167;3 reserves green for current proof, so any green on a result from the previous day felt risky.</li>
+          <li>Did not draw specific alert pictograms such as 'disk 3 &#183; warning'. The facts contain only the count (10, recorded before the erase), so naming alert types would invent hardware facts. The strip says what each one is about shows up when you look.</li>
+          <li>Only 'Sign-in refused' is drawn as a full failure screen. The other six kinds are a flat picture key, not clickable cards.</li>
+          <li>At rest, Add equipment shows the Placing card (the drop preview is the showpiece), so the DL360 3 Edit card with the per-bay grid, Move and Remove is one tap away: tap any rack piece or 'Put it back'. It is not visible at rest. The new DL380's bay grid stays empty until the operator types a bay count, because the rules forbid guessing one.</li>
+          <li>Kit actions (choose, rename, save as new, reports, history) now sit in a closed menu one tap away, not visible at rest, as the reviewer asked.</li>
+          <li>The 08:12 network save time and the 08:41 failure time come from the previous revision and the hypothetical failure scenario. They are not in the fact list, and I kept them for continuity.</li>
+          <li>Dark mode was fixed at the token level (shadows, contrast, swatch labels) but not screenshot-checked in this pass. Only light renders were reviewed, per the one-render-pass limit.</li>
+          <li>The monospace for identifiers relies on system fonts (Cascadia Mono, Consolas, ui-monospace), because the contract allows only Google Fonts via one link and I did not add a third family.</li>
+        </ul>
+      </details>
+    </article>
+    <article class="card" id="companion" aria-labelledby="h-companion">
+      <header class="c-head">
+        <p class="c-meta"><span class="tag tag-novice">for non-IT users</span><span class="file">07-companion.html</span></p>
+        <h3 id="h-companion">Companion</h3>
+        <p class="c-title">Page title <span>Rack Companion</span></p>
+        <a class="open" href="07-companion.html">Open the Companion design</a>
+      </header>
+      <div class="c-shots">
+        <figure>
+          <a href="07-companion.png"><img src="07-companion.png" width="1440" height="900" loading="lazy" alt="Companion: the My Rack home screen, top of the full-page render"></a>
+          <figcaption>My Rack, the home screen</figcaption>
+        </figure>
+        <figure>
+          <a href="07-companion-build.png"><img src="07-companion-build.png" width="1440" height="900" loading="lazy" alt="Companion: the Add equipment screen, top of the full-page render"></a>
+          <figcaption>Add equipment</figcaption>
+        </figure>
+      </div>
+      <dl class="c-verdicts">
+        <div><dt>Novice lens</dt><dd>The narrator column with one big button makes the next step findable within seconds, but the right-hand fields stay full of unexplained terms and green lands on a stale erase result.</dd></div>
+        <div><dt>Craft lens</dt><dd>The threaded narrator and the first-contact failure are the best ideas in the set, but the frame is not tablet-first, the one-button promise breaks, and proof green is misused in places.</dd></div>
+      </dl>
+      <div class="c-scores">
+      <table class="scores">
+        <caption>Average of the two judges, out of 10</caption>
+        <thead><tr><th scope="col">Dimension</th><th scope="col" class="meter"><span class="sr">Scale</span></th><th scope="col" class="avg">Avg</th><th scope="col" class="split">Novice &#183; craft</th></tr></thead>
+        <tbody>
+        <tr>
+          <th scope="row">Next step is obvious</th>
+          <td class="meter" aria-hidden="true"><span style="--v:7"></span></td>
+          <td class="avg">7.0</td>
+          <td class="split">7 &#183; 7</td>
+        </tr>
+        <tr>
+          <th scope="row">Plain language</th>
+          <td class="meter" aria-hidden="true"><span style="--v:5.5"></span></td>
+          <td class="avg">5.5</td>
+          <td class="split">5 &#183; 6</td>
+        </tr>
+        <tr>
+          <th scope="row">Visual distinctiveness</th>
+          <td class="meter" aria-hidden="true"><span style="--v:6"></span></td>
+          <td class="avg">6.0</td>
+          <td class="split">8 &#183; 4</td>
+        </tr>
+        <tr>
+          <th scope="row">Craft</th>
+          <td class="meter" aria-hidden="true"><span style="--v:5.5"></span></td>
+          <td class="avg">5.5</td>
+          <td class="split">6 &#183; 5</td>
+        </tr>
+        <tr>
+          <th scope="row">Follows the build rules</th>
+          <td class="meter" aria-hidden="true"><span style="--v:6"></span></td>
+          <td class="avg">6.0</td>
+          <td class="split">6 &#183; 6</td>
+        </tr>
+        <tr>
+          <th scope="row">Functionality kept</th>
+          <td class="meter" aria-hidden="true"><span style="--v:8"></span></td>
+          <td class="avg">8.0</td>
+          <td class="split">8 &#183; 8</td>
+        </tr>
+        <tr>
+          <th scope="row">Renders cleanly</th>
+          <td class="meter" aria-hidden="true"><span style="--v:7"></span></td>
+          <td class="avg">7.0</td>
+          <td class="split">7 &#183; 7</td>
+        </tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="c-summary">
+        <h4>Designer's summary</h4>
+        <p>Lab Builder as a guided conversation for a complete non-IT person on a tablet. A 1360px frame splits 30/70: the left column is a narrator that speaks in short serif sentences, keeps every past sentence as a threaded trail, and offers exactly one Clay button per state; the right side shows the thing being talked about in quiet warm-paper chrome that never blinks. Six screens (My Rack, Add equipment, Connect equipment with the verified erase result, Network settings, Check firmware, and a designed &quot;No inventory permission&quot; first-contact failure) sit behind role=tab buttons over hidden sections, with a light/dark toggle. The signature detail is the narrator explaining each provenance chip in words the first time it appears (&quot;Green means the server itself told us this, at 08:35 today. Only that is ever green.&quot;), with green reserved strictly for proven values with a timestamp and a dotted &quot;not known yet&quot; chip for anything the hardware has not said. The rack is a soft illustrated elevation with a live drop preview naming U5-U6 and &quot;Nothing else moves&quot;, a hardware shelf, a take-out zone, a rack-height stepper (4 to 60), and an edit panel with a per-bay grid. Blocked buttons stay visible with their reason beside them, and the Designer's note includes the palette, the type pairing, a drawn two-pane guarded-dialog shape (exact command, then a separate yes) and a table mapping every required control to its screen. Renders at 1440 with no console errors and no horizontal page scroll at 400px.</p>
+      </div>
+      <details class="c-open">
+        <summary>Left open by the designer after revision (6)</summary>
+        <ul>
+          <li>No &lt;!doctype html&gt;, so the page still renders in quirks mode. The page contract forbids doctype, html, head and body tags. I added a viewport meta tag and set explicit table font inheritance to limit quirks effects, and the artifact host is expected to supply the doctype.</li>
+          <li>No &lt;meta charset&gt;. The contract requires the file to start with &lt;title&gt; then &lt;style&gt;, so a charset meta could not go in the first 1024 bytes. Non-ASCII glyphs rendered correctly in every check.</li>
+          <li>The wording and severity of the 10 alerts are illustrative. The fact set gives only the count and that they were recorded before the erase, so I kept the entries close to known facts (bays 5 and 10 empty, 2 unidentified drives, time service off, self-signed certificate) and marked every one 'not checked yet'. The product owner should replace them with real recorded wording.</li>
+          <li>The exact erase request uses HPE's SmartStorageConfig PhysicalDriveErase shape with ErasePattern 'SanitizeRestrictedOverwrite'. It is not in the fact set, and the exact pattern string should be checked against the backend provider before it is treated as literal.</li>
+          <li>The mapping from front bay to controller location (for example 2I:1:5 to a physical bay) is shown as 'not matched yet' rather than invented. So the bay grid and the drive list are still not linked visually.</li>
+          <li>'Open the iLO page' and 'Get HPE SPP link' are drawn as buttons with no real targets, because the mockup must not contain external links or hostnames.</li>
+        </ul>
+      </details>
+    </article>
+    </div>
+  </section>
+
+  <section class="cohort" id="studio" aria-labelledby="h-studio">
+    <div class="cohort-head">
+      <h2 id="h-studio">Studio grade</h2>
+      <p>Three directions for professional operators who read dense screens every day. Each takes a strong visual metaphor from a real instrument, drawing set, or operations console.</p>
+    </div>
+    <div class="cards">
+    <article class="card" id="instrument" aria-labelledby="h-instrument">
+      <header class="c-head">
+        <p class="c-meta"><span class="tag tag-pro">studio grade</span><span class="file">07-instrument.html</span></p>
+        <h3 id="h-instrument">Instrument</h3>
+        <p class="c-title">Page title <span>Lab Builder Instrument</span></p>
+        <a class="open" href="07-instrument.html">Open the Instrument design</a>
+      </header>
+      <div class="c-shots">
+        <figure>
+          <a href="07-instrument.png"><img src="07-instrument.png" width="1440" height="900" loading="lazy" alt="Instrument: the My Rack home screen, top of the full-page render"></a>
+          <figcaption>My Rack, the home screen</figcaption>
+        </figure>
+        <figure>
+          <a href="07-instrument-build.png"><img src="07-instrument-build.png" width="1440" height="900" loading="lazy" alt="Instrument: the Add equipment screen, top of the full-page render"></a>
+          <figcaption>Add equipment</figcaption>
+        </figure>
+      </div>
+      <dl class="c-verdicts">
+        <div><dt>Novice lens</dt><dd>A strong bench-console look that keeps the core rules, but a newcomer meets unexplained vocabulary, a red that carries five meanings, and primary keys below the fold.</dd></div>
+        <div><dt>Craft lens</dt><dd>Distinctive, well built and complete, with a designed dark mode, held back by green on erase stages that are not proof, an unflagged bay conflict, and small overflow and contrast bugs.</dd></div>
+      </dl>
+      <div class="c-scores">
+      <table class="scores">
+        <caption>Average of the two judges, out of 10</caption>
+        <thead><tr><th scope="col">Dimension</th><th scope="col" class="meter"><span class="sr">Scale</span></th><th scope="col" class="avg">Avg</th><th scope="col" class="split">Novice &#183; craft</th></tr></thead>
+        <tbody>
+        <tr>
+          <th scope="row">Next step is obvious</th>
+          <td class="meter" aria-hidden="true"><span style="--v:7"></span></td>
+          <td class="avg">7.0</td>
+          <td class="split">6 &#183; 8</td>
+        </tr>
+        <tr>
+          <th scope="row">Plain language</th>
+          <td class="meter" aria-hidden="true"><span style="--v:5.5"></span></td>
+          <td class="avg">5.5</td>
+          <td class="split">4 &#183; 7</td>
+        </tr>
+        <tr>
+          <th scope="row">Visual distinctiveness</th>
+          <td class="meter" aria-hidden="true"><span style="--v:8"></span></td>
+          <td class="avg">8.0</td>
+          <td class="split">8 &#183; 8</td>
+        </tr>
+        <tr>
+          <th scope="row">Craft</th>
+          <td class="meter" aria-hidden="true"><span style="--v:7"></span></td>
+          <td class="avg">7.0</td>
+          <td class="split">7 &#183; 7</td>
+        </tr>
+        <tr>
+          <th scope="row">Follows the build rules</th>
+          <td class="meter" aria-hidden="true"><span style="--v:6.5"></span></td>
+          <td class="avg">6.5</td>
+          <td class="split">7 &#183; 6</td>
+        </tr>
+        <tr>
+          <th scope="row">Functionality kept</th>
+          <td class="meter" aria-hidden="true"><span style="--v:8.5"></span></td>
+          <td class="avg">8.5</td>
+          <td class="split">8 &#183; 9</td>
+        </tr>
+        <tr>
+          <th scope="row">Renders cleanly</th>
+          <td class="meter" aria-hidden="true"><span style="--v:8"></span></td>
+          <td class="avg">8.0</td>
+          <td class="split">8 &#183; 8</td>
+        </tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="c-summary">
+        <h4>Designer's summary</h4>
+        <p>Direction 04 &quot;Instrument&quot; renders Lab Builder as a Rams/Braun/Teenage Engineering bench console for professional operators: bone off-white surfaces, graphite type, hairline rules on an 8 px grid, embossed keys, a knurled rack-height stepper, physical toggles, and a signature LCD readout strip across the top with ghost-segment displays for Kit, Step (3&#183;6 CONNECT), Last proof (08:35 TODAY) and Blockers (02 FIRMWARE &#183; ALERTS). The rack is an SVG front elevation with U ticks, rail holes, a dimension line (8 U / 355.6 mm), per-bay occupancy for the DL360, 24+4 SFP ports for the Catalyst 9300, and outlets for both PDUs; the Add equipment screen reuses it with a dashed signal-red drop preview (HPE DL380 into U5&#8211;U6, nothing moves) plus a remove-from-rack zone, seven-card palette, and a full edit panel with a 10-bay grid. One signal red marks primary keys, the current step and every blocked reason; green is used only for proven values with timestamps; saved/suggested/blank chips carry every other value. Six screens (My Rack, Add equipment, Network settings, Connect equipment with the verified 6-of-6 erase result and a guarded Erase-disks-again dialog specimen, Check firmware with blocked Continue and its reason, and a Certificate-not-trusted first-contact failure with all seven named failures) switch via role=tab buttons; a step rail inside the console shows Prepare ESXi and Install Windows locked with reasons. Both light and dark themes are tokenised (LCD goes backlit in dark). Rendered with Playwright: no console errors, no horizontal scroll at 400 px, 82 KB.</p>
+      </div>
+      <details class="c-open">
+        <summary>Left open by the designer after revision (9)</summary>
+        <ul>
+          <li>Add equipment still shows placing mode (DL380 armed, with its preview) and the Selected edit panel at the same time. Hiding the edit panel while a card is armed would hide the edit fields at rest, and the page contract and functionality list need them visible. Cancel clears the placing mode instead.</li>
+          <li>The current step keeps its red marker and underline. The two lenses disagreed: novice wanted red reduced, craft wanted red kept for the current step. I treated it as 'act here', documented that in the colour rules, and added a separate graphite 'viewing' state.</li>
+          <li>The 10 alert rows (times, components, messages) are illustrative. The facts give only the count and that they were logged before the erase. The note says so, but the rows are still invented content: they are written to agree with the bay conflict (bays 3, 4 and 9 missing; bay 5 new).</li>
+          <li>'Disks reported 6 &#183; Proven 08:35' assumes the 08:35 inventory read also listed the drives, which is the craft reviewer's suggestion. The facts only say the server was reached at 08:35, and the drive list comes from the 24/09 erase record.</li>
+          <li>The Redfish request bodies in the dialogs are from memory of the HPE iLO 5 SmartStorageConfig API, not checked against app/backend/app/providers/ilo_redfish.py: PATCH /redfish/v1/Systems/1/smartstorageconfig/settings/ with PhysicalDriveErase / SanitizeRestrictedOverwrite, and ClearConfigurationMetadata. They should be confirmed before the design is treated as exact.</li>
+          <li>Drag-and-drop and the remove zone are visual only. The tap flow (card, then preview, then Move/Cancel) works in JS, but actual drag events, placing units and removal are not wired.</li>
+          <li>The Connect equipment frame is about 1750 px tall because the full 10-row alert table sits on it. Plan new RAID is above the fold, but 'Continue to Check firmware' is at the bottom. I did not collapse the alert table, because the blocker asked for the alerts to be listed.</li>
+          <li>'Trust this certificate&#8230;' does not show a fingerprint value, because no fingerprint exists in the facts and inventing one would add a fact.</li>
+          <li>Only the light theme was re-screenshotted after the changes. Dark tokens were extended (new --signal-top/bot/text, --faint, --scrim) but not visually re-checked.</li>
+        </ul>
+      </details>
+    </article>
+    <article class="card" id="blueprint" aria-labelledby="h-blueprint">
+      <header class="c-head">
+        <p class="c-meta"><span class="tag tag-pro">studio grade</span><span class="file">07-blueprint.html</span></p>
+        <h3 id="h-blueprint">Blueprint</h3>
+        <p class="c-title">Page title <span>Lab Drawing Set</span></p>
+        <a class="open" href="07-blueprint.html">Open the Blueprint design</a>
+      </header>
+      <div class="c-shots">
+        <figure>
+          <a href="07-blueprint.png"><img src="07-blueprint.png" width="1440" height="900" loading="lazy" alt="Blueprint: the My Rack home screen, top of the full-page render"></a>
+          <figcaption>My Rack, the home screen</figcaption>
+        </figure>
+        <figure>
+          <a href="07-blueprint-build.png"><img src="07-blueprint-build.png" width="1440" height="900" loading="lazy" alt="Blueprint: the Add equipment screen, top of the full-page render"></a>
+          <figcaption>Add equipment</figcaption>
+        </figure>
+      </div>
+      <dl class="c-verdicts">
+        <div><dt>Novice lens</dt><dd>The most distinctive direction, with green only on timed stamps, but drawing-set vocabulary on top of unexplained IT terms and a crowded Connect sheet make it hard going for a newcomer.</dd></div>
+        <div><dt>Craft lens</dt><dd>A fully committed drawing set with every required control present, pending fixes for quirks mode, low-contrast pencil marks, a drop ghost that leaves the rack at 4-5 U, and sheet numbers out of work order.</dd></div>
+      </dl>
+      <div class="c-scores">
+      <table class="scores">
+        <caption>Average of the two judges, out of 10</caption>
+        <thead><tr><th scope="col">Dimension</th><th scope="col" class="meter"><span class="sr">Scale</span></th><th scope="col" class="avg">Avg</th><th scope="col" class="split">Novice &#183; craft</th></tr></thead>
+        <tbody>
+        <tr>
+          <th scope="row">Next step is obvious</th>
+          <td class="meter" aria-hidden="true"><span style="--v:6"></span></td>
+          <td class="avg">6.0</td>
+          <td class="split">5 &#183; 7</td>
+        </tr>
+        <tr>
+          <th scope="row">Plain language</th>
+          <td class="meter" aria-hidden="true"><span style="--v:6"></span></td>
+          <td class="avg">6.0</td>
+          <td class="split">4 &#183; 8</td>
+        </tr>
+        <tr>
+          <th scope="row">Visual distinctiveness</th>
+          <td class="meter" aria-hidden="true"><span style="--v:8.5"></span></td>
+          <td class="avg">8.5</td>
+          <td class="split">9 &#183; 8</td>
+        </tr>
+        <tr>
+          <th scope="row">Craft</th>
+          <td class="meter" aria-hidden="true"><span style="--v:7"></span></td>
+          <td class="avg">7.0</td>
+          <td class="split">7 &#183; 7</td>
+        </tr>
+        <tr>
+          <th scope="row">Follows the build rules</th>
+          <td class="meter" aria-hidden="true"><span style="--v:7.5"></span></td>
+          <td class="avg">7.5</td>
+          <td class="split">8 &#183; 7</td>
+        </tr>
+        <tr>
+          <th scope="row">Functionality kept</th>
+          <td class="meter" aria-hidden="true"><span style="--v:8"></span></td>
+          <td class="avg">8.0</td>
+          <td class="split">8 &#183; 8</td>
+        </tr>
+        <tr>
+          <th scope="row">Renders cleanly</th>
+          <td class="meter" aria-hidden="true"><span style="--v:7.5"></span></td>
+          <td class="avg">7.5</td>
+          <td class="split">8 &#183; 7</td>
+        </tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="c-summary">
+        <h4>Designer's summary</h4>
+        <p>Blueprint treats Lab Builder as a live architectural drawing set in ink on vellum: five numbered sheets (A-1 My Rack, A-2 Add equipment, A-3 Connect equipment, A-4 Check firmware, A-5 Network settings) switched by role=&quot;tab&quot; sheet tabs, each with a title block (kit, sheet, revision, drawn by, checked by, date). The rack is a JS-drawn SVG elevation with U-index dimension ticks, an overall &quot;8 U &#183; 355.6 mm&quot; dimension, hatched empty slots, a north-arrow-style FRONT/REAR marker, and on A-2 a dashed ghost at U5&#8211;U6 with a callout naming the slots and stating nothing moves; the unsaved editor sits inside a real scalloped revision cloud with a &quot;Rev B &#183; unsaved&quot; delta tag. Provenance is the signature: proven values carry green rubber stamps with a time (&quot;REACHED 25-09 08:35&quot;, &quot;VERIFIED 24-09 16:22&quot;) and green appears nowhere else; saved-plan values are graphite pencil annotations; blanks read &quot;&#8212; nothing recorded&quot;; requested/powered-on stages are ink stamps, a refused first contact (certificate not trusted, drawn as Detail 1) is a red stamp, and the &quot;Erase disks again&quot; guarded dialog is drawn as Detail 2 with the exact command preview and a separate typed confirmation. All required functionality (kit actions, rack/list views, readiness, technical details disclosure, report issue, 4&#8211;60 U height stepper, seven-card palette, remove zone, per-bay grid, save/copy/load/continue, connection form with TLS toggle, refresh inventory, six-disk verified erase table, four secondary guarded actions, full network form, SPP package with per-device check, blocked Continue with reason, locked ESXi/Windows steps) is mapped in the Designer's note table. Light and dark themes are tokenised on :root; renders with no console errors and no horizontal scroll at 400 px.</p>
+      </div>
+      <details class="c-open">
+        <summary>Left open by the designer after revision (6)</summary>
+        <ul>
+          <li>The page still renders in quirks mode (document.compatMode is 'BackCompat'). The page contract requires the file to start with &lt;title&gt; and forbids doctype, html, head and body tags, so &lt;!doctype html&gt; and &lt;html lang&gt; cannot be added. I added the charset and viewport meta tags, set lang from script, and added a table font-size guard to limit the quirks effects.</li>
+          <li>The 10 hardware alerts are listed as 10 rows, but component and severity are shown as blank ('only the count was kept'). The facts give only the count, and inventing alert details would break the rule about using only the given facts and never inferring.</li>
+          <li>In the elevation, the plan-occupied bays are drawn in graphite rather than filling the six reported disks in ink. The controller bay addresses (1I:1:1, 1I:1:2, 2I:1:5&#8211;8) cannot be mapped to front bay numbers without inference.</li>
+          <li>Suggested appears only on A-2 (the DL380 name and bottom slot). A-3 MTU 1500 stays a saved-plan value, because the facts say it is saved; only its gloss mentions that 1500 is the usual value.</li>
+          <li>Locked tabs A-6 and A-7 have no sheet. The brief allows them to be shown as locked steps with their reason rather than drawn. They are aria-disabled and show the reason in the tab.</li>
+          <li>At 4&#8211;5 U the A-2 drawing keeps its 600-unit viewBox width, so the rack sits left of centre where the callout would be. I left it that way so the drawing's scale does not jump as the stepper changes.</li>
+        </ul>
+      </details>
+    </article>
+    <article class="card" id="mission-control" aria-labelledby="h-mission-control">
+      <header class="c-head">
+        <p class="c-meta"><span class="tag tag-pro">studio grade</span><span class="file">07-mission-control.html</span></p>
+        <h3 id="h-mission-control">Mission Control</h3>
+        <p class="c-title">Page title <span>Lab Mission Control</span></p>
+        <a class="open" href="07-mission-control.html">Open the Mission Control design</a>
+      </header>
+      <div class="c-shots">
+        <figure>
+          <a href="07-mission-control.png"><img src="07-mission-control.png" width="1440" height="900" loading="lazy" alt="Mission Control: the My Rack home screen, top of the full-page render"></a>
+          <figcaption>My Rack, the home screen</figcaption>
+        </figure>
+        <figure>
+          <a href="07-mission-control-build.png"><img src="07-mission-control-build.png" width="1440" height="900" loading="lazy" alt="Mission Control: the Add equipment screen, top of the full-page render"></a>
+          <figcaption>Add equipment</figcaption>
+        </figure>
+      </div>
+      <dl class="c-verdicts">
+        <div><dt>Novice lens</dt><dd>A polished, believable operations console with an evidence drawer on every screen, but it breaks its own green rule in four places and the Connect screen offers three competing actions.</dd></div>
+        <div><dt>Craft lens</dt><dd>Well organised, with guarded writes and two designed palettes, but green marks saved values and a device that never answered, the render shows collapsed headers and mid-word breaks, and the look is familiar.</dd></div>
+      </dl>
+      <div class="c-scores">
+      <table class="scores">
+        <caption>Average of the two judges, out of 10</caption>
+        <thead><tr><th scope="col">Dimension</th><th scope="col" class="meter"><span class="sr">Scale</span></th><th scope="col" class="avg">Avg</th><th scope="col" class="split">Novice &#183; craft</th></tr></thead>
+        <tbody>
+        <tr>
+          <th scope="row">Next step is obvious</th>
+          <td class="meter" aria-hidden="true"><span style="--v:7"></span></td>
+          <td class="avg">7.0</td>
+          <td class="split">6 &#183; 8</td>
+        </tr>
+        <tr>
+          <th scope="row">Plain language</th>
+          <td class="meter" aria-hidden="true"><span style="--v:5.5"></span></td>
+          <td class="avg">5.5</td>
+          <td class="split">4 &#183; 7</td>
+        </tr>
+        <tr>
+          <th scope="row">Visual distinctiveness</th>
+          <td class="meter" aria-hidden="true"><span style="--v:7"></span></td>
+          <td class="avg">7.0</td>
+          <td class="split">8 &#183; 6</td>
+        </tr>
+        <tr>
+          <th scope="row">Craft</th>
+          <td class="meter" aria-hidden="true"><span style="--v:6"></span></td>
+          <td class="avg">6.0</td>
+          <td class="split">6 &#183; 6</td>
+        </tr>
+        <tr>
+          <th scope="row">Follows the build rules</th>
+          <td class="meter" aria-hidden="true"><span style="--v:5"></span></td>
+          <td class="avg">5.0</td>
+          <td class="split">5 &#183; 5</td>
+        </tr>
+        <tr>
+          <th scope="row">Functionality kept</th>
+          <td class="meter" aria-hidden="true"><span style="--v:8"></span></td>
+          <td class="avg">8.0</td>
+          <td class="split">8 &#183; 8</td>
+        </tr>
+        <tr>
+          <th scope="row">Renders cleanly</th>
+          <td class="meter" aria-hidden="true"><span style="--v:7"></span></td>
+          <td class="avg">7.0</td>
+          <td class="split">7 &#183; 7</td>
+        </tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="c-summary">
+        <h4>Designer's summary</h4>
+        <p>Direction 6 renders Lab Builder as an operations console for professional operators: a topbar with kit controls and a Ctrl+K command palette, a persistent left status rail carrying the six build steps (5 and 6 locked with reasons) plus per-device telemetry LEDs, a central workspace, and a right-hand evidence drawer on every screen that shows the exact last read-only probe (request, HTTP status, latency, timestamp, returned fields, or the failure). The rack is a softly glowing schematic on a faint grid whose LEDs light green only from proof bound to that device today; all other values wear mono provenance chips (proven with timestamp, saved plan, suggested, blank, or a hollow LED for never-answered devices). Layered dark neutrals (never pure black) with one electric blue accent reserved for primary actions, focus glow, selection and the drop preview; semantic colours carry state only; a separately designed light palette. Six screens: My Rack (elevation + list, readiness tiles, provenance table, open technical-details disclosure, report an issue), Add equipment (4&#8211;60 U stepper, seven-card hardware tray with a DL380 mid-drag, ghost preview naming U5&#8211;U6 and stating nothing moves, remove zone, full edit panel with 10-bay grid, move/remove, save/copy/load/continue), Network settings (subnet/gateway/VLAN/MTU, blocked storage options with reasons, DNS/NTP/SNMP rows), Connect + Drives &amp; RAID (connection form with TLS toggle, verified erase banner with three stage chips, six-disk table, boot-mirror/storage/spare readouts, four guarded secondary actions, stale-alerts banner, and a two-step write preview showing the exact Redfish POST with a blocked-with-reason confirm), Check firmware (SPP package row, order-of-work strip, per-device rows with Check against SPP / Saved readings / Review upgrades disabled with reason, switch not supported yet, Continue blocked with reason), and First contact failed (Certificate not trusted drawn in full with what was tried, what to check in order, editable saved details, all seven failure modes listed, no invented model or bays). A Designer's note lists audience, metaphor, palette, type pairing and a functionality-to-screen map. Rendered in both themes with Playwright: no console errors, no horizontal scroll at 400px, file is 88 KB.</p>
+      </div>
+      <details class="c-open">
+        <summary>Left open by the designer after revision (7)</summary>
+        <ul>
+          <li>The 10 alert rows (times, levels, parts, messages) are illustrative. The brief's facts only give the count, and the reviewers required rows. I avoided any drive-failure message so the rows never change which drives can be used for RAID, and labelled them 'recorded message &#183; current state unknown'.</li>
+          <li>Facts reconciliation: the brief's 'bays 1&#8211;4 and 6&#8211;9 occupied' is now treated as the operator's saved bay plan, and the proven read supplies 8 present / 6 identified at 1I:1:1, 1I:1:2 and 2I:1:5&#8211;8. The UI shows the disagreement and suggests adopting the read, rather than changing the given facts.</li>
+          <li>The facts say 'Next action: plan new RAID', but I made 'Check alerts now' the Connect primary, as the reviewers asked and as the order of work requires. Plan new RAID stays one click away as the secondary.</li>
+          <li>Glossary terms use title-attribute tooltips, which appear on hover. The key terms also have visible helper text, but not every term does, to avoid noise on this pro-cohort screen.</li>
+          <li>The dark theme is set by the page script, because the page contract forbids an &lt;html&gt; tag. Before the script runs, the page follows the OS theme for a moment.</li>
+          <li>The palette swatches in the Designer's note keep inline hex backgrounds. They illustrate the palette rather than style a component, the same as the original.</li>
+          <li>The boot-pair value '1I:1:1 + 1I:1:2' still wraps to two lines in the narrow tile on the Connect screen. I left it after one fix pass, as the process allows only one.</li>
+        </ul>
+      </details>
+    </article>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p>Renders made 2026-09-25 with Playwright at 1440 px wide: no console errors on any of the twelve screens and no page wider than 1440 px. Open each design to try its tabs, its dark theme, and its designer's note, which maps every required control to a screen.</p>
+    <p>These are design references, not application code. Nothing here imports from app/frontend and nothing contacts hardware. The build rules they are judged against are in <a href="README.md">README.md</a> and <a href="../lab-build-rules.md">lab-build-rules.md</a>.</p>
+  </footer>
+</main>

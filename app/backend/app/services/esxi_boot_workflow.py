@@ -21,6 +21,7 @@ from app.services.env_utils import env_int
 from app.services.firmware_compliance import firmware_gate_blockers
 from app.services.json_file_store import read_json_object, write_json_object, write_text_value
 from app.services.list_utils import unique_strings
+from app.services.media_inventory import configured_media_directories
 from app.services.path_utils import (
     is_directory as _is_directory,
     is_file as _is_file,
@@ -95,13 +96,13 @@ def prepare_esxi_media_url(
     selected = _select_esxi_iso()
     bind_host = os.getenv("ESXI_MEDIA_HTTP_BIND", "0.0.0.0")
     port = env_int("ESXI_MEDIA_HTTP_PORT", DEFAULT_MEDIA_PORT, minimum=1)
-    advertised_host = os.getenv("ESXI_MEDIA_HTTP_HOST") or _source_ip_for_ilo(config)
     base_url = os.getenv("ESXI_MEDIA_BASE_URL")
     server = {"managed": False, "status": "not_required", "pid": None, "log": None}
 
     if base_url:
         url = f"{base_url.rstrip('/')}/{quote(selected['path'].name)}"
     else:
+        advertised_host = os.getenv("ESXI_MEDIA_HTTP_HOST") or _source_ip_for_ilo(config)
         server = _ensure_media_server(selected["directory"], bind_host, port)
         url = f"http://{advertised_host}:{port}/{quote(selected['path'].name)}"
 
@@ -675,7 +676,9 @@ def _select_esxi_iso() -> dict[str, Any]:
     explicit = os.getenv("ESXI_INSTALL_ISO") or os.getenv("ESXI_ISO_PATH")
     directories = [
         directory
-        for directory in (_resolve_media_path(Path(item)) for item in settings.media_inventory_dirs)
+        for directory in (_resolve_media_path(Path(item)) for item in configured_media_directories(
+            settings.media_inventory_dirs, getattr(settings, "provider_mode", "mock"),
+        ))
         if directory is not None
     ]
     if explicit:
@@ -683,7 +686,7 @@ def _select_esxi_iso() -> dict[str, Any]:
         if path is None:
             raise RuntimeError("Selected ESXi ISO path could not be resolved.")
         if not _is_under_any(path, directories):
-            raise RuntimeError("Selected ESXi ISO must be under MEDIA_INVENTORY_DIRS.")
+            raise RuntimeError("Selected ESXi ISO must be under the configured media directories (MEDIA_INVENTORY_DIRS or the app media folder).")
         size_bytes = _iso_size_bytes(path)
         if size_bytes is None or path.suffix.lower() != ".iso":
             raise RuntimeError("Selected ESXi ISO path is not an ISO file.")
@@ -699,7 +702,7 @@ def _select_esxi_iso() -> dict[str, Any]:
             continue
         candidates.extend(path for path in entries if _is_esxi_iso_candidate(path))
     if not candidates:
-        raise RuntimeError("No ESXi ISO was found under MEDIA_INVENTORY_DIRS.")
+        raise RuntimeError("No ESXi ISO was found under the configured media directories (MEDIA_INVENTORY_DIRS or the app media folder).")
 
     def score(path: Path) -> tuple[int, str]:
         lowered = path.name.lower()

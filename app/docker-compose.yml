@@ -23,10 +23,16 @@ services:
       APP_NAME: infra-config-portal
       ENVIRONMENT: local
       PROVIDER_MODE: mock
+      HPE_SANITIZE_DEVICE_IDS: ${HPE_SANITIZE_DEVICE_IDS:-}
+      FIRMWARE_MEDIA_ROOT: /workspace/artifacts/Media
+      FIRMWARE_MEDIA_HOST_PATH: ${FIRMWARE_MEDIA_HOST_PATH:-}
+      ESXI_MEDIA_HTTP_HOST: ${ESXI_MEDIA_HTTP_HOST:-}
+      ESXI_MEDIA_HTTP_PORT: 8088
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-infra_config_portal}:${POSTGRES_PASSWORD:-infra_config_portal_local_only}@postgres:5432/${POSTGRES_DB:-infra_config_portal}
       CORS_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
     ports:
       - "${BACKEND_PORT:-8001}:8000"
+      - "8088:8088"
     volumes:
       - ../.local:/workspace/.local
       - ../artifacts:/workspace/artifacts
@@ -52,7 +58,12 @@ services:
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     volumes:
-      - ./frontend:/workspace/app/frontend
+      - ./frontend/src:/workspace/app/frontend/src:ro
+      - ./frontend/index.html:/workspace/app/frontend/index.html:ro
+      - ./frontend/package.json:/workspace/app/frontend/package.json:ro
+      - ./frontend/package-lock.json:/workspace/app/frontend/package-lock.json:ro
+      - ./frontend/tsconfig.json:/workspace/app/frontend/tsconfig.json:ro
+      - ./frontend/vite.config.ts:/workspace/app/frontend/vite.config.ts:ro
       - frontend-node-modules:/workspace/app/frontend/node_modules
     depends_on:
       backend:

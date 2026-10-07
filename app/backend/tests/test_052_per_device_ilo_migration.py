@@ -155,10 +155,10 @@ def _configure_migration_environment(
     monkeypatch.setenv("ILO_TEST_VERIFY_TLS", "false")
 
 
-def _upgrade_to_head() -> None:
+def _upgrade_to_device_credentials() -> None:
     config = Config(str(BACKEND_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
-    command.upgrade(config, "head")
+    command.upgrade(config, MIGRATION_REVISION)
 
 
 def _json(value: Any) -> Any:
@@ -203,7 +203,7 @@ def test_migration_backfills_matching_device_and_preserves_legacy_env_bytes(
         host="192.0.2.11",
     )
 
-    _upgrade_to_head()
+    _upgrade_to_device_credentials()
 
     assert env_path.read_bytes() == original_env
     engine = create_engine(database_url)
@@ -258,7 +258,7 @@ def test_migration_without_matching_device_drops_singletons_cleanly(
         host="198.51.100.99",
     )
 
-    _upgrade_to_head()
+    _upgrade_to_device_credentials()
 
     assert env_path.read_bytes() == original_env
     engine = create_engine(database_url)

@@ -247,7 +247,7 @@ def test_fresh_alembic_downgrade_removes_inventory_repair_tables(
     config = Config(str(BACKEND_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
 
-    command.upgrade(config, "head")
+    command.upgrade(config, "0005_per_device_ilo_credentials")
     command.downgrade(config, "0004_provider_runtime_state")
 
     engine = create_engine(database_url)

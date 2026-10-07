@@ -941,7 +941,8 @@ def test_workflow_action_runner_keeps_scalar_report_artifacts_whole(monkeypatch,
             reports="artifacts/codex-runs/scalar-report.md",
         ),
     )
-    def fake_command_result(action_arg: dict, run_id: str, started_at: str, *_args) -> dict:
+    def fake_command_result(action_arg: dict, run_id: str, started_at: str, *_args, request_env_overrides=None) -> dict:
+        assert not request_env_overrides
         result = workflow_action_runner._base_result(
             action_arg,
             run_id,

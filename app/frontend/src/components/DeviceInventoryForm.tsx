@@ -103,7 +103,7 @@ export function DeviceInventoryForm({
             <div><span>2</span><strong>Sign in</strong></div>
             <i />
             <div><span>3</span><strong>Verify</strong></div>
-            <p>Enter the DHCP address shown on the server or in the DHCP lease table, then save the sign-in used for first contact. Lab Builder will not connect until you explicitly run Verify.</p>
+            <p>Enter the DHCP address you obtained after connecting this iLO. DHCP-server access is not required. Saving does not connect to hardware; first contact requires an explicit read-only check.</p>
           </div>}
           <label>
             <span>Equipment type</span>
@@ -137,7 +137,7 @@ export function DeviceInventoryForm({
               aria-label={isIloFirstContact ? "Current iLO DHCP address" : "Device host"}
               disabled={!isIloFirstContact && form.dhcp_enabled}
               onChange={(event) => setForm({ ...form, host: event.target.value })}
-              placeholder={isIloFirstContact ? "For example: 192.168.1.11" : form.dhcp_enabled ? "No address observed yet" : "IP address or hostname"}
+              placeholder={isIloFirstContact ? "Manually supplied DHCP IP or hostname" : form.dhcp_enabled ? "No address observed yet" : "IP address or hostname"}
               required={isIloFirstContact}
               value={form.host ?? ""}
             />

@@ -129,9 +129,10 @@ def derive_lab_topology(
     network = _network(subnet_cidr or address_plan.get("subnet") or default_subnet)
     topology = _topology_for(profile_topology, network.prefixlen)
     layout_topology = topology_for_prefix(network.prefixlen) if topology == CUSTOM_LAB else topology
-    _validate_topology_fit(network, layout_topology)
+    if topology != CUSTOM_LAB:
+        _validate_topology_fit(network, layout_topology)
 
-    resolved_plan = _default_address_plan(network, layout_topology)
+    resolved_plan = _default_address_plan(network, topology)
     _merge_address_overrides(resolved_plan, address_plan)
     _merge_device_overrides(resolved_plan, devices)
 
@@ -148,7 +149,7 @@ def derive_lab_topology(
         _clean_string(global_settings.get("gateway"))
         or _clean_string(devices.get("gateway"))
         or resolved_plan.get("gateway")
-        or _address_at_offset(network, 1)
+        or (None if topology == CUSTOM_LAB else _address_at_offset(network, 1))
     )
     resolved_plan["subnet"] = str(network)
     resolved_plan.pop("gateway", None)
@@ -156,7 +157,7 @@ def derive_lab_topology(
     _validate_addresses(network, resolved_plan, gateway, feature_state)
 
     normalized_global = _global_settings(global_settings, gateway, network.prefixlen, feature_state)
-    normalized_devices = _devices(network, layout_topology, resolved_plan, gateway, devices, feature_state)
+    normalized_devices = _devices(network, topology, resolved_plan, gateway, devices, feature_state)
     not_in_scope = _not_in_scope_stages(feature_state)
 
     return {
@@ -251,6 +252,8 @@ def _default_address_plan(network: IPv4Network, topology: str) -> dict[str, Any]
     plan["netapp_nfs_lifs"] = []
     plan["netapp_iscsi_lifs"] = []
     plan["subnet"] = str(network)
+    if topology == CUSTOM_LAB:
+        return plan
     if topology == HIGH_ADDRESS_LAB:
         for field, offset in HIGH_ADDRESS_OFFSETS.items():
             plan[field] = _address_at_offset(network, offset)

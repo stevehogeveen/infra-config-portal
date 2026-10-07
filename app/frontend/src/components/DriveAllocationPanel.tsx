@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Eye, RotateCcw, Save, ShieldAlert } from "lucide-react";
 import { api } from "../api";
 import { localRaidInventoryBays } from "../operatorPages";
 import type { LocalRaidInventoryBay } from "../operatorPages";
-import type { HpeRaidIntent, HpeRaidVolumeIntent, HpeStorageDiscovery } from "../types";
+import type { HpeRaidIntent, HpeRaidPlanPreview, HpeRaidVolumeIntent, HpeStorageDiscovery, IloAccessSettings } from "../types";
 
 // Every bay has exactly one job (app/docs/lab-build-rules.md section 2).
 //
@@ -119,6 +120,8 @@ export function buildVolumes(
     volumes.push({
       ...base,
       ...previous(BOOT_VOLUME_NAME),
+      spare_bays: [],
+      spare_rebuild_mode: null,
       name: BOOT_VOLUME_NAME,
       purpose: "ESXi boot",
       raid_level: "RAID1",
@@ -132,6 +135,8 @@ export function buildVolumes(
     volumes.push({
       ...base,
       ...previous(LOCAL_VOLUME_NAME),
+      spare_bays: [],
+      spare_rebuild_mode: null,
       name: LOCAL_VOLUME_NAME,
       purpose: "Local VM datastore",
       raid_level: localRaidLevel(localBays.length),
@@ -176,7 +181,30 @@ const ROLE_HINT: Record<BayRole, string> = {
 
 const ROLES: BayRole[] = ["boot", "vsan", "local"];
 
-export function DriveAllocationPanel({
+export function DriveAllocationPanel(props: {
+  deviceId: string;
+  deviceName: string;
+  currentHost?: string | null;
+  onSaved?: () => void;
+}) {
+  return <DeviceDriveAllocationPanel key={JSON.stringify([props.deviceId, props.currentHost])} {...props} />;
+}
+
+function accessSignature(access: IloAccessSettings): string {
+  return JSON.stringify([access.device_id, access.host, access.updated_at, access.verify_tls]);
+}
+
+function intentSignature(intent: HpeRaidIntent): string {
+  return JSON.stringify([
+    intent.device_id, intent.controller_ref, intent.wipe_existing_logical_drives,
+    intent.volumes.map((volume) => [
+      volume.name, volume.purpose, volume.raid_level, volume.drive_bays,
+      volume.spare_bays, volume.spare_rebuild_mode, volume.size_policy, volume.bootable
+    ]), intent.notes
+  ]);
+}
+
+function DeviceDriveAllocationPanel({
   deviceId,
   deviceName,
   onSaved
@@ -193,18 +221,36 @@ export function DriveAllocationPanel({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [preview, setPreview] = useState<HpeRaidPlanPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [access, setAccess] = useState<IloAccessSettings | null>(null);
+  const busy = loading || saving || previewing;
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
+    setPreview(null);
+    setDiscovery(null);
+    setIntent(null);
+    setAllocation({});
+    setAccess(null);
     try {
+      const before = await api.iloAccessSettings(deviceId);
       const [nextDiscovery, nextIntent] = await Promise.all([
         api.hpeStorageDiscovery(deviceId),
-        api.hpeRaidIntent(deviceId).catch(() => null)
+        api.hpeRaidIntent(deviceId)
       ]);
+      const after = await api.iloAccessSettings(deviceId);
+      if (!before.host || before.device_id !== deviceId || accessSignature(before) !== accessSignature(after)) {
+        throw new Error("Device access changed or has no address. Reload inventory from the current address.");
+      }
+      if (nextIntent.device_id !== deviceId) throw new Error("Saved plan belongs to a different device.");
       setDiscovery(nextDiscovery);
+      setAccess(after);
       setIntent(nextIntent);
       setAllocation(allocationFromIntent(localRaidInventoryBays(nextDiscovery), nextIntent));
+      setDirty(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -220,20 +266,58 @@ export function DriveAllocationPanel({
   const counts = countRoles(allocation);
   const rules = allocationRules(allocation, bays.length);
   const blockers = rules.filter((rule) => !rule.ok);
+  const unresolvedBays = (discovery?.physical_drives.length ?? 0) !== bays.length;
+
+  async function requireCurrentAccess() {
+    const current = await api.iloAccessSettings(deviceId);
+    if (!access || accessSignature(current) !== accessSignature(access)) {
+      setDiscovery(null);
+      setIntent(null);
+      setPreview(null);
+      throw new Error("Device access changed. Reload inventory from the current address before continuing.");
+    }
+  }
+
+  async function readPreview() {
+    if (busy || dirty || !intent || blockers.length || unresolvedBays) return;
+    setPreviewing(true);
+    setPreview(null);
+    setError("");
+    try {
+      await requireCurrentAccess();
+      const next = await api.hpeRaidPlanPreview(deviceId);
+      await requireCurrentAccess();
+      if (intentSignature(next.desired_intent) !== intentSignature(intent)) {
+        throw new Error("The saved plan changed. Reload it before reviewing the impact.");
+      }
+      setPreview(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPreviewing(false);
+    }
+  }
 
   async function save() {
+    if (busy || !intent || blockers.length || unresolvedBays) return;
     setSaving(true);
     setError("");
     setSaved("");
+    setPreview(null);
     try {
-      await api.saveHpeRaidIntent(deviceId, {
+      await requireCurrentAccess();
+      const nextIntent = await api.saveHpeRaidIntent(deviceId, {
         controller_ref: intent?.controller_ref ?? null,
         wipe_existing_logical_drives: intent?.wipe_existing_logical_drives ?? false,
         volumes: buildVolumes(allocation, intent?.volumes ?? []),
         notes: intent?.notes ?? null
       });
+      await requireCurrentAccess();
+      if (nextIntent.device_id !== deviceId) throw new Error("Saved plan belongs to a different device.");
+      setIntent(nextIntent);
+      setAllocation(allocationFromIntent(bays, nextIntent));
+      setDirty(false);
       setSaved("Plan saved. Nothing has been sent to the controller.");
-      await load();
       onSaved?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -254,6 +338,7 @@ export function DriveAllocationPanel({
         </p>
         {discovery?.next_safe_action ? <p className="drive-alloc-next">{discovery.next_safe_action}</p> : null}
         {error ? <p className="drive-alloc-error">{error}</p> : null}
+        <button className="rack-action" onClick={() => void load()} type="button">Retry inventory</button>
       </section>
     );
   }
@@ -262,10 +347,12 @@ export function DriveAllocationPanel({
     <section aria-label={`Drive allocation for ${deviceName}`} className="drive-alloc">
       <header className="drive-alloc-head">
         <h3>{deviceName} &middot; drive allocation</h3>
+        {access?.host ? <p>Current saved address: {access.host}</p> : null}
         <p>
           {bays.length} bays read from the controller
           {discovery?.last_probe_time ? ` · inventory ${new Date(discovery.last_probe_time).toLocaleTimeString()}` : ""}
         </p>
+        <p>{dirty ? "Unsaved plan" : intent?.volumes.length ? "Saved plan" : "Suggested allocation"} &middot; drive roles are not hardware proof</p>
       </header>
 
       <div aria-label="Role to assign" className="drive-alloc-roles" role="radiogroup">
@@ -295,7 +382,13 @@ export function DriveAllocationPanel({
             <button
               className={`drive-alloc-bay is-${assigned}`}
               key={bay.bay}
-              onClick={() => setAllocation((current) => ({ ...current, [bay.bay]: role }))}
+              disabled={busy}
+              onClick={() => {
+                setAllocation((current) => ({ ...current, [bay.bay]: role }));
+                setDirty(true);
+                setPreview(null);
+                setSaved("");
+              }}
               title={`${bay.label} · ${bay.detail} · currently ${bay.currentLayout}`}
               type="button"
             >
@@ -324,23 +417,48 @@ export function DriveAllocationPanel({
 
       {error ? <p className="drive-alloc-error">{error}</p> : null}
       {saved ? <p className="drive-alloc-saved">{saved}</p> : null}
+      {unresolvedBays ? <p className="drive-alloc-error">Some drives have missing or duplicate bay IDs. Resolve storage discovery before saving or previewing.</p> : null}
+
+      {preview ? (
+        <section className="drive-alloc-preview" aria-label="RAID plan preview">
+          <h3>Plan impact for {deviceName}</h3>
+          <p>Saved plan &middot; {preview.status}. No controller write has run.</p>
+          <dl>
+            <div><dt>Controller</dt><dd>{preview.desired_intent.controller_ref || "Not selected"}</dd></div>
+            <div><dt>Logical drives to delete</dt><dd>{String(preview.impact.logical_drives_to_delete ?? "Unknown")}</dd></div>
+            <div><dt>Bays planned raw</dt><dd>{Array.isArray(preview.impact.physical_drives_not_selected) ? preview.impact.physical_drives_not_selected.join(", ") || "None" : "Unknown"}</dd></div>
+          </dl>
+          {preview.desired_intent.volumes.map((volume, index) => (
+            <p key={index}><strong>{volume.name} &middot; {volume.raid_level}</strong><br />{volume.drive_bays.join(", ")}</p>
+          ))}
+          {preview.blockers.length ? <ul className="drive-alloc-error">{preview.blockers.map((message, index) => <li key={index}>{message}</li>)}</ul> : null}
+          {preview.warnings.length ? <ul>{preview.warnings.map((message, index) => <li key={index}>{message}</li>)}</ul> : null}
+          <p>{preview.next_safe_action}</p>
+          <button className="rack-action" disabled type="button"><ShieldAlert size={15} /> Apply RAID plan</button>
+          <p>The existing apply endpoint uses the default lab target. Applying from this panel is blocked until preview and confirmation are bound to this device.</p>
+        </section>
+      ) : null}
 
       <footer className="drive-alloc-foot">
         <span className="drive-alloc-note">
           Saving records the plan only. Creating the mirror erases those bays, and that stays a
           separate, confirmed step.
         </span>
-        <button className="rack-action" disabled={saving || loading} onClick={() => void load()} type="button">
-          Reset
+        <button className="rack-action" title="Reload saved allocation" aria-label="Reload saved allocation" disabled={busy} onClick={() => { setSaved(""); void load(); }} type="button">
+          <RotateCcw size={15} />
         </button>
         <button
           className="rack-action is-primary"
-          disabled={saving || loading || blockers.length > 0}
+          disabled={busy || !intent || unresolvedBays || blockers.length > 0}
           onClick={() => void save()}
           type="button"
         >
-          {saving ? "Saving…" : blockers.length ? `${blockers.length} to fix` : "Save this plan"}
+          <Save size={15} /> {saving ? "Saving…" : blockers.length ? `${blockers.length} to fix` : "Save this plan"}
         </button>
+        <button className="rack-action" disabled={busy || dirty || !intent || unresolvedBays || blockers.length > 0} onClick={() => void readPreview()} type="button">
+          <Eye size={15} /> {previewing ? "Reading preview…" : "Preview saved plan"}
+        </button>
+        {dirty ? <span className="drive-alloc-note">Save the edited allocation before previewing.</span> : null}
       </footer>
     </section>
   );

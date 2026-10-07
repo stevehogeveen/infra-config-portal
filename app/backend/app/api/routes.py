@@ -1170,10 +1170,13 @@ def probe_provider(
             raise HTTPException(status_code=404, detail="Device not found") from exc
         except IloAccessSettingsError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return _run_provider_probe(
+        result = _run_provider_probe(
             provider_id,
             IloRedfishAdapter(config=config).probe,
         )
+        from app.services.rack_identity import save_detected_generation
+        save_detected_generation(session, resolved_id, result)
+        return result
     if provider_id == "cisco-console":
         return _legacy_cisco_console_scan_blocked()
     if provider_id == "cisco-ansible":

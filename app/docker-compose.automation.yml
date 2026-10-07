@@ -1,0 +1,44 @@
+services:
+  redis:
+    image: redis:7.4.2-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - automation-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    environment:
+      AUTOMATION_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  automation-worker:
+    build:
+      context: ..
+      dockerfile: app/automation/Dockerfile
+    environment:
+      PROVIDER_MODE: mock
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-infra_config_portal}:${POSTGRES_PASSWORD:-infra_config_portal_local_only}@postgres:5432/${POSTGRES_DB:-infra_config_portal}
+      RQ_REDIS_URL: redis://redis:6379/0
+      AUTOMATION_REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ../.local:/workspace/.local:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=128m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+volumes:
+  automation-redis:

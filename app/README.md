@@ -1,5 +1,32 @@
 # infra-config-portal
 
+## SPP Firmware Installation
+
+Check firmware supports separately reviewed iLO 5 1.48 and 3.19 updates from the
+selected SPP, with signed-package verification and independent completion readback.
+See [Firmware installation](docs/firmware-installation.md) for the operator flow,
+offline tests and model-specific requirements for future cumulative SPP support.
+
+[Blocker guidance](docs/blocker-guidance.md) describes the additive remediation
+contract and shorter version-specific iLO confirmation. Guidance never clears
+hardware faults or authorizes retries of uncertain submissions.
+
+The [whole-SPP backend foundation](docs/spp-update-backend.md) provides validated
+review/progress contracts, a vendor repository-report parser and an offline-tested
+durable execution worker with an injectable adapter. It does not yet
+expose whole-SPP installation endpoints; the existing iLO workflow remains active.
+
+## Rack Workbench
+
+Rack home (`/simple`) offers Rack and List views over the same kit equipment.
+The Overview tab offers the next setup action; Edit equipment holds placement,
+model and capacity settings. Server connection setup uses the existing saved
+iLO settings and separate, explicitly initiated Checks workflow.
+Overview readiness is currently unverified, not aggregated provider evidence.
+It must not be interpreted as successful firmware, ESXi or Windows validation.
+Unsaved rack drafts survive navigation in browser storage, scoped to the kit;
+Save a copy also persists them to the server. No hardware changes run automatically.
+
 Self-service infrastructure configuration portal for requesting, validating,
 approving, executing, and auditing datacenter automation workflows.
 
@@ -19,7 +46,28 @@ as a substitute for current lab state. Real provider actions remain gated by
 explicit runtime mode, acknowledgements, dry-run/read-only behavior, and
 workflow-specific safety checks.
 
+## Rack Drive Plans
+
+The beside-rack iLO configurator's Drives tab saves allocation intent and previews
+the saved plan for the selected device. Editing an allocation invalidates its
+preview; unresolved bay IDs block saving and previewing. Saved roles are plans,
+not proof that RAID volumes or raw passthrough already exist.
+
+Devices are identified by inventory ID, not IP address. The Drives tab resolves
+the current saved access settings and rejects save/preview when those settings
+change. Update the device's Access tab after an address change, then reload
+inventory and run a read-only check. Historical handoff addresses are not defaults.
+
+Apply remains visibly blocked here because the existing apply endpoint uses the
+default lab target. It needs device-bound preview and explicit confirmation before
+this panel can enable controller writes.
+
 ## Project Layout
+
+The first queued automation workflow is available in the rack's Checks tab.
+See [automation architecture and startup](docs/automation-architecture.md) for
+the optional Redis/RQ worker stack, Ansible playbook, and migration boundaries.
+The default remains mock mode.
 
 ```text
 infra-config-portal/
@@ -709,3 +757,166 @@ upgrade, reboot, wipe, or apply endpoints.
 
 See [docs/security.md](docs/security.md) and
 [docs/provider-adapters.md](docs/provider-adapters.md).
+# Standalone Windows kit
+
+The `/simple-steps` Windows kit review follows firmware assessment and approved
+updates through standalone ESXi and Windows OVF/OVA verification. See
+[scope and migration decisions](docs/standalone-windows-kit.md) for required,
+conditional and deferred capabilities. This review does not yet enforce backend
+stage gates; unverified stages remain unverified. No hardware writes are automatic.
+
+## Guided workspace
+
+Start at `/setup/guide` to choose physical hardware, set rack positions and save the
+layout. Continue to `/setup/connect` for per-device initial management access.
+`/simple` is the read-only My Rack view; `/equipment` is its checklist view.
+My Rack has one setup action, Continue setup. Selecting equipment shows saved
+addresses and device-scoped cached iLO connection status without starting probes.
+Detected firmware and BIOS versions use device-scoped iLO readings. Unknown
+values, including per-server ESXi versions not yet collected, remain unavailable.
+Editing and rack plan file actions remain in setup, not My Rack.
+The main navigation has only My Rack and Setup. Setup proceeds through equipment,
+network settings, connections, firmware, ESXi, and Windows. Run history is a
+secondary setup destination for jobs and failures across all kits; it is not a
+readiness gate. Old Equipment and Activity URLs redirect to My Rack and run history.
+The shared workbench theme loads after legacy styles to align forms and review tools.
+Server/iLO forms use workspace-width container queries so nested setup panels
+stack before their fixed columns overflow. Responsive checks cover the standalone
+server and embedded setup pages at 1024, 768, and 390 pixels without hardware writes.
+NTP and SNMP dependent fields and list controls are disabled when their service
+is off, retaining entered values for re-enabling. Network settings subnet changes
+preserve explicit equipment addresses instead of applying last-octet offsets;
+the gateway must be entered explicitly.
+When a saved profile's subnet is edited while retaining its inherited topology,
+the backend switches it to a custom address plan. Custom plans do not generate or
+require template offsets. Explicit addresses still undergo subnet and duplicate
+validation; they are not silently moved or cleared.
+On a subnet transition, unchanged planned equipment addresses outside the new
+network are retired from the active plan and retained in the previous revision.
+Newly edited addresses still receive full validation. Bootstrap addresses,
+device connection records, and submitted shared service settings are preserved.
+Shared network settings no longer duplicate server onboarding; connections are
+entered in the next setup step. ESXi/Windows prerequisites are collapsible, while
+readiness warnings remain visible. Run history and inventory status polling pause
+when the document is hidden, resume on return, and prevent overlapping refreshes.
+Firmware setup now reads only the active saved rack: HPE servers, Cisco switches,
+and NetApp storage are included only when present. ESXi and vCenter are installation
+steps, not firmware entries. HPE uses an expandable SPP component-assessment group.
+HPE checks run against the selected server and selected SPP. iLO, System ROM,
+controllers, drives and network adapters use exact hardware/package evidence;
+unmatched components remain unassessed. No global scan is launched. See
+[SPP assessment](docs/spp-assessment.md) for discovery and matching rules.
+Hardware alerts now identify the bay, reported reason and next action, independently
+of firmware matching. Acknowledgements are tied to the exact reading and recorded
+without clearing health faults. Review upgrades opens an audited, target-specific
+HPE SUM handoff. Automatic SPP installation remains unavailable; this is not a
+one-click firmware executor. Inspect/diagnose drives first, then vendor-approved
+firmware updates, then RAID creation and ESXi installation.
+Both use the same profile-scoped rack plan and browser draft. Save in the copy
+window commits the draft to the backend after saving the file copy.
+Passwords are not included in rack drafts.
+
+Rack editing uses an image palette instead of an equipment dropdown. Drag an image
+onto a rack unit to place it, drag a chassis to move it, or drop it into the removal
+area (confirmation required). Drops snap the chassis top to the chosen unit and
+relocate conflicting equipment into free contiguous space, searching downward first
+and then from the top. Unaffected equipment and side-mounted PDUs stay in place.
+If a displaced chassis cannot fit, the entire placement is rejected without changing
+the rack. Out-of-bounds drops remain invalid. Direct numeric edits still validate
+overlap instead of rearranging the rack while typing. Click/tap an image then a slot, or use
+Move equipment then a slot, for keyboard/touch placement. Removal retains saved
+connection records. Saving remains an explicit action.
+
+The hardware picker shows only the new illustrated hardware catalog. The legacy
+"Saved equipment outside this rack" section has been removed; this does not delete
+inventory records, saved connections, or equipment already placed in a rack.
+
+Reducing rack height shifts upper equipment downward in order, closing gaps only
+as needed. Rack and side mounts are fitted independently. Finish editing the height
+or press Enter to apply it; insufficient capacity leaves the size and layout intact.
+Increasing the height keeps equipment positions unchanged. Saving a copy persists
+the resized layout and existing device identities together.
+
+Rack plans have two bottom-of-page actions: **Save a copy** and **Load plan**,
+alongside the next setup step. The Save
+button in the copy window saves a named `.rack-plan.json` file and the active kit.
+The redundant Reload and Save rack plan toolbar buttons have been removed.
+Loading asks before replacing the current draft and does not write to the server
+until the next save.
+
+The default save destination is a native folder/filename picker when supported.
+Cancelling it does not save a file or change the server. A file-write error also
+leaves the active kit untouched. If the subsequent server save fails, the window
+reports that the copy exists but the active kit was not saved, and keeps the draft.
+The explicit Browser download location option uses browser download preferences;
+the app cannot choose a folder on browsers without a file picker. Capability:
+[showSaveFilePicker](https://developer.mozilla.org/en-US/docs/Web/API/Window/showSaveFilePicker).
+
+Portable copies contain hardware models, positions, mounts, port counts and drive
+occupancy, but no connection IDs, addresses, credentials, or execution evidence.
+Loading preserves a connection only for an exact equipment ID/kind already in the
+current rack; other equipment gets a new connection record when saved. File format
+version 1 is validated, including layout limits, with a 1 MB input limit.
+
+The remaining setup screens are `/setup/check-firmware`, `/setup/prepare-esxi` and
+`/setup/install-windows`. Connect equipment now includes Connection and Drives &
+RAID tabs. One drive table assigns the two-drive OS mirror, separate storage RAID
+and an optional dedicated hot spare together. Health warnings are grouped into
+an expandable summary. Empty/unidentified bays cannot be assigned to RAID.
+Prepare ESXi contains only host settings, installer actions and management checks;
+ESXi-only saves preserve existing iLO and shared network settings. The legacy
+kit-wide ESXi address editor is disabled for multi-server kits rather than
+presented as a per-server configuration.
+Gen10 SR controllers can use separately confirmed, device-scoped deletion and
+creation through HPE pending settings; unsupported controllers use attended SSA.
+Advanced storage recovery also offers a separately confirmed controller factory
+reset for this same supported API. See [storage reset](docs/storage-reset.md) for
+its additional policy gate and current recovery limitations.
+Read-only Ansible/SSA diagnostics can be enrolled separately; see
+[maintenance SSA setup](docs/maintenance-ssa.md). This does not provide a boot ISO
+or execute repairs.
+Writes remain disabled in read-only/mock mode and require the explicit destructive
+gate, fresh preflight and confirmations. No reboot or secure erase is automatic. A readback
+must match the two saved bays before the boot mirror is shown as verified. See
+[disk preparation](docs/disk-preparation.md). ESXi installer actions expand on demand;
+Windows deployment controls open immediately. These pages are not a new automation engine: overall verified completion and
+cross-stage enforcement are not yet connected to this overview. Visiting a step
+does not complete it or execute a hardware action. Non-server connection flows
+link to existing settings; UPS/PDU automation is not implemented here.
+
+`/run-center` now shows read-only Activity (requests, workflow runs and latest server
+inventory jobs across all kits). Original execution controls remain at `/run-tools`.
+Settings and existing tools share the same top navigation. No dependencies or
+installation steps were added for this UI redesign.
+
+Frontend regression coverage: `npm run test:e2e -- tests/setup-journey.spec.ts
+tests/rack-planner.spec.ts tests/lab-defaults.spec.ts tests/inventory-workflow.spec.ts`.
+
+Storage recovery keeps shutdown, controller-reset staging and power-on as separate
+confirmations. After a reset is staged, use **Start server and verify RAID** to
+review and approve the next boot. HPE can report a pending FactoryReset without a
+LogicalDrives list; this is a pending action, never evidence that deletion has
+completed. Applied storage readback must still provide the actual logical-drive
+list. Do not resubmit a staged reset just because the server remains off.
+
+If a post-boot, target-matched controller response explicitly rejects an action-only
+reset for missing `LogicalDrives`, a fresh reset preview includes `LogicalDrives: []`.
+This corrected request still requires approval, no pending changes and normal safety
+checks. It is not automatically retried. A confirmed intervening app-controlled boot
+and a fresh On state permit a new shutdown cycle; duplicate shutdown requests within
+the same cycle remain blocked.
+
+Physical-disk erasure has a separate review, enablement, typed approval and per-drive
+verification flow in Connect equipment. It does not run during RAID deletion and is
+disabled by default. See [disk sanitization](docs/disk-sanitization.md) for supported
+hardware scope, method enrollment, long-running status checks and historical reports.
+
+The Prepare ESXi installer uses one approval for attaching its built ISO, setting
+one-time boot and starting the server. Runs share the device-operation lock with
+other guarded workflows; an interrupted send is reconciled instead of resent.
+Resume must match the original iLO endpoint and hardware identity, and the boot
+mirror is read again before restart. Status checks may perform approved media
+cleanup, so they are not entirely read-only. An answering ESXi API is displayed
+as **verification pending**, not proof of the installed disk or root credentials.
+Authenticated post-install verification and VM datastore provisioning are not
+implemented by this installer yet.

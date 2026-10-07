@@ -1,0 +1,40 @@
+---
+- name: Read storage in an explicitly enrolled maintenance environment
+  hosts: maintenance
+  gather_facts: false
+  tasks:
+    - name: Read maintenance marker
+      ansible.builtin.slurp:
+        src: /run/lab-builder-maintenance
+      register: marker
+      no_log: true
+
+    - name: Read physical server serial
+      ansible.builtin.slurp:
+        src: /sys/class/dmi/id/product_serial
+      register: identity
+      no_log: true
+
+    - name: Verify maintenance environment and physical identity
+      ansible.builtin.assert:
+        that:
+          - (marker.content | b64decode | trim) == 'lab-builder-maintenance-v1'
+          - (identity.content | b64decode | trim) == expected_serial
+        fail_msg: Maintenance marker or physical server identity does not match.
+      no_log: true
+
+    - name: Read SSA status and detailed configuration
+      ansible.builtin.command:
+        argv: "{{ item }}"
+      loop:
+        - [/usr/sbin/ssacli, controller, all, show, status]
+        - [/usr/sbin/ssacli, controller, all, show, config, detail]
+      register: diagnostics
+      changed_when: false
+      no_log: true
+
+    - name: Export SSA diagnostics
+      ansible.builtin.set_stats:
+        data:
+          identity_verified: true
+          reports: "{{ diagnostics.results | map(attribute='stdout') | list }}"

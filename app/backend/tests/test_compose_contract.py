@@ -56,6 +56,10 @@ def test_compose_config_preserves_state_and_uses_same_origin_api_proxy() -> None
     assert any(mount["target"] == "/workspace/artifacts" for mount in backend["volumes"])
     assert frontend["environment"]["VITE_API_BASE_URL"] == ""
     assert frontend["environment"]["APP_PROXY_TARGET"] == "http://backend:8000"
+    bind_mounts = [mount for mount in frontend["volumes"] if mount["type"] == "bind"]
+    assert bind_mounts
+    assert all(mount.get("read_only") for mount in bind_mounts)
+    assert all(mount["target"] != "/workspace/app/frontend" for mount in bind_mounts)
     assert any(
         mount["target"] == "/workspace/app/frontend/node_modules"
         and mount["type"] == "volume"

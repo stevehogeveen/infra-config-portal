@@ -269,6 +269,8 @@ export type IloAccessSettings = {
   last_probe_target_matches_access_host: boolean;
   last_probe_target_matches_configured_candidates: boolean;
   last_probe_target_fingerprint_present: boolean;
+  observed_ilo_firmware?: string | null;
+  observed_bios_version?: string | null;
   next_safe_action: string;
 };
 
@@ -1979,6 +1981,28 @@ export type HpeVsanReadiness = {
   apply_enabled: false;
   blockers: string[];
   next_safe_action: string;
+};
+
+export type InventoryRun = {
+  version: 1;
+  job_id: string;
+  device_id: string;
+  status: string;
+  current: boolean;
+  result: {
+    version: 1;
+    device_id: string;
+    status: "completed" | "blocked" | "failed";
+    source: "mock" | "ansible";
+    checked_at: string;
+    summary: string;
+    systems: Array<{
+      model: string | null;
+      manufacturer: string | null;
+      serial_number: string | null;
+      power_state: string | null;
+    }>;
+  } | null;
 };
 
 export type HpeRaidPlanPreview = {

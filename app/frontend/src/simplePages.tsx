@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import { Cpu, Database, FileText, HardDrive, Layers3, ListChecks, PlayCircle, Pencil, Plus, Server, Settings2, Trash2 } from "lucide-react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useLocation, useSearchParams } from "react-router-dom";
 import { api } from "./api";
+import { RackPlanner } from "./components/RackPlanner";
+import { currentServerAccess, standaloneKitStages } from "./standaloneKit";
 import { DeviceInventoryForm } from "./components/DeviceInventoryForm";
 import { RackDeviceConfigurator, RackIloConfigurator, localRaidInventoryBays } from "./operatorPages";
 import type { LocalRaidInventoryBay } from "./operatorPages";
@@ -32,7 +34,7 @@ type SimpleData = {
   loadError: string | null;
 };
 
-async function readSimpleData(): Promise<SimpleData> {
+async function readSimpleData(includeTopology = true): Promise<SimpleData> {
   const [healthResult, devicesResult] = await Promise.allSettled([
     api.health(),
     api.deviceInventory()
@@ -53,17 +55,17 @@ async function readSimpleData(): Promise<SimpleData> {
   const iloDevices = devicesResult.value.filter((device) => rackDeviceKind(device) === "ilo");
   const primaryIloDevice = iloDevices[0];
   const [providers, accessEntries, storage, vsan, profiles] = await Promise.all([
-    optionalRackRead(api.providers(), [] as ProviderStatus[]),
+    includeTopology ? optionalRackRead(api.providers(), [] as ProviderStatus[]) : Promise.resolve([] as ProviderStatus[]),
     Promise.all(iloDevices.map(async (device) => (
       [device.id, await optionalRackRead(api.iloAccessSettings(device.id), null)] as const
     ))),
-    primaryIloDevice
+    includeTopology && primaryIloDevice
       ? optionalRackRead(api.hpeStorageDiscovery(primaryIloDevice.id), null)
       : Promise.resolve(null),
-    primaryIloDevice
+    includeTopology && primaryIloDevice
       ? optionalRackRead(api.hpeVsanReadiness(primaryIloDevice.id), null)
       : Promise.resolve(null),
-    optionalRackRead(api.labProfiles(), null)
+    includeTopology ? optionalRackRead(api.labProfiles(), null) : Promise.resolve(null)
   ]);
   return {
     devices: devicesResult.value,
@@ -88,7 +90,7 @@ function optionalRackRead<T>(promise: Promise<T>, fallback: T, timeoutMs = 8000)
   });
 }
 
-function useSimpleData(): SimpleData & { reload: () => Promise<void> } {
+function useSimpleData(includeTopology = true): SimpleData & { reload: () => Promise<void> } {
   const [data, setData] = useState<SimpleData>({
     devices: [],
     providers: [],
@@ -103,18 +105,18 @@ function useSimpleData(): SimpleData & { reload: () => Promise<void> } {
 
   const reload = useCallback(async () => {
     setData((current) => ({ ...current, loaded: false, loadError: null }));
-    setData(await readSimpleData());
-  }, []);
+    setData(await readSimpleData(includeTopology));
+  }, [includeTopology]);
 
   useEffect(() => {
     let cancelled = false;
-    void readSimpleData().then((next) => {
+    void readSimpleData(includeTopology).then((next) => {
       if (!cancelled) setData(next);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [includeTopology]);
 
   return { ...data, reload };
 }
@@ -832,6 +834,8 @@ function useRackRailData(): RackRailData {
 
 export function RackRail() {
   const { deviceCount, profile, mode, loadError } = useRackRailData();
+  const location = useLocation();
+  const secondaryActive = ["/setup/defaults", "/validation", "/lab-profiles"].includes(location.pathname);
 
   return (
     <aside className="rack-rail">
@@ -839,13 +843,15 @@ export function RackRail() {
       <nav aria-label="Lab Builder navigation">
         <p>Console</p>
         <NavLink className={railLinkClass} to="/simple"><Layers3 size={17} /> Rack home</NavLink>
-        <NavLink className={railLinkClass} to="/simple-steps"><ListChecks size={17} /> Runbook</NavLink>
-        <p>Manage</p>
-        <NavLink className={railLinkClass} to="/setup/defaults"><Settings2 size={17} /> Lab defaults</NavLink>
+        <NavLink className={railLinkClass} to="/simple-steps"><ListChecks size={17} /> Windows kit</NavLink>
         <NavLink className={railLinkClass} to="/firmware-upgrades"><Cpu size={17} /> Firmware</NavLink>
         <NavLink className={railLinkClass} to="/run-center"><PlayCircle size={17} /> Run Center</NavLink>
+        <details className="rack-secondary-nav" key={secondaryActive ? "secondary" : "primary"} open={secondaryActive}>
+        <summary>Kit settings and reports</summary>
+        <NavLink className={railLinkClass} to="/setup/defaults"><Settings2 size={17} /> Lab defaults</NavLink>
         <NavLink className={railLinkClass} to="/validation"><FileText size={17} /> Reports</NavLink>
         <NavLink className={railLinkClass} to="/lab-profiles#new"><Plus size={17} /> Create or change kit</NavLink>
+        </details>
       </nav>
       <dl className="rack-rail-facts">
         <div><dt>Subnet</dt><dd>{loadError ? "Unavailable" : profile?.subnet_cidr ?? "Not set"}</dd></div>
@@ -857,10 +863,12 @@ export function RackRail() {
 }
 
 export function SimpleLabPage() {
+  const [planMode, setPlanMode] = useState(false);
+  const [searchParams] = useSearchParams();
   const { devices, providers, accessByDeviceId, storage, vsan, profiles, health, loaded, loadError, reload } = useSimpleData();
   const visibleIds = devices.map((device) => device.id);
   const visibleKey = visibleIds.join("|");
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(() => searchParams.get("device") ?? "");
   const [addOpen, setAddOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<DeviceInventoryItem | null>(null);
   const [configuringId, setConfiguringId] = useState("");
@@ -914,6 +922,14 @@ export function SimpleLabPage() {
 
   return (
     <main className="rack-light-page" aria-label="Rack elevation">
+      <div className="rack-view-tabs" role="tablist" aria-label="Rack view">
+        <button role="tab" aria-selected={!planMode} type="button" onClick={() => setPlanMode(false)}>Equipment inventory</button>
+        <button role="tab" aria-selected={planMode} type="button" onClick={() => setPlanMode(true)}>Plan rack</button>
+      </div>
+      <div hidden={!planMode}>
+        {profile?.id ? <RackPlanner key={profile.id} profileId={profile.id} /> : <p>Load an active kit before editing its rack plan.</p>}
+      </div>
+      <div hidden={planMode}>
       <p className="rack-direction"><span /> Rack workspace · cached evidence only</p>
       <section className="rack-workspace">
         <header className="rack-workspace-head"><div><h1>Rack elevation</h1><p>Add equipment, select it, then configure it.</p></div><div className="rack-workspace-head-actions"><span className={`rack-runtime-badge ${loadError ? "is-disconnected" : mode.includes("readwrite") ? "is-write" : ""}`}>{loadError ? "Backend disconnected" : mode.includes("readwrite") ? "Live lab · guarded writes" : "Live lab · read-only checks"}</span><button className="rack-head-add" disabled={Boolean(loadError)} onClick={() => setAddOpen(true)} type="button"><Plus size={15} /> Add equipment</button></div></header>
@@ -966,6 +982,7 @@ export function SimpleLabPage() {
       )}
       {addOpen && <DeviceInventoryForm defaultDeviceType="ilo" iloOnboarding onClose={() => setAddOpen(false)} onReload={reload} onSaved={(device) => setSelectedId(device.id)} submitLabel="Add to rack" />}
       {editingDevice && <DeviceInventoryForm device={editingDevice} iloOnboarding initialIloUsername={editingIloAccess?.username} iloCredentialsConfigured={Boolean(editingIloAccess?.username_configured && editingIloAccess.password_configured)} onClose={() => setEditingDevice(null)} onReload={reload} onSaved={(device) => setSelectedId(device.id)} submitLabel="Save rack details" />}
+      </div>
     </main>
   );
 }
@@ -973,78 +990,55 @@ export function SimpleLabPage() {
 type StepState = "done" | "next" | "waiting";
 
 export function SimpleStepsPage() {
-  const { devices, providers, accessByDeviceId, storage, loaded } = useSimpleData();
+  const { devices, accessByDeviceId, health, loaded, loadError } = useSimpleData(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedId = searchParams.get("device") ?? "";
 
   const iloDevices = devices.filter((device) => rackDeviceKind(device) === "ilo");
-  const iloReady = iloDevices.length > 0 && iloDevices.every((device) => {
-    const access = accessByDeviceId[device.id];
-    return (
-      access?.last_probe_status === "ok" &&
-      access.last_probe_is_current === true &&
-      access.last_probe_target_matches_access_host === true &&
-      access.last_probe_target_fingerprint_present === true
-    );
-  });
-  const inventoryRead = Boolean(storage?.storage_inventory_available);
-  const esxiProvider = providers.find((item) => item.id === "esxi-readonly");
-  const esxiReady = esxiProvider?.status === "ready" || esxiProvider?.status === "ok";
-
-  const steps: Array<{ title: string; detail: string; done: boolean; to: string }> = [
-    {
-      title: "Reach the iLO",
-      detail: iloReady ? "Proven reachable with current evidence." : "Save access and run the iLO check.",
-      done: Boolean(iloReady),
-      to: "/server"
-    },
-    {
-      title: "Read the hardware",
-      detail: inventoryRead ? "Drive inventory is loaded from the server." : "Run the iLO inventory read.",
-      done: inventoryRead,
-      to: "/storage"
-    },
-    {
-      title: "Decide the storage layout",
-      detail: "Review the drive plan (and vSAN readiness once available).",
-      done: false,
-      to: "/storage"
-    },
-    {
-      title: "Reach ESXi",
-      detail: esxiReady ? "ESXi answers with current evidence." : "Validate the ESXi target.",
-      done: Boolean(esxiReady),
-      to: "/virtualization"
-    },
-    {
-      title: "Deploy the VM",
-      detail: "Run the guarded VM deploy once everything above is green.",
-      done: false,
-      to: "/virtualization"
-    }
-  ];
+  const selected = iloDevices.find((device) => device.id === selectedId);
+  const access = selected ? accessByDeviceId[selected.id] : null;
+  const iloReady = currentServerAccess(health?.provider_mode, access);
+  const steps = standaloneKitStages.map((stage) => ({
+    ...stage,
+    done: stage.id === "access" && iloReady,
+    detail: stage.id === "access" && iloReady
+      ? `Access verified for ${selected?.display_name} at ${access?.last_probe_time}.`
+      : stage.detail,
+  }));
   const nextIndex = steps.findIndex((step) => !step.done);
 
   return (
-    <main className="simple-page" aria-label="Runbook view (example)">
+    <main className="simple-page kit-build-page" aria-label="Standalone Windows kit">
       <header className="simple-head">
-        <h1>Build the lab, in order</h1>
+        <h1>Standalone Windows kit</h1>
         <p className="simple-sub">
-          Return to <Link to="/simple">Rack home</Link>. Each step opens the controls for the device it needs.
+          HPE server, switch and ESXi. vCenter and clustering are deferred.
         </p>
       </header>
       {!loaded && <p className="simple-loading">Loading…</p>}
+      {loadError && <p role="alert">{loadError}</p>}
+      <label className="kit-target">Server
+        <select aria-label="Server" value={selected?.id ?? ""} onChange={(event) => setSearchParams((current) => { const next = new URLSearchParams(current); if (event.target.value) next.set("device", event.target.value); else next.delete("device"); return next; })} disabled={!loaded || Boolean(loadError)}>
+          <option value="">Select a server</option>
+          {iloDevices.map((device) => <option key={device.id} value={device.id}>{device.display_name} - {device.host || "Address not set"}</option>)}
+        </select>
+      </label>
+      {loaded && !loadError && iloDevices.length === 0 && <p>No servers in this kit. <Link to="/setup/defaults">Set up an initial iLO connection</Link>.</p>}
+      <p className="simple-sub">Readiness review only. Unverified stages do not authorize installation or upgrades.</p>
       <ol className="simple-steps">
         {steps.map((step, index) => {
           const state: StepState = step.done ? "done" : index === nextIndex ? "next" : "waiting";
           return (
             <li className={`simple-step is-${state}`} key={step.title}>
-              <span className="simple-step-number">{index + 1}</span>
-              <div className="simple-step-body">
-                <strong>{step.title}</strong>
-                <span>{step.detail}</span>
-              </div>
-              <Link className="simple-step-go" to={step.to}>
-                {state === "done" ? "Review" : "Go"} →
-              </Link>
+              {index === 0 && <h2 className="kit-phase-heading">Prepare equipment</h2>}
+              {index === 4 && <h2 className="kit-phase-heading">Prepare ESXi</h2>}
+              {index === 7 && <h2 className="kit-phase-heading">Deploy Windows</h2>}
+              <details className="kit-stage-detail" open={index === nextIndex}>
+                <summary><span className="kit-stage-number">{index + 1}</span><strong>{step.title}</strong><span className="kit-stage-status">{step.done ? "Access verified" : "Not verified"}</span></summary>
+                <div className="kit-stage-content"><p>{step.detail}</p>
+                  <Link className="simple-step-go" to={step.to === "/simple" && selected ? `/simple?device=${encodeURIComponent(selected.id)}` : step.to} aria-label={`Review ${step.title}`}>Review settings</Link>
+                </div>
+              </details>
             </li>
           );
         })}

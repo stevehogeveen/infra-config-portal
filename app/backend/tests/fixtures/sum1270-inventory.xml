@@ -1,0 +1,27 @@
+<report>
+  <inventoryreport>
+    <component>
+      <reboot_required>No</reboot_required>
+      <status>Component signature file missing</status>
+      <location>/fixture/baseline</location>
+      <description> This component provides updated iLO firmware that can be installed directly on supported Linux Operating Systems. This component can also be used to obtain the firmware image for updating via iLO user interface, utilities, or through the scripting interface. Additionally, this component can be used with the Smart Update Manager. </description>
+      <reboot_details>Reboot may not be required after installation for updates to take effect and hardware stability to be maintained.</reboot_details>
+      <filename>firmware-ilo5-3.19-1.1.x86_64.rpm</filename>
+      <type>Firmware</type>
+      <version>3.19</version>
+      <name>Online ROM Flash Component for Linux - HPE Integrated Lights-Out 5</name>
+      <altname>HPE Integrated Lights-Out 5</altname>
+      <typeofcomponent>Firmware</typeofcomponent>
+    </component>
+  </inventoryreport>
+  <report_type>0</report_type>
+  <report_date>Jan-01-2026 01:00:00:000 pm</report_date>
+  <bundles>
+    <bundle>
+      <name>Additional Package</name>
+      <version>N/A</version>
+    </bundle>
+  </bundles>
+  <app_version>SUM 12.7.0</app_version>
+  <language>en</language>
+</report>

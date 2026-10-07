@@ -211,20 +211,18 @@ test.beforeEach(async ({ page }) => {
   await installApiMocks(page);
 });
 
-async function openRackIloConfigurator(page: Page) {
-  await page.locator(".rack-unit[aria-label='Open HPE iLO']").click();
-  const inspector = page.locator(".rack-inspector");
-  await expect(inspector.getByRole("heading", { name: "HPE iLO" })).toBeVisible();
-  await inspector.getByRole("button", { name: "Configure iLO beside rack" }).click();
-  const configurator = page.getByLabel("Configure HPE iLO beside rack");
-  await expect(configurator).toBeVisible();
-  return configurator;
+/** iLO access, first-contact proof and iLO settings live on Server & iLO, under "iLO & access". */
+async function openServerIloPanel(page: Page) {
+  await page.goto("/server");
+  await page.getByRole("tab", { name: /iLO & access/ }).click();
+  const panel = page.locator("[aria-label='Server ilo panel']");
+  await expect(panel.getByLabel("iLO access credentials")).toBeVisible();
+  return panel;
 }
 
-async function openRackIloSettings(page: Page) {
-  const configurator = await openRackIloConfigurator(page);
-  await configurator.getByRole("tab", { name: "iLO settings" }).click();
-  const settings = page.locator("section[aria-label='iLO setup settings']");
+async function openServerIloSettings(page: Page) {
+  const panel = await openServerIloPanel(page);
+  const settings = panel.locator("section[aria-label='iLO setup settings']");
   await expect(settings).toBeVisible();
   return settings;
 }
@@ -330,8 +328,16 @@ async function expectResponsiveShell(page: Page, path: string, viewport: { width
   await page.setViewportSize(viewport);
   await page.goto(path);
   await expect(page.locator("main.content")).toBeVisible();
+  // Wide screens show My Rack and Setup in the header; narrower ones keep the home logo and the
+  // command palette, which reaches every page.
+  const wide = viewport.width > 1100;
+  if (wide) await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link")).toHaveCount(2);
+  else {
+    await expect(page.getByRole("banner").locator("a[href='/simple']").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Search or run a command" }), `${path} keeps the command palette at ${viewport.width}px`).toBeVisible();
+  }
   const metrics = await page.evaluate(() => {
-    const nav = document.querySelector("aside.rack-rail nav[aria-label='Lab Builder navigation']");
+    const nav = document.querySelector("nav[aria-label='Main navigation']");
     const navRect = nav?.getBoundingClientRect();
     return {
       bodyWidth: document.body.scrollWidth,
@@ -344,89 +350,72 @@ async function expectResponsiveShell(page: Page, path: string, viewport: { width
   });
   expect(metrics.width, `${path} document overflow at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
   expect(metrics.bodyWidth, `${path} body overflow at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
-  expect(metrics.navLinkCount, `${path} keeps all primary destinations at ${viewport.width}px`).toBe(7);
-  expect(metrics.navLeft, `${path} rack rail nav starts inside the viewport at ${viewport.width}px`).toBeGreaterThanOrEqual(-1);
-  expect(metrics.navRight, `${path} rack rail nav ends inside the viewport at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
+  if (!wide) return;
+  expect(metrics.navLinkCount, `${path} keeps My Rack and Setup reachable at ${viewport.width}px`).toBe(2);
+  expect(metrics.navLeft, `${path} main navigation starts inside the viewport at ${viewport.width}px`).toBeGreaterThanOrEqual(-1);
+  expect(metrics.navRight, `${path} main navigation ends inside the viewport at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
 }
 
-test("renders the rack-first operator shell and pages", async ({ page }) => {
+test("renders the rack-first operator shell and every page lands where it should", async ({ page }) => {
+  test.setTimeout(120000);
   await page.goto("/simple");
 
-  await expect(page.locator("header[aria-label='Application header']")).toHaveCount(0);
-  const rail = page.locator("aside.rack-rail");
-  await expect(rail).toBeVisible();
-  const nav = rail.getByRole("navigation", { name: "Lab Builder navigation" });
-  await expect(nav.locator("a")).toHaveText(["Rack home", "Runbook", "Lab defaults", "Firmware", "Run Center", "Reports", "Create or change kit"]);
-  await expect(nav.getByRole("link", { name: "Rack home" })).toHaveAttribute("href", "/simple");
-  await expect(nav.getByRole("link", { name: "Lab defaults" })).toHaveAttribute("href", "/setup/defaults");
-  await expect(nav.getByRole("link", { name: "Firmware" })).toHaveAttribute("href", "/firmware-upgrades");
-  await expect(nav.getByRole("link", { name: "Run Center" })).toHaveAttribute("href", "/run-center");
-  await expect(nav.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/validation");
-  await expect(nav.getByRole("link", { name: "Create or change kit" })).toHaveAttribute("href", "/lab-profiles#new");
-  await expect(nav).not.toContainText(/Compute|Storage|Virtualization|Cisco/);
+  // Header: My Rack and Setup, the kit menu and the command palette; no old rail or quick navigation.
+  const header = page.getByRole("banner");
+  const nav = header.getByRole("navigation", { name: "Main navigation" });
+  await expect(nav.getByRole("link")).toHaveText(["My Rack", "Setup"]);
+  await expect(nav.getByRole("link", { name: "My Rack" })).toHaveAttribute("href", "/simple");
+  await expect(header.getByRole("button", { name: /^Kit / })).toBeVisible();
+  await expect(header.getByRole("button", { name: "Search or run a command" })).toBeVisible();
+  await expect(page.locator("aside.rack-rail")).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Quick navigation" })).toHaveCount(0);
-  await expect(rail.getByLabel("Lab provider mode")).toHaveCount(0);
-  await expect(rail.locator("#active-kit-picker")).toHaveCount(0);
-  await expect(rail.getByRole("group", { name: "Display mode" })).toHaveCount(0);
-  await expect(rail).not.toContainText(/Test Mode|Local lab setup|New kit|Operator|Advanced/);
-  await expect(rail).not.toContainText(/Windows|OVF|Global/);
+  await expect(header).not.toContainText(/Test Mode|Local lab setup|PROVIDER_MODE/);
 
-  await expect(page.getByRole("heading", { name: "Rack elevation" })).toBeVisible();
-  await page.goto("/lab-setup");
-  await expect(page).toHaveURL(/\/simple/);
-  await expect(page.getByRole("heading", { name: "Rack elevation" })).toBeVisible();
+  // The build steps rail lists the seven steps in order.
+  const steps = page.getByRole("navigation", { name: "Build steps and equipment" });
+  for (const name of ["Add equipment", "Network settings", "Connect equipment", "Check firmware", "Disks & RAID", "Prepare ESXi", "Install Windows"]) {
+    await expect(steps.getByRole("link", { name: new RegExp(name) })).toBeVisible();
+  }
+  await expect(page.getByRole("heading", { name: "My Rack", exact: true })).toBeVisible();
+
+  for (const [path, landsOn, heading] of [
+    ["/lab-setup", "/simple", "My Rack"],
+    ["/config", "/simple", "My Rack"],
+    ["/control-center", "/simple", "My Rack"],
+    ["/setup/guide", "/setup/guide", "Choose equipment & rack layout"],
+    ["/setup/defaults", "/setup/defaults", "Network settings"],
+    ["/setup/global", "/setup/defaults", "Network settings"],
+    ["/lab-defaults", "/setup/defaults", "Network settings"],
+    ["/settings", "/setup/defaults", "Network settings"],
+    ["/setup/disks", "/setup/disks", "Disks & RAID"],
+    ["/firmware-upgrades", "/firmware-upgrades", "Firmware versions"],
+    ["/setup/firmware", "/setup/firmware", "Firmware versions"],
+    ["/run-center", "/setup/history", "Run history"],
+    ["/run", "/run", "Run Center"],
+    ["/validation", "/validation", "Validation"],
+    ["/setup/cisco", "/setup/cisco", "Cisco Switch"],
+    ["/setup/ilo", "/setup/ilo", "Server & iLO"],
+    ["/setup/server", "/setup/server", "Server & iLO"],
+    ["/setup/storage", "/setup/storage", "Storage & NetApp"],
+    ["/setup/netapp", "/setup/netapp", "Storage & NetApp"],
+    ["/setup/esxi", "/setup/esxi", "Virtualization"],
+    ["/setup/windows", "/setup/windows", "Virtualization"],
+    ["/setup/media", "/setup/media", "Software Media"],
+    ["/setup/ovf", "/setup/ovf", "Software Media"]
+  ] as const) {
+    await page.goto(path);
+    await expect(page, `${path} lands on ${landsOn}`).toHaveURL(new RegExp(`${landsOn}$`));
+    await expect(page.getByRole("heading", { name: heading, exact: true, level: 1 }), `${path} shows ${heading}`).toBeVisible();
+  }
   for (const setupPath of ["/network", "/server", "/storage", "/virtualization"]) {
     await page.goto(setupPath);
     await expect(page).toHaveURL(new RegExp(`${setupPath}$`));
     await expect(page.locator("main")).toBeVisible();
   }
-  for (const [setupPath, heading] of [
-    ["/setup/cisco", "Cisco Switch"],
-    ["/setup/ilo", "Server & iLO"],
-    ["/setup/server", "Server & iLO"],
-    ["/setup/storage", "Storage & NetApp"],
-    ["/setup/netapp", "Storage & NetApp"],
-    ["/setup/esxi", "Virtualization"],
-    ["/setup/windows", "Virtualization"],
-    ["/setup/media", "Software Media"],
-    ["/setup/ovf", "Software Media"]
-  ] as const) {
-    await page.goto(setupPath);
-    await expect(page).toHaveURL(new RegExp(`${setupPath}$`));
-    await expect(page.locator("main h1").filter({ hasText: heading })).toBeVisible();
-  }
-  await page.goto("/setup/defaults");
-  await expect(page.getByRole("heading", { name: "Lab Defaults", exact: true })).toBeVisible();
-  await page.goto("/setup/global");
-  await expect(page).toHaveURL(/\/setup\/defaults$/);
-  await expect(page.getByRole("heading", { name: "Lab Defaults", exact: true })).toBeVisible();
-  await page.goto("/lab-defaults");
-  await expect(page).toHaveURL(/\/setup\/defaults$/);
-  await expect(page.getByRole("heading", { name: "Lab Defaults", exact: true })).toBeVisible();
-  await page.goto("/firmware-upgrades");
-  await expect(page.getByRole("heading", { name: "Keep every device on the expected version.", exact: true })).toBeVisible();
-  await page.goto("/setup/firmware");
-  await expect(page.getByRole("heading", { name: "Keep every device on the expected version.", exact: true })).toBeVisible();
-  await page.goto("/run-center");
-  await expect(page.getByRole("heading", { name: "Run Center", exact: true })).toBeVisible();
-  await expect(page.getByTestId("lab-build-journey")).toBeVisible();
   await page.goto("/run");
-  await expect(page.getByRole("heading", { name: "Run Center", exact: true })).toBeVisible();
   await expect(page.getByTestId("lab-build-journey")).toBeVisible();
   await expect(page.getByLabel("Build Plan")).toBeVisible();
   await expect(page.getByText("Readiness Workflow")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Lab Setup", exact: true })).toHaveCount(0);
-  await page.goto("/validation");
-  await expect(page.getByRole("heading", { name: "Validation", exact: true })).toBeVisible();
-  await page.goto("/config");
-  await expect(page).toHaveURL(/\/simple/);
-  await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
-  await page.goto("/settings");
-  await expect(page).toHaveURL(/\/simple/);
-  await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
-
-  await page.goto("/control-center");
-  await expect(page).toHaveURL(/\/simple/);
 });
 
 test("advanced-only audit and workflow proof routes stay off the operator surface", async ({ page }) => {
@@ -465,31 +454,34 @@ test("advanced mode can still inspect audit events and workflow run proof", asyn
   await expect(page.getByText("Plan Summary")).toBeVisible();
 });
 
-test("lab defaults keeps every shared network service visible and repeatable", async ({ page }) => {
+test("network settings keep every shared service visible and repeatable without clutter", async ({ page }) => {
   await page.goto("/setup/defaults");
 
-  await expect(page.getByRole("heading", { name: "Lab Defaults", exact: true })).toBeVisible();
-  const network = page.getByLabel("Network defaults");
-  await expect(network.getByRole("heading", { name: "Network & services" })).toBeVisible();
-  await expect(network.getByRole("textbox", { name: "Subnet" })).toBeVisible();
-  await expect(network.getByRole("textbox", { name: "Gateway" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Network settings", exact: true, level: 1 })).toBeVisible();
+  const network = page.getByRole("region", { name: "Network defaults" });
+  await expect(network.getByRole("heading", { name: "Management network" })).toBeVisible();
   await expect(network.getByRole("textbox", { name: "Subnet" })).toHaveValue("192.168.1.0/24");
+  await expect(network.getByRole("textbox", { name: "Gateway" })).toBeVisible();
   await expect(network.getByLabel("Storage protocol")).toBeVisible();
   await expect(network.getByRole("textbox", { name: "VLAN" })).toBeVisible();
   await expect(network.getByRole("textbox", { name: "MTU" })).toBeVisible();
 
-  const sharedServices = network.getByLabel("Shared service defaults");
-  await expect(sharedServices.getByLabel("DNS defaults")).toBeVisible();
-  await expect(sharedServices.getByLabel("NTP defaults")).toBeVisible();
-  await expect(sharedServices.getByLabel("SNMP defaults")).toBeVisible();
+  await expect(page.getByText("Saved plan only. No hardware changes.")).toBeVisible();
+  const sharedServices = page.getByRole("region", { name: "Shared services" });
+  await expect(sharedServices.getByRole("region", { name: "DNS defaults" })).toBeVisible();
+  await expect(sharedServices.getByRole("region", { name: "NTP defaults" })).toBeVisible();
+  await expect(sharedServices.getByRole("region", { name: "SNMP defaults" })).toBeVisible();
   await expect(sharedServices.getByRole("checkbox", { name: "Enable DNS" })).toBeChecked();
   await expect(sharedServices.getByRole("checkbox", { name: "Enable NTP" })).toBeChecked();
   await expect(sharedServices.getByRole("checkbox", { name: "Enable SNMP" })).not.toBeChecked();
   await expect(sharedServices.getByRole("textbox", { name: "DNS server 1", exact: true })).toHaveValue("192.168.1.1");
   await expect(sharedServices.getByRole("textbox", { name: "NTP server 1", exact: true })).toHaveValue("192.168.1.1");
   await expect(sharedServices.getByRole("textbox", { name: "SNMP manager 1", exact: true })).toHaveValue("");
-  await expect(sharedServices.getByLabel("SNMP version")).toBeVisible();
+  await expect(sharedServices.getByLabel("SNMP version")).toHaveValue("v2c");
   await expect(sharedServices.getByLabel("SNMP version").locator("option")).toHaveText(["v1 (legacy)", "v2c", "v3"]);
+  // SNMP fields stay off until SNMP is enabled.
+  await expect(sharedServices.getByRole("button", { name: "Add SNMP manager" })).toBeDisabled();
+  await sharedServices.getByRole("checkbox", { name: "Enable SNMP" }).check();
 
   await sharedServices.getByRole("button", { name: "Add DNS server" }).click();
   await sharedServices.getByRole("button", { name: "Add NTP server" }).click();
@@ -498,31 +490,16 @@ test("lab defaults keeps every shared network service visible and repeatable", a
   await expect(sharedServices.getByRole("textbox", { name: /^NTP server / })).toHaveCount(2);
   await expect(sharedServices.getByRole("textbox", { name: /^SNMP manager / })).toHaveCount(2);
 
-  const signIn = page.getByLabel("Shared sign-in");
-  await expect(signIn.getByRole("heading", { name: "Shared sign-in" })).toBeVisible();
-  await expect(signIn).toContainText("Password location");
-  await expect(signIn).toContainText("Secrets are not stored in kit defaults.");
-  await expect(signIn).toContainText("Click a device on Overview to set its own sign-in");
-  await expect(signIn).toContainText("Set per device");
-  await expect(signIn).toContainText("Default username");
-  await expect(signIn.getByText("More service defaults")).toHaveCount(0);
-  await expect(signIn.getByLabel("Shared service defaults")).toHaveCount(0);
-  await expect(signIn.getByLabel("SNMP version")).toHaveCount(0);
-  await expect(signIn).not.toContainText("P@ssw0rd");
-  await expect(signIn.locator("input[type='password']")).toHaveCount(0);
-
-  await expect(page.locator(".lab-defaults-actions .operator-primary-button")).toHaveCount(1);
-  await expect(page.locator(".lab-defaults-actions .operator-primary-button")).toContainText("Save defaults");
-  await expect(page.getByRole("heading", { name: "Shared profile policy" })).toHaveCount(0);
-  await expect(page.getByText("Setup name")).toHaveCount(0);
-  await expect(page.getByText("Allow IPv6")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Expected devices" })).toHaveCount(0);
-  await expect(page.locator(".lab-defaults-advanced")).toHaveCount(0);
-  await expect(page.getByLabel("Advanced lab default fields")).toHaveCount(0);
-  await expect(page.getByLabel("Global profile feature toggles")).toHaveCount(0);
+  // Secrets never live in kit defaults, and the page carries no advanced or hardware actions.
+  await expect(page.locator(".setup-body input[type='password']")).toHaveCount(0);
+  await expect(page.locator(".setup-body")).not.toContainText("P@ssw0rd");
+  await expect(page.getByText("Expected devices", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Advanced", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save defaults" })).toBeVisible();
+  await expect(page.locator(".setup-body").getByRole("button", { name: /Apply|Rebuild|Upgrade/i })).toHaveCount(0);
 });
 
-test("lab defaults saves editable network and service defaults without secrets or workflows", async ({ page }) => {
+test("network settings save editable network and service defaults without secrets or workflows", async ({ page }) => {
   let workflowRunAttempted = false;
   await page.route("**/api/v1/workflows/actions/*/run", async (route) => {
     workflowRunAttempted = true;
@@ -531,38 +508,34 @@ test("lab defaults saves editable network and service defaults without secrets o
 
   await page.goto("/setup/defaults");
 
-  const network = page.getByLabel("Network defaults");
+  const network = page.getByRole("region", { name: "Network defaults" });
+  const services = page.getByRole("region", { name: "Shared services" });
   await network.getByRole("textbox", { name: "Subnet" }).fill("192.168.210.0/24");
   await network.getByRole("textbox", { name: "Gateway" }).fill("192.168.210.1");
-  await network.getByRole("textbox", { name: "DNS server 1", exact: true }).fill("192.168.210.1");
-  await network.getByRole("button", { name: "Add DNS server" }).click();
-  await network.getByRole("textbox", { name: "DNS server 2", exact: true }).fill("1.1.1.1");
-  await network.getByRole("textbox", { name: "NTP server 1", exact: true }).fill("192.168.210.1");
-  await network.getByRole("button", { name: "Add NTP server" }).click();
-  await network.getByRole("textbox", { name: "NTP server 2", exact: true }).fill("192.168.210.2");
-  await network.getByRole("textbox", { name: "SNMP manager 1", exact: true }).fill("192.168.210.31");
-  await network.getByRole("button", { name: "Add SNMP manager" }).click();
-  await network.getByRole("textbox", { name: "SNMP manager 2", exact: true }).fill("192.168.210.32");
   await network.getByRole("textbox", { name: "VLAN" }).fill("120");
   await network.getByRole("textbox", { name: "MTU" }).fill("9000");
   await network.getByLabel("Storage protocol").selectOption("iscsi");
+  await services.getByRole("textbox", { name: "DNS server 1", exact: true }).fill("192.168.210.1");
+  await services.getByRole("button", { name: "Add DNS server" }).click();
+  await services.getByRole("textbox", { name: "DNS server 2", exact: true }).fill("1.1.1.1");
+  await services.getByRole("textbox", { name: "NTP server 1", exact: true }).fill("192.168.210.1");
+  await services.getByRole("button", { name: "Add NTP server" }).click();
+  await services.getByRole("textbox", { name: "NTP server 2", exact: true }).fill("192.168.210.2");
+  await services.getByRole("checkbox", { name: "Enable SNMP" }).check();
+  await services.getByLabel("SNMP version").selectOption("v3");
+  await services.getByRole("textbox", { name: "SNMP manager 1", exact: true }).fill("192.168.210.31");
+  await services.getByRole("button", { name: "Add SNMP manager" }).click();
+  await services.getByRole("textbox", { name: "SNMP manager 2", exact: true }).fill("192.168.210.32");
 
-  await network.getByRole("checkbox", { name: "Enable SNMP" }).check();
-  await network.getByLabel("SNMP version").selectOption("v3");
-
-  const createProfileRequest = page.waitForRequest((request) => {
+  const saveRequest = page.waitForRequest((request) => {
     const url = new URL(request.url());
-    return request.method() === "POST" && url.pathname === "/api/v1/lab/profiles";
+    return ["POST", "PUT", "PATCH"].includes(request.method()) && url.pathname.startsWith("/api/v1/lab/profiles");
   });
-  await page.locator(".lab-defaults-actions .operator-primary-button").click();
-  const request = await createProfileRequest;
+  await page.getByRole("button", { name: "Save defaults" }).click();
+  const request = await saveRequest;
   const payload = request.postDataJSON() as Record<string, any>;
 
   expect(payload.address_plan.subnet).toBe("192.168.210.0/24");
-  expect(payload.address_plan.cisco_management).toBe("192.168.210.204");
-  expect(payload.address_plan.ilo).toBe("192.168.210.201");
-  expect(payload.address_plan.esxi_management).toBe("192.168.210.203");
-  expect(payload.address_plan.netapp_cluster_mgmt).toBe("192.168.210.220");
   expect(payload.global_settings.gateway).toBe("192.168.210.1");
   expect(payload.global_settings.dns_servers).toEqual(["192.168.210.1", "1.1.1.1"]);
   expect(payload.global_settings.ntp_servers).toEqual(["192.168.210.1", "192.168.210.2"]);
@@ -758,13 +731,13 @@ test("saved kits switch and history stay behind the selected-kit decision", asyn
   await changePanel.getByRole("button", { name: "Use this kit" }).click();
   await activateRequest;
   await expect(page).toHaveURL(/\/simple$/);
-  await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "My Rack", exact: true })).toBeVisible();
   expect(profileState.active_profile.name).toBe("Rack 07 Edge Lab");
 });
 
 test("build plan keeps its next action visible without mobile overflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/run-center");
+  await page.goto("/run");
 
   const journey = page.getByTestId("lab-build-journey");
   await expect(journey.getByTestId("lab-build-primary-action")).toBeVisible();
@@ -774,7 +747,7 @@ test("build plan keeps its next action visible without mobile overflow", async (
 });
 
 test("run console pauses at a guarded change without exposing duplicate consoles", async ({ page }) => {
-  await page.goto("/run-center");
+  await page.goto("/run");
   await page.getByTestId("lab-build-primary-action").click();
 
   const journey = page.getByTestId("lab-build-journey");
@@ -793,11 +766,11 @@ test("run console pauses at a guarded change without exposing duplicate consoles
   await runConsole.getByRole("button", { name: "Open lab map" }).click();
   await expect(page).toHaveURL(/\/simple$/);
   await expect(page.getByTestId("lab-build-journey")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "My Rack", exact: true })).toBeVisible();
 });
 
 test("guarded build continuation submits exact waiting evidence", async ({ page }) => {
-  await page.goto("/run-center");
+  await page.goto("/run");
   await page.getByTestId("lab-build-primary-action").click();
 
   const resumeRequest = page.waitForRequest((request) => (
@@ -816,7 +789,7 @@ test("guarded build continuation submits exact waiting evidence", async ({ page 
 
 test("running builds can only refresh status", async ({ page }) => {
   await page.route("**/api/v1/lab-build/runs/latest?*", (route) => json(route, labBuildRunningRun()));
-  await page.goto("/run-center");
+  await page.goto("/run");
 
   const console = page.getByLabel("Run Console");
   await expect(console.getByTestId("lab-build-primary-action")).toContainText("Refresh Status");
@@ -826,7 +799,7 @@ test("running builds can only refresh status", async ({ page }) => {
 
 test("failed build shows one completion report and retry only when safe", async ({ page }) => {
   await page.route("**/api/v1/lab-build/runs", (route) => json(route, labBuildFailedRun()));
-  await page.goto("/run-center");
+  await page.goto("/run");
   await page.getByTestId("lab-build-primary-action").click();
 
   const report = page.getByLabel("Completion Report");
@@ -853,7 +826,7 @@ test("editing the visible iLO target invalidates proof until that exact target i
   );
   await page.goto("/simple");
 
-  const configurator = await openRackIloConfigurator(page);
+  const configurator = await openServerIloPanel(page);
   const firstContact = configurator.getByLabel("iLO access credentials");
   const proof = firstContact.getByLabel("iLO first-contact proof");
   await expect(firstContact.getByLabel("iLO host or initial IP")).toHaveValue("192.168.1.11");
@@ -975,46 +948,50 @@ test("setup faceplate element clicks reveal concise details only after intent", 
   await expect(serverWorkspace.getByText("Server drive map", { exact: true })).toBeVisible();
 });
 
-test("rack home keeps kit changes available", async ({ page }) => {
-  healthHostIpv4Addresses = ["10.10.8.99", "172.20.10.3"];
-  await page.goto("/simple");
-
-  await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
-
-  const editSubnet = page.locator("aside.rack-rail").getByRole("link", { name: "Create or change kit" });
-  await expect(editSubnet).toHaveAttribute("href", "/lab-profiles#new");
-  await editSubnet.click();
-  await expect(page).toHaveURL(/\/lab-profiles#new$/);
-  await expect(page.getByRole("heading", { name: "Saved Kits", exact: true })).toBeVisible();
-});
-
-test("overview routes kit changes to Saved Kits without running workflows", async ({ page }) => {
+test("the kit menu keeps kit changes available from My Rack without running workflows", async ({ page }) => {
   let workflowRunAttempted = false;
   await page.route("**/api/v1/workflows/actions/*/run", async (route) => {
     workflowRunAttempted = true;
     await route.continue();
   });
-
+  healthHostIpv4Addresses = ["10.10.8.99", "172.20.10.3"];
   await page.goto("/simple");
+  await expect(page.getByRole("heading", { name: "My Rack", exact: true })).toBeVisible();
 
-  const topology = page.locator("section[aria-label='Living lab topology']");
-  await expect(topology.locator("section[aria-label='System setup picker']")).toHaveCount(0);
-  await page.locator("aside.rack-rail").getByRole("link", { name: "Create or change kit" }).click();
-  await expect(page).toHaveURL(/\/lab-profiles#new$/);
+  const kitButton = page.getByRole("banner").getByRole("button", { name: /^Kit / });
+  await kitButton.click();
+  await expect(kitButton).toHaveAttribute("aria-expanded", "true");
+  const menu = page.getByLabel("Kit menu");
+  await expect(menu.getByLabel("Kit", { exact: true })).toBeVisible();
+  await expect(menu.getByRole("button", { name: "Save as new kit" })).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+
+  // Saved Kits stays reachable directly for creating a kit from a subnet.
+  await page.goto("/lab-profiles#new");
   await expect(page.getByRole("heading", { name: "Saved Kits", exact: true })).toBeVisible();
   expect(workflowRunAttempted).toBe(false);
 });
 
+
 test("operator surfaces stay responsive across mobile and desktop widths", async ({ page }) => {
+  test.setTimeout(240000);
   const routes = [
-    "/overview",
+    "/simple",
+    "/setup/guide",
     "/setup/defaults",
+    "/setup/connect",
+    "/setup/check-firmware",
+    "/setup/disks",
+    "/setup/prepare-esxi",
+    "/setup/install-windows",
+    "/setup/history",
     "/firmware-upgrades",
     "/network",
     "/server",
     "/storage",
     "/virtualization",
-    "/run-center",
+    "/run",
     "/validation",
     "/lab-profiles",
     "/media"
@@ -1121,8 +1098,8 @@ test("storage NetApp workspace reveals migrated NFS iSCSI previews and guarded b
 test("operator button matrix keeps default actions simple and safe", async ({ page }) => {
   const forbiddenDefaultCopy = /ACKNOWLEDGE|NETAPP_ISCSI_SETUP|APPLY NETAPP ISCSI SETUP|Apply iSCSI|Factory reset|Reset HPE RAID|Boot ESXi Installer|PROVIDER_MODE|PROVIDER MODE/i;
   const surfaces: Array<{ label: string; path: string; primary: () => ReturnType<Page["locator"]> }> = [
-    { label: "Rack home", path: "/simple", primary: () => page.getByRole("button", { name: "Add equipment" }) },
-    { label: "Lab Defaults", path: "/setup/defaults", primary: () => page.locator(".lab-defaults-actions .operator-primary-button") },
+    { label: "My Rack", path: "/simple", primary: () => page.getByRole("link", { name: "Continue setup" }) },
+    { label: "Network settings", path: "/setup/defaults", primary: () => page.getByRole("button", { name: "Save defaults" }) },
     { label: "Network", path: "/network", primary: () => page.locator("section[aria-label='Cisco switch workspace'] > .design-device-primary-action .design-plan-action") },
     { label: "Server", path: "/server", primary: () => page.locator("section[aria-label='Server configuration workspace'] .operator-primary-button") },
     { label: "Storage", path: "/storage", primary: () => page.locator("section[aria-label='NetApp ONTAP workspace'] > .design-device-primary-action .design-plan-action") },
@@ -1130,7 +1107,7 @@ test("operator button matrix keeps default actions simple and safe", async ({ pa
     { label: "Firmware", path: "/firmware-upgrades", primary: () => page.getByRole("button", { name: "Check versions" }) },
     { label: "Software Media", path: "/media", primary: () => page.locator(".page-actions .primary") },
     { label: "Validation", path: "/validation", primary: () => page.locator(".validation-readiness-actions .operator-primary-button") },
-    { label: "Run Center", path: "/run-center", primary: () => page.getByTestId("lab-build-primary-action") }
+    { label: "Run Center", path: "/run", primary: () => page.getByTestId("lab-build-primary-action") }
   ];
 
   for (const surface of surfaces) {
@@ -1344,31 +1321,6 @@ test("network console first contact fails closed when the pinned cable answers a
   await expect(panel).not.toContainText("This adapter is verified as Cisco");
 });
 
-test("lab defaults keeps all DNS NTP and SNMP values visible without advanced or expected-device clutter", async ({ page }) => {
-  await page.goto("/setup/defaults");
-
-  await expect(page.getByRole("heading", { name: "Lab Defaults", exact: true })).toBeVisible();
-  const network = page.getByLabel("Network defaults");
-  await expect(network.getByLabel("Subnet", { exact: true })).toBeVisible();
-  await expect(network.getByLabel("Gateway", { exact: true })).toBeVisible();
-  await expect(network.getByLabel("DNS defaults")).toBeVisible();
-  await expect(network.getByLabel("NTP defaults")).toBeVisible();
-  await expect(network.getByLabel("SNMP defaults")).toBeVisible();
-  await expect(network.getByLabel("SNMP version")).toHaveValue("v2c");
-
-  await network.getByRole("button", { name: "Add DNS server" }).click();
-  await network.getByRole("button", { name: "Add NTP server" }).click();
-  await network.getByRole("button", { name: "Add SNMP manager" }).click();
-  await expect(network.getByRole("textbox", { name: "DNS server 2", exact: true })).toBeVisible();
-  await expect(network.getByRole("textbox", { name: "NTP server 2", exact: true })).toBeVisible();
-  await expect(network.getByRole("textbox", { name: "SNMP manager 2", exact: true })).toBeVisible();
-
-  await expect(page.getByText("Expected devices", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("Advanced", { exact: true })).toHaveCount(0);
-  await expect(page.locator("details")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Save defaults" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Apply|Reset|Rebuild|Upgrade/i })).toHaveCount(0);
-});
 
 test("network no-kit state does not show stale loading feedback", async ({ page }) => {
   labProfileScenario = "none";
@@ -1623,7 +1575,7 @@ test("setup surfaces hide stale loading while background checks are slow", async
     ["/setup/cisco", "Cisco Switch"],
     ["/setup/ilo", "Server & iLO"],
     ["/setup/storage", "Storage & NetApp"],
-    ["/setup/firmware", "Keep every device on the expected version."]
+    ["/setup/firmware", "Firmware versions"]
   ] as const) {
     await page.goto(path);
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
@@ -1782,7 +1734,6 @@ test("remaining operator pages expose simplified setup surfaces without old sett
   await page.goto("/lab-profiles");
   await expect(page.getByRole("heading", { name: "Saved Kits", exact: true })).toBeVisible();
   await expect(page.getByTestId("saved-kits-home")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Create or change kit" })).toHaveAttribute("href", "/lab-profiles#new");
   const createKit = page.getByLabel("Create a new kit");
   await expect(createKit).toHaveAttribute("open", "");
   await expect(createKit.getByRole("button", { name: "Create kit" })).toBeVisible();
@@ -2016,7 +1967,7 @@ test("advanced proof is collapsed and operator labels hide raw statuses", async 
 test("firmware decisions replace the retired map with four operator columns", async ({ page }) => {
   await page.goto("/firmware-upgrades");
 
-  await expect(page.getByRole("heading", { name: /Keep every device on the expected version/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Firmware versions", exact: true })).toBeVisible();
   const table = page.getByLabel("Firmware version decisions");
   await expect(table.getByRole("columnheader")).toHaveCount(4);
   await expect(table.getByRole("columnheader", { name: "Device" })).toBeVisible();
@@ -2173,11 +2124,12 @@ test("legacy settings paths redirect to the current home and the contextual draw
 
   await page.goto("/config");
   await expect(page).toHaveURL(/\/simple/);
-  await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "My Rack", exact: true })).toBeVisible();
 
+  // Settings now live in the Network settings step.
   await page.goto("/settings");
-  await expect(page).toHaveURL(/\/simple/);
-  await expect(page.getByRole("heading", { name: "Rack elevation", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/setup\/defaults$/);
+  await expect(page.getByRole("heading", { name: "Network settings", exact: true, level: 1 })).toBeVisible();
 });
 
 test("safe read-only page action still invokes the workflow runner", async ({ page }) => {
@@ -2346,7 +2298,7 @@ test("testing assistant queues a redacted fix request from the current route", a
   await page.goto("/network");
   await expect(page).toHaveURL(/\/network/);
 
-  await page.getByRole("button", { name: "Report issue" }).click();
+  await page.getByRole("button", { name: "Report an issue", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Testing Assistant" })).toBeVisible();
   await expect(page.getByText("/network")).toBeVisible();
   await expect(page.getByText("No hardware action is run from this report.")).toBeVisible();
@@ -2528,372 +2480,177 @@ test("workflow runner surfaces network API failures", async ({ page }) => {
   await expect(page.getByText("Network error while requesting /api/v1/workflows/actions/build-verification.run-full/run.")).toBeVisible();
 });
 
-test("DHCP inventory devices show observed addresses as read-only evidence", async ({ page }) => {
-  await page.goto("/simple");
-  await page.getByRole("button", { name: "Add equipment" }).click();
-  await page.getByLabel("Device type").fill("packet_broker");
-  await page.getByLabel("Device name").fill("DHCP Packet Broker");
-  await page.getByLabel("Device addressing mode").selectOption("dhcp");
 
-  const host = page.getByLabel("Device host");
-  await expect(host).toBeDisabled();
-  await expect(host).toHaveAttribute("placeholder", "No address observed yet");
-  await expect(page.getByText("Assigned by the network, not editable.")).toBeVisible();
-
-  await page.getByRole("button", { name: "Add to rack" }).click();
-  const inspector = page.locator(".rack-inspector");
-  await expect(inspector.getByRole("heading", { name: "DHCP Packet Broker" })).toBeVisible();
-  await expect(inspector).toContainText("DHCP");
-  await expect(inspector).toContainText("Observed address");
-  await expect(inspector).toContainText("Not observed");
-});
-
-test("rack workspace and runbook are reachable from the nav and render", async ({ page }) => {
+test("My Rack opens from the header and shows each device's saved status read-only", async ({ page }) => {
   const mutations: string[] = [];
   page.on("request", (request) => {
-    if (request.method() !== "GET") mutations.push(`${request.method()} ${new URL(request.url()).pathname}`);
+    if (request.method() !== "GET" && new URL(request.url()).pathname.startsWith("/api/")) mutations.push(`${request.method()} ${new URL(request.url()).pathname}`);
   });
-  await page.goto("/simple");
-  const nav = page.locator("aside.rack-rail").getByRole("navigation", { name: "Lab Builder navigation" });
+  await page.goto("/setup/defaults");
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "My Rack" }).click();
+  await expect(page).toHaveURL(/\/simple$/);
+  await expect(page.getByRole("heading", { name: "My Rack", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Your equipment\s*3/ })).toBeVisible();
 
-  await nav.getByRole("link", { name: "Rack home" }).click();
-  await expect(page.getByRole("heading", { name: "Rack elevation" })).toBeVisible();
-  await expect(page.locator(".rack-light-svg")).toBeVisible();
-  await expect(page.locator("header[aria-label='Application header']")).toHaveCount(0);
-  await expect(page.getByText("Green is shown only when a current provider check proves access.")).toBeVisible();
-  await expect(page.locator(".rack-drive")).toHaveCount(8);
-  await expect(page.locator(".rack-drive.is-free")).toHaveCount(6);
-  await page.locator(".rack-unit[aria-label='Open Cisco Switch']").click();
-  const inspector = page.locator(".rack-inspector");
-  await expect(inspector.getByRole("heading", { name: "Cisco Switch" })).toBeVisible();
-  await expect(inspector).toContainText("192.168.1.204");
-  const removeButton = inspector.getByRole("button", { name: "Remove from rack" });
-  await expect(removeButton).toBeVisible();
-  await removeButton.click();
-  const removeDialog = page.locator(".rack-remove-overlay");
-  await expect(removeDialog).toBeVisible();
-  await expect(removeDialog.locator(".rack-remove-panel")).toContainText("Cisco Switch");
-  await removeDialog.getByRole("button", { name: "Keep it" }).click();
-  await expect(removeDialog).toHaveCount(0);
-  expect(mutations).toEqual([]);
+  const status = page.getByRole("region", { name: "Equipment status" });
+  await page.getByRole("button", { name: "Select Cisco Switch", exact: true }).click();
+  await expect(page.getByRole("complementary").getByRole("heading", { name: "Cisco Switch" })).toBeVisible();
+  await expect(status).toContainText("192.168.1.204");
+  await page.getByRole("button", { name: "Select HPE DL360", exact: true }).click();
+  await expect(page.getByRole("complementary").getByRole("heading", { name: "HPE DL360" })).toBeVisible();
+  await expect(status).toContainText("192.168.1.201");
 
-  await removeButton.click();
-  await page.locator(".rack-remove-panel").getByRole("button", { name: "Remove from rack" }).click();
-  await expect(page.locator(".rack-unit[aria-label='Open Cisco Switch']")).toHaveCount(0);
-  expect(mutations).toEqual(["DELETE /api/v1/device-inventory/f2c1a9d0-4b31-4a5e-9d10-000000000001"]);
-
-  await page.getByRole("navigation", { name: "Lab Builder navigation" }).getByRole("link", { name: "Runbook" }).click();
-  await expect(page.getByRole("heading", { name: "Build the lab, in order" })).toBeVisible();
-  await expect(page.locator(".simple-step")).toHaveCount(5);
-});
-
-test("rack keeps the server visible while essential iLO controls open beside it", async ({ page }) => {
-  const mutations: string[] = [];
-  page.on("request", (request) => {
-    if (request.method() !== "GET") mutations.push(`${request.method()} ${new URL(request.url()).pathname}`);
-  });
-
-  await page.goto("/simple");
-  await page.locator(".rack-unit[aria-label='Open HPE iLO']").click();
-  await page.getByRole("button", { name: "Configure iLO beside rack" }).click();
-
-  const configurator = page.getByLabel("Configure HPE iLO beside rack");
-  await expect(page.locator(".rack-light-svg")).toBeVisible();
-  await expect(configurator).toBeVisible();
-  await expect(configurator.getByRole("tab", { name: "Access" })).toHaveAttribute("aria-selected", "true");
-  await expect(configurator.getByLabel("iLO access credentials")).toBeVisible();
-  await expect(configurator.getByLabel("iLO host or initial IP")).toHaveValue("192.168.1.201");
-
-  await configurator.getByRole("tab", { name: "iLO settings" }).click();
-  await expect(configurator.getByLabel("iLO setup settings")).toBeVisible();
-  await configurator.getByRole("tab", { name: "Checks" }).click();
-  await expect(configurator.getByLabel("iLO workspace server controls")).toContainText("iLO read-only checks");
-  await expect(configurator.getByRole("button", { name: /reset|rebuild|apply|install/i })).toHaveCount(0);
-
-  await configurator.getByRole("button", { name: "Back to device" }).click();
-  await expect(page.locator(".rack-inspector").getByRole("heading", { name: "HPE iLO" })).toBeVisible();
+  // The status view has nothing to type into and no hardware actions.
+  await expect(status.locator("input, select, textarea")).toHaveCount(0);
+  await expect(page.locator(".rack-planner").getByRole("button", { name: /reset|rebuild|apply|install|wipe|delete/i })).toHaveCount(0);
   expect(mutations).toEqual([]);
 });
 
-test("rack keeps Cisco setup beside the rack without running hardware checks", async ({ page }) => {
-  const mutations: string[] = [];
-  page.on("request", (request) => {
-    if (request.method() !== "GET") mutations.push(`${request.method()} ${new URL(request.url()).pathname}`);
-  });
-
-  await page.goto("/simple");
-  await page.locator(".rack-unit[aria-label='Open Cisco Switch']").click();
-  await page.getByRole("button", { name: "Configure Cisco switch beside rack" }).click();
-
-  const configurator = page.getByLabel("Configure Cisco Switch beside rack");
-  await expect(page.locator(".rack-light-svg")).toBeVisible();
-  await expect(configurator).toBeVisible();
-  await expect(configurator.getByLabel("Cisco switch workspace")).toBeVisible();
-  await expect(configurator.getByLabel("Cisco switch main setup fields")).toContainText("Management IP");
-  await expect(configurator.getByLabel("Cisco console first contact")).toBeVisible();
-  await expect(configurator.getByLabel("Cisco switch visual setup editor")).toBeVisible();
-  await expect(configurator.getByRole("button", { name: "Run Cisco read-only check" })).toBeVisible();
-  await expect(configurator.getByRole("button", { name: /Apply Bootstrap|Reset|Rebuild|Factory reset|Firmware upgrade/i })).toHaveCount(0);
-
-  await configurator.getByRole("button", { name: "Back to device" }).click();
-  await expect(page.locator(".rack-inspector").getByRole("heading", { name: "Cisco Switch" })).toBeVisible();
-  expect(mutations).toEqual([]);
-});
-
-test("rack workspace never turns stale provider evidence green and stays responsive", async ({ page }) => {
-  const staleProviders = providerStatuses().map((provider) => ({
-    ...provider,
-    freshness: "stale",
-    is_current: false,
-    status: "ready"
-  }));
+test("My Rack never turns stale provider evidence green and stays responsive", async ({ page }) => {
+  const staleProviders = providerStatuses().map((provider) => ({ ...provider, freshness: "stale", is_current: false, status: "ready" }));
   await page.route("**/api/v1/providers/status", (route) => json(route, staleProviders));
+  // The server's own iLO read is old: it answered once, but that proof has aged out.
+  await page.route("**/api/v1/providers/ilo-redfish/access-settings?*", (route) =>
+    json(route, iloAccessSettings({ last_probe_freshness: "stale", last_probe_is_current: false })));
 
   for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 900 }]) {
     await page.setViewportSize(viewport);
     await page.goto("/simple");
-    await expect(page.locator(".rack-unit.is-ready")).toHaveCount(0);
-    await expect(page.locator(".rack-inspector-status")).toContainText("Not checked");
+    await expect(page.getByRole("heading", { name: "My Rack", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Select HPE DL360", exact: true }).click();
+    // Green needs current proof bound to this exact target; stale proof is never green.
+    await expect(page.locator(".rack-planner .sd-uled.ok")).toHaveCount(0);
+    const status = page.getByRole("region", { name: "Equipment status" });
+    await expect(status).toContainText("Needs recheck");
+    await expect(status).not.toContainText("Connected at last check");
     const metrics = await page.evaluate(() => ({ body: document.body.scrollWidth, root: document.documentElement.scrollWidth, viewport: window.innerWidth }));
     expect(metrics.body).toBeLessThanOrEqual(metrics.viewport + 1);
     expect(metrics.root).toBeLessThanOrEqual(metrics.viewport + 1);
   }
 });
 
-test("rack fails closed instead of showing an empty lab when the backend is disconnected", async ({ page }) => {
+test("My Rack fails closed instead of showing an empty lab when the backend is disconnected", async ({ page }) => {
   await page.route("**/health", (route) => route.fulfill({ status: 500, contentType: "text/plain", body: "Internal Server Error" }));
-  await page.route("**/api/v1/device-inventory", (route) => route.fulfill({ status: 500, contentType: "text/plain", body: "Internal Server Error" }));
+  await page.route("**/api/v1/rack-plans/**", (route) => route.fulfill({ status: 500, contentType: "text/plain", body: "Internal Server Error" }));
 
   await page.goto("/simple");
 
-  await expect(page.getByRole("alert")).toContainText("Backend disconnected");
-  await expect(page.getByRole("alert")).toContainText("Rack data has not been loaded");
-  await expect(page.getByRole("button", { name: "Add equipment" })).toBeDisabled();
-  await expect(page.getByText("Build your rack")).toHaveCount(0);
-  await expect(page.getByText("R1 · 0 devices")).toHaveCount(0);
+  await expect(page.locator(".rack-planner").getByRole("alert")).toContainText("The Lab Builder backend is unavailable");
+  await expect(page.getByRole("button", { name: "Edit rack", exact: true })).toBeDisabled();
+  await expect(page.getByRole("heading", { name: /Your equipment\s*0/ })).toHaveCount(0);
   await expect(page.getByText("Internal Server Error")).toHaveCount(0);
 });
 
-test("iLO save explains a backend disconnect instead of exposing an internal server error", async ({ page }) => {
-  await page.goto("/simple");
-  await page.getByRole("button", { name: "Add equipment" }).click();
-  await page.route("**/api/v1/device-inventory", (route) => {
-    if (route.request().method() === "POST") {
-      return route.fulfill({ status: 500, contentType: "text/plain", body: "Internal Server Error" });
-    }
-    return route.fallback();
-  });
+test("iLO save on Connect explains a backend disconnect instead of exposing an internal server error", async ({ page }) => {
+  await page.route("**/api/v1/providers/ilo-redfish/access-settings?*", (route) => route.request().method() === "PUT"
+    ? route.fulfill({ status: 500, contentType: "text/plain", body: "Internal Server Error" })
+    : route.fallback());
+  await page.goto("/setup/connect?device=f2c1a9d0-4b31-4a5e-9d10-000000000002");
 
-  await page.getByLabel("Device name").fill("Disconnected iLO");
-  await page.getByLabel("Current iLO DHCP address").fill("192.0.2.11");
-  await page.getByLabel("iLO username or UID").fill("Administrator");
-  await page.getByLabel("iLO password").fill("mock-only-password");
-  await page.getByRole("button", { name: "Save iLO and continue" }).click();
+  await page.getByLabel("Current iLO address", { exact: true }).fill("192.0.2.11");
+  await page.getByLabel("iLO username", { exact: true }).fill("Administrator");
+  await page.getByRole("button", { name: "Save and check connection" }).click();
 
-  await expect(page.locator(".operator-feedback.error")).toHaveText("The Lab Builder backend is unavailable. Reconnect it, then try again.");
+  await expect(page.getByRole("alert").filter({ hasText: "backend" })).toHaveText("The Lab Builder backend is unavailable. Reconnect it, then try again.");
   await expect(page.getByText("Internal Server Error")).toHaveCount(0);
 });
 
-test("rack iLO onboarding saves the DHCP target and credentials without probing it", async ({ page }) => {
-  const writes: Array<{ deviceId: string | null; method: string; path: string; payload: Record<string, unknown> }> = [];
+test("saving iLO access on Server & iLO stores the target and credentials without probing", async ({ page }) => {
+  const writes: Array<{ deviceId: string | null; method: string; payload: Record<string, unknown> }> = [];
   const hardwareChecks: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
-    const path = url.pathname;
-    if (request.method() !== "GET" && (path === "/api/v1/device-inventory" || path === "/api/v1/providers/ilo-redfish/access-settings")) {
-      writes.push({ deviceId: url.searchParams.get("device_id"), method: request.method(), path, payload: request.postDataJSON() as Record<string, unknown> });
+    if (request.method() === "PUT" && url.pathname === "/api/v1/providers/ilo-redfish/access-settings") {
+      writes.push({ deviceId: url.searchParams.get("device_id"), method: request.method(), payload: request.postDataJSON() as Record<string, unknown> });
     }
-    if (request.method() !== "GET" && (path.includes("workflow") || path.includes("probe") || path.includes("inventory-read"))) {
-      hardwareChecks.push(`${request.method()} ${path}`);
+    if (request.method() !== "GET" && (url.pathname.includes("workflow") || url.pathname.includes("probe") || url.pathname.includes("inventory-read"))) {
+      hardwareChecks.push(`${request.method()} ${url.pathname}`);
     }
   });
 
-  await page.goto("/simple");
-  await page.getByRole("button", { name: "Add equipment" }).click();
-  await expect(page.getByLabel("Device type")).toHaveValue("ilo");
-  await expect(page.getByLabel("iLO onboarding steps")).toContainText("Locate iLO");
-  await expect(page.getByLabel("iLO onboarding steps")).toContainText("Sign in");
-  await expect(page.getByLabel("iLO onboarding steps")).toContainText("Verify");
+  const panel = await openServerIloPanel(page);
+  const access = panel.getByLabel("iLO access credentials");
+  await access.getByLabel("iLO host or initial IP").fill("192.168.1.211");
+  await access.getByLabel("iLO username / UID").fill("Administrator");
+  await access.getByLabel("iLO password").fill("mock-first-contact-password");
+  await access.getByRole("button", { name: "Save iLO access" }).click();
 
-  await page.getByLabel("Device name").fill("HPE iLO 2");
-  await page.getByLabel("Current iLO DHCP address").fill("192.168.1.211");
-  await page.getByLabel("iLO username or UID").fill("Administrator");
-  await page.getByLabel("iLO password").fill("mock-first-contact-password");
-  await page.getByRole("button", { name: "Save iLO and continue" }).click();
-
-  const addedIlo = page.locator(".rack-unit[aria-label='Open HPE iLO 2']");
-  await expect(addedIlo).toBeVisible();
-  await expect(addedIlo).toHaveClass(/is-not-checked/);
-  await expect(page.locator(".rack-inspector")).toContainText("192.168.1.211");
-  await expect(page.locator(".rack-inspector")).toContainText("Step 3 of 3");
-  await expect(page.getByRole("button", { name: "Configure iLO beside rack" })).toBeVisible();
-  await page.getByRole("button", { name: "Configure iLO beside rack" }).click();
-  await expect(page.getByLabel("Configure HPE iLO beside rack")).toBeVisible();
-
-  expect(writes).toHaveLength(2);
+  await expect.poll(() => writes.length).toBe(1);
   expect(writes[0]).toMatchObject({
-    method: "POST",
-    path: "/api/v1/device-inventory",
-    payload: { device_type: "ilo", display_name: "HPE iLO 2", dhcp_enabled: true, host: "192.168.1.211" }
+    deviceId: "f2c1a9d0-4b31-4a5e-9d10-000000000002",
+    payload: { host: "192.168.1.211", username: "Administrator" }
   });
-  expect(writes[1]).toMatchObject({
-    deviceId: "custom-5",
-    method: "PUT",
-    path: "/api/v1/providers/ilo-redfish/access-settings",
-    payload: { host: "192.168.1.211", username: "Administrator", verify_tls: false }
-  });
-  expect(writes[1].payload.password).toBeTruthy();
+  expect(writes[0].payload.password).toBeTruthy();
   expect(hardwareChecks).toEqual([]);
 });
 
-test("rack keeps two iLO device access settings isolated after reload", async ({ page }) => {
+test("Connect keeps two servers' iLO access settings isolated after reload", async ({ page }) => {
+  const serverA = "f2c1a9d0-4b31-4a5e-9d10-00000000000a";
+  const serverB = "f2c1a9d0-4b31-4a5e-9d10-00000000000b";
+  await page.route("**/api/v1/rack-plans/*", (route) => json(route, { revision: 1, rack_units: 8, equipment: [
+    { id: "a", device_id: serverA, name: "Server A", kind: "server", model: "HPE DL360 Gen10", position: 2, height: 1, mount: "rack", ports: 0, bay_count: 10, occupied_bays: [] },
+    { id: "b", device_id: serverB, name: "Server B", kind: "server", model: "HPE DL360 Gen10", position: 4, height: 1, mount: "rack", ports: 0, bay_count: 10, occupied_bays: [] }
+  ] }));
   const accessWriteDeviceIds: Array<string | null> = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (request.method() === "PUT" && url.pathname === "/api/v1/providers/ilo-redfish/access-settings") {
-      accessWriteDeviceIds.push(url.searchParams.get("device_id"));
-    }
+    if (request.method() === "PUT" && url.pathname === "/api/v1/providers/ilo-redfish/access-settings") accessWriteDeviceIds.push(url.searchParams.get("device_id"));
   });
 
-  async function addAndConfigureIlo(
-    name: string,
-    onboardingHost: string,
-    onboardingUsername: string,
-    savedHost: string,
-    savedUsername: string
-  ) {
-    await page.getByRole("button", { name: "Add equipment" }).click();
-    await page.getByLabel("Device name").fill(name);
-    await page.getByLabel("Current iLO DHCP address").fill(onboardingHost);
-    await page.getByLabel("iLO username or UID").fill(onboardingUsername);
-    await page.getByLabel("iLO password").fill(`mock-${name}-onboarding-password`);
-    await page.getByRole("button", { name: "Save iLO and continue" }).click();
-
-    const inspector = page.locator(".rack-inspector");
-    await expect(inspector.getByRole("heading", { name })).toBeVisible();
-    await inspector.getByRole("button", { name: "Configure iLO beside rack" }).click();
-    const configurator = page.getByLabel("Configure HPE iLO beside rack");
-    await configurator.getByLabel("iLO host or initial IP").fill(savedHost);
-    await configurator.getByLabel("iLO username / UID").fill(savedUsername);
-    await configurator.getByLabel("iLO password").fill(`mock-${name}-saved-password`);
-    await configurator.getByRole("button", { name: "Save iLO access" }).click();
-    await expect(configurator).toContainText("iLO access saved locally");
-    await configurator.getByRole("button", { name: "Back to device" }).click();
+  async function saveFor(deviceId: string, host: string, username: string) {
+    await page.goto(`/setup/connect?device=${deviceId}`);
+    await page.getByLabel("Current iLO address", { exact: true }).fill(host);
+    await page.getByLabel("iLO username", { exact: true }).fill(username);
+    await page.getByLabel("iLO password", { exact: true }).fill(`mock-${username}-password`);
+    await page.getByRole("button", { name: "Save and check connection" }).click();
+    await expect.poll(() => accessWriteDeviceIds.filter((id) => id === deviceId).length).toBe(1);
   }
-
-  await page.goto("/simple");
-  await addAndConfigureIlo("Server A iLO", "192.168.1.211", "onboard-a", "192.168.1.221", "operator-a");
-  await addAndConfigureIlo("Server B iLO", "192.168.1.212", "onboard-b", "192.168.1.222", "operator-b");
-
-  expect(accessWriteDeviceIds).toEqual(["custom-5", "custom-5", "custom-6", "custom-6"]);
+  await saveFor(serverA, "192.168.1.221", "operator-a");
+  await saveFor(serverB, "192.168.1.222", "operator-b");
+  expect(accessWriteDeviceIds).toEqual([serverA, serverB]);
 
   await page.reload();
-  const inspector = page.locator(".rack-inspector");
-  await page.locator(".rack-unit[aria-label='Open Server A iLO']").click();
-  await expect(inspector).toContainText("192.168.1.221");
-  await inspector.getByRole("button", { name: "Configure iLO beside rack" }).click();
-  let configurator = page.getByLabel("Configure HPE iLO beside rack");
-  await expect(configurator.getByLabel("iLO host or initial IP")).toHaveValue("192.168.1.221");
-  await expect(configurator.getByLabel("iLO username / UID")).toHaveValue("operator-a");
-  await configurator.getByRole("button", { name: "Back to device" }).click();
-
-  await page.locator(".rack-unit[aria-label='Open Server B iLO']").click();
-  await expect(inspector).toContainText("192.168.1.222");
-  await inspector.getByRole("button", { name: "Configure iLO beside rack" }).click();
-  configurator = page.getByLabel("Configure HPE iLO beside rack");
-  await expect(configurator.getByLabel("iLO host or initial IP")).toHaveValue("192.168.1.222");
-  await expect(configurator.getByLabel("iLO username / UID")).toHaveValue("operator-b");
+  const equipment = page.getByLabel("Equipment to connect");
+  await equipment.selectOption({ label: "Server A" });
+  await expect(page.getByLabel("Current iLO address", { exact: true })).toHaveValue("192.168.1.221");
+  await expect(page.getByLabel("iLO username", { exact: true })).toHaveValue("operator-a");
+  await equipment.selectOption({ label: "Server B" });
+  await expect(page.getByLabel("Current iLO address", { exact: true })).toHaveValue("192.168.1.222");
+  await expect(page.getByLabel("iLO username", { exact: true })).toHaveValue("operator-b");
 });
 
-test("rack home adds and edits equipment before opening rack-side configuration", async ({ page }) => {
-  const inventoryWrites: string[] = [];
+test("My Rack adds, renames and saves equipment through Edit rack", async ({ page }) => {
+  let savedPlan: Record<string, any> | null = null;
   page.on("request", (request) => {
-    const path = new URL(request.url()).pathname;
-    if (path.startsWith("/api/v1/device-inventory") && request.method() !== "GET") {
-      inventoryWrites.push(`${request.method()} ${path}`);
-    }
+    const url = new URL(request.url());
+    if (request.method() === "PUT" && url.pathname.startsWith("/api/v1/rack-plans/")) savedPlan = request.postDataJSON() as Record<string, any>;
   });
-
-  await page.goto("/");
-  await expect(page).toHaveURL(/\/simple$/);
-  await expect(page.locator(".rack-unit")).toHaveCount(5);
-  await expect(page.locator(".rack-unit[aria-label='Open HPE iLO']")).toHaveCount(1);
-  await expect(page.locator(".rack-unit[aria-label='Open ESXi Host']")).toHaveCount(1);
-
-  await page.getByRole("button", { name: "Add equipment" }).click();
-  await page.getByLabel("Device type").fill("server");
-  await page.getByLabel("Device name").fill("Server 2");
-  await page.getByLabel("Device host").fill("192.168.1.212");
-  await page.getByLabel("Device notes").fill("Second rack server");
-  await page.getByRole("button", { name: "Add to rack" }).click();
-
-  await expect(page.locator(".rack-unit")).toHaveCount(6);
-  await expect(page.locator(".rack-inspector").getByRole("heading", { name: "Server 2" })).toBeVisible();
-  await expect(page.locator(".rack-inspector")).toContainText("192.168.1.212");
-
-  await page.getByRole("button", { name: "Edit rack details" }).click();
-  await page.getByLabel("Device name").fill("Server 2 - DL380");
-  await page.getByLabel("Device host").fill("192.168.1.213");
-  await page.getByRole("button", { name: "Save rack details" }).click();
-
-  await expect(page.locator(".rack-unit[aria-label='Open Server 2 - DL380']")).toBeVisible();
-  await expect(page.locator(".rack-inspector")).toContainText("192.168.1.213");
-  await expect(page.locator(".rack-inspector").getByRole("button", { name: "Configure server beside rack" })).toBeVisible();
-  await page.locator(".rack-inspector").getByRole("button", { name: "Configure server beside rack" }).click();
-  await expect(page.getByLabel("Configure Server 2 - DL380 beside rack")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open detailed workspace" })).toHaveAttribute("href", "/server");
-  expect(inventoryWrites).toEqual([
-    "POST /api/v1/device-inventory",
-    "PATCH /api/v1/device-inventory/custom-5"
-  ]);
-});
-
-test("rack drills from a machine into its named datastores without leaving the page", async ({ page }) => {
-  const mutations: string[] = [];
-  page.on("request", (request) => {
-    if (request.method() !== "GET") mutations.push(`${request.method()} ${new URL(request.url()).pathname}`);
-  });
-
   await page.goto("/simple");
-  await page.locator(".rack-unit[aria-label='Open HPE iLO']").click();
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Edit rack", exact: true }).click();
+  await page.getByRole("button", { name: "Place Cisco switch", exact: true }).click();
+  await page.getByRole("button", { name: "Place at U5", exact: true }).click();
+  await expect(page.locator(".rack-planner").getByRole("status")).toContainText("placed at U5");
+  await page.getByLabel("Equipment name", { exact: true }).fill("Core switch 2");
+  await page.getByRole("button", { name: "Save changes" }).click();
 
-  // Level 2: what is inside the selected machine, with each local volume
-  // named exactly as the controller reports it.
-  const inside = page.getByLabel("Inside HPE iLO");
-  await expect(inside).toBeVisible();
-  await expect(inside.getByRole("button", { name: /ESXi host/ })).toBeVisible();
-  const datastore = inside.getByRole("button", { name: /VM datastore/ });
-  await expect(datastore).toBeVisible();
-  await expect(datastore).toContainText("RAID5");
-  await expect(inside.getByRole("button", { name: /ESXi OS/ })).toContainText("RAID1");
-
-  // Shared storage stays a reference: it belongs to the NetApp, not this box.
-  await expect(page.getByLabel("Shared storage available to this machine")).toContainText("NetApp ONTAP");
-
-  // Level 3: configuring one datastore keeps the rack and the contents visible.
-  await datastore.click();
-  const config = page.getByLabel("Configure VM datastore");
-  await expect(config).toBeVisible();
-  await expect(config).toContainText("Rack");
-  await expect(config).toContainText("VM datastore");
-  await expect(page.locator(".rack-light-svg")).toBeVisible();
-  await expect(inside).toBeVisible();
-
-  // The chassis bay map shows every bay, marking which belong to this volume.
-  const bayMap = config.getByLabel("Drive bays in this chassis");
-  await expect(bayMap.locator(".machine-bay")).toHaveCount(8);
-  await expect(bayMap.locator(".machine-bay.is-owned")).toHaveCount(5);
-
-  // Destructive storage work stays behind the guarded workspace.
-  await expect(config.getByRole("link", { name: "Open local storage & RAID" })).toHaveAttribute("href", "/storage");
-  await expect(config.getByRole("button", { name: /Apply|Reset|Rebuild|Wipe|Delete/i })).toHaveCount(0);
-
-  await config.getByRole("button", { name: "Close" }).click();
-  await expect(config).toHaveCount(0);
-  await expect(inside).toBeVisible();
-
-  expect(mutations).toEqual([]);
+  await expect.poll(() => savedPlan).not.toBeNull();
+  const added = (savedPlan!.equipment as Array<Record<string, unknown>>).find((item) => item.name === "Core switch 2");
+  expect(added).toMatchObject({ kind: "switch", position: 5 });
+  await expect(page.getByText("Rack plan saved. No hardware changed.")).toBeVisible();
+  await page.getByRole("button", { name: "Done editing" }).click();
+  await expect(page.getByRole("button", { name: "Select Core switch 2", exact: true })).toBeVisible();
 });
+
+
+
+
+
+
+
+
+
 
 async function installApiMocks(page: Page) {
   const seededIloDeviceId = "f2c1a9d0-4b31-4a5e-9d10-000000000002";
@@ -2927,6 +2684,12 @@ async function installApiMocks(page: Page) {
     return deviceInventory;
   };
   const topologyDesignDrafts = new Map<string, Record<string, unknown>>();
+  // Saved rack plan for the seeded kit: the server's device id is the seeded iLO record.
+  let rackPlan: Record<string, any> = { revision: 1, rack_units: 12, equipment: [
+    { id: "rack-switch", device_id: "f2c1a9d0-4b31-4a5e-9d10-000000000001", name: "Cisco Switch", kind: "switch", model: "Catalyst 9300", position: 12, height: 1, mount: "rack", ports: 24, uplink_ports: 4, bay_count: 0, occupied_bays: [] },
+    { id: "rack-server", device_id: seededIloDeviceId, name: "HPE DL360", kind: "server", model: "HPE DL360 Gen10", position: 10, height: 1, mount: "rack", ports: 0, bay_count: 10, occupied_bays: [1, 2, 3, 4] },
+    ...(labProfileScenario === "single" ? [] : [{ id: "rack-netapp", device_id: "f2c1a9d0-4b31-4a5e-9d10-000000000004", name: "NetApp ONTAP", kind: "storage", model: "NetApp 24 SFF", position: 7, height: 2, mount: "rack", ports: 0, bay_count: 24, occupied_bays: [] }])
+  ] };
   await page.route("**/*", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -2947,6 +2710,15 @@ async function installApiMocks(page: Page) {
     }
     if (!url.pathname.startsWith("/api/v1/")) {
       return route.continue();
+    }
+    // The rack (My Rack, Add equipment, Connect) is drawn from the saved rack plan.
+    if (url.pathname.startsWith("/api/v1/rack-plans/") && url.pathname.split("/").length === 5) {
+      if (request.method() === "PUT") {
+        const next = request.postDataJSON() as Record<string, any>;
+        rackPlan = { ...next, revision: Number(rackPlan.revision) + 1,
+          equipment: (next.equipment as Array<Record<string, unknown>>).map((item) => ({ ...item, device_id: item.device_id ?? item.id })) };
+      }
+      return json(route, rackPlan);
     }
     if (url.pathname === "/api/v1/device-inventory") {
       const devices = seededDeviceInventory();
@@ -4922,7 +4694,7 @@ test("iLO settings prefill from device values when nothing is saved yet", async 
   );
 
   await page.goto("/simple");
-  const settings = await openRackIloSettings(page);
+  const settings = await openServerIloSettings(page);
   await expect(settings).toContainText("Pre-filled with values read from the device");
   await expect(settings.getByLabel("DNS Name")).toHaveValue("DOP-X87-iLOSrv4");
   await expect(settings.getByLabel("Subnet Mask / Prefix")).toHaveValue("255.255.255.0");
@@ -4953,7 +4725,7 @@ test("saved iLO settings win over discovered device values", async ({ page }) =>
   );
 
   await page.goto("/simple");
-  const settings = await openRackIloSettings(page);
+  const settings = await openServerIloSettings(page);
   const dnsName = settings.getByLabel("DNS Name");
   await expect(dnsName).toHaveValue("operator-chosen-name");
   // The operator's saved value differs from the device value, so no
@@ -4987,7 +4759,7 @@ test("editing a prefilled iLO setting saves the operator's value through the unc
   );
 
   await page.goto("/simple");
-  const settings = await openRackIloSettings(page);
+  const settings = await openServerIloSettings(page);
   const dnsName = settings.getByLabel("DNS Name");
   await expect(dnsName).toHaveValue("DOP-X87-iLOSrv4");
   await dnsName.fill("renamed-by-operator");
@@ -5019,7 +4791,7 @@ test("iLO DHCP mode shows discovered addresses and saves no static address inten
   );
 
   await page.goto("/simple");
-  const settings = await openRackIloSettings(page);
+  const settings = await openServerIloSettings(page);
   // "DHCP" is a substring of several field labels (Use DHCP Time, the DHCPv6
   // toggles) — anchor on the exact field span instead.
   const dhcp = settings

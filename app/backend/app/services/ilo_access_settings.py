@@ -293,7 +293,16 @@ def _last_probe_summary(host: str | None, config: IloRedfishConfig) -> dict[str,
         and host
         and target_fingerprint == ilo_target_fingerprint(host)
     )
+    verified = (source_metadata["is_current"] and target_matches_access_host
+                and result.get("status") == "ok" and result.get("mode") != "mock"
+                and result.get("source_type") not in {"mock", "test_fixture"})
+    managers = result.get("managers") or []
+    systems = result.get("systems") or []
+    ilo_version = managers[0].get("FirmwareVersion") if len(managers) == 1 and isinstance(managers[0], dict) else None
+    bios_version = (systems[0].get("BiosVersion") or systems[0].get("BIOSVersion")) if len(systems) == 1 and isinstance(systems[0], dict) else None
     return {
+        "observed_ilo_firmware": ilo_version if verified and isinstance(ilo_version, str) else None,
+        "observed_bios_version": bios_version if verified and isinstance(bios_version, str) else None,
         "last_probe_status": _clean_optional(result.get("status")) or "unknown",
         "last_probe_time": checked_at,
         "last_probe_freshness": source_metadata["freshness"],

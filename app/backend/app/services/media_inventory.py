@@ -39,10 +39,22 @@ SAMPLE_MEDIA_ITEMS = [
 ]
 
 
+def configured_media_directories(
+    directories: tuple[str, ...], provider_mode: str,
+) -> tuple[str, ...]:
+    """Use the app's mounted media folder when no narrower roots were configured."""
+    if directories or provider_mode == "mock":
+        return directories
+    mounted_root = os.getenv("FIRMWARE_MEDIA_ROOT", "").strip()
+    return (mounted_root,) if mounted_root else ()
+
+
 def get_media_inventory(
     directories: tuple[str, ...] | None = None,
 ) -> MediaInventoryRead:
-    configured_directories = directories if directories is not None else settings.media_inventory_dirs
+    configured_directories = directories if directories is not None else configured_media_directories(
+        settings.media_inventory_dirs, settings.provider_mode,
+    )
     if not configured_directories:
         if settings.provider_mode != "mock":
             return MediaInventoryRead(

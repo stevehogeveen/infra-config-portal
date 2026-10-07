@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import os
 
 from app.core.config import settings
 from app.services.lab_safety_settings import read_lab_safety_overrides
@@ -55,7 +56,15 @@ ALLOWLISTED_WORKFLOW_ACTIONS = frozenset(
         "ilo-redfish.inventory",
         "ilo-redfish.readiness",
         "ilo-redfish.hpe-raid-apply",
+        "ilo-redfish.esxi-virtual-media",
+        "ilo-redfish.esxi-boot-once",
+        "ilo-redfish.esxi-power",
+        "esxi.datastore-create",
+        "esxi.vm-deploy",
+        "esxi.vm-power",
+        "ilo-redfish.disk-sanitize",
         "ilo-redfish.hpe-raid-factory-reset",
+        "ilo-redfish.raid-shutdown",
         "ilo-redfish.hpe-raid-reset",
         "ilo-redfish.hpe-raid-validate-after-reset",
         "cisco-console.bootstrap",
@@ -79,7 +88,10 @@ ALLOWLISTED_WORKFLOW_ACTIONS = frozenset(
         "netapp.ontap-upgrade",
         "netapp.component-firmware",
         "ilo.power-action",
+        "ilo-redfish.raid-boot",
         "ilo.firmware-update",
+        "ilo.component-update",
+        "ilo-redfish.firmware-restart",
         "lab.factory-reset",
     }
 )
@@ -177,6 +189,25 @@ class LabActionPolicy:
             ]
 
         blockers = self.readonly_blockers()
+        override = None
+        if category not in {ActionCategory.READONLY, ActionCategory.APP_STATE_WRITE}:
+            from app.services.runtime_write_scope import runtime_override
+            from sqlalchemy.exc import SQLAlchemyError
+            try:
+                override = runtime_override()
+            except SQLAlchemyError:
+                return [*blockers, "Runtime write permissions could not be read. No hardware write is allowed."]
+        write_scope = os.getenv("LAB_ALLOWED_WRITE_ACTIONS")
+        if override is not None:
+            from app.services.runtime_write_scope import ESXI_INSTALL_ACTIONS, FIRMWARE_ACTIONS, STORAGE_ACTIONS, VM_DEPLOY_ACTIONS
+            write_scope = (",".join(sorted(FIRMWARE_ACTIONS)) if override == "firmware_only"
+                           else ",".join(sorted(STORAGE_ACTIONS)) if override == "storage_only"
+                           else ",".join(sorted(ESXI_INSTALL_ACTIONS)) if override == "esxi_install_only"
+                           else ",".join(sorted(VM_DEPLOY_ACTIONS)) if override == "vm_deploy_only" else "")
+        if write_scope is not None and category not in {ActionCategory.READONLY, ActionCategory.APP_STATE_WRITE}:
+            allowed = {value.strip() for value in write_scope.split(",") if value.strip()}
+            if action_id not in allowed:
+                blockers.append("This hardware action is outside the enabled live-operation scope.")
         if action_id not in ALLOWLISTED_WORKFLOW_ACTIONS:
             blockers.append(f"{action_id} is not represented in an explicit allowlisted workflow step.")
         if category in BASE_LOCAL_LAB_READWRITE_CATEGORIES:
@@ -192,6 +223,12 @@ class LabActionPolicy:
             "LAB_ALLOW_FIRMWARE_UPDATES": self.allow_firmware_updates,
             "LAB_ALLOW_FACTORY_RESET": self.allow_factory_reset,
         }[flag_name]
+        if override is not None:
+            flag_enabled = (
+                (override == "firmware_only" and category in {ActionCategory.FIRMWARE_UPDATE, ActionCategory.POWER_ACTION})
+                or (override == "storage_only" and category == ActionCategory.POWER_ACTION)
+                or (override == "esxi_install_only" and category == ActionCategory.POWER_ACTION)
+            )
         if not flag_enabled:
             blockers.append(f"{flag_name}=true is required for {category.value}.")
         return blockers

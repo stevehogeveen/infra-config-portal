@@ -1,0 +1,1987 @@
+<title>Lab Builder Studio</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  color-scheme:light;
+  --page:#E9EFF4; --canvas:#F6F9FB; --surface:#FFFFFF; --surface-2:#FAFCFD; --sunk:#EEF3F7;
+  --ink:#0D1B2A; --ink-2:#2E4153; --muted:#55677A; --faint:#8494A5; --faint-text:#5B6C7E; --line:#DCE4EB; --line-2:#E9EFF4;
+  --orange:#E2570F; --orange-hi:#F26B24; --orange-lo:#BF4508; --orange-ink:#FFFFFF; --btn-a:#CC4A0A; --btn-b:#AA3C05; --btn-kbd:rgba(0,0,0,.2); --orange-wash:#FFF1E6; --orange-line:#F6C6A3; --orange-ring:rgba(226,87,15,.20);
+  --ocean:#0F4C75; --ocean-2:#1F6FA3; --ocean-deep:#0A3150; --ocean-wash:#EAF3FA; --ocean-line:#BCD5E8; --ocean-ring:rgba(31,111,163,.22);
+  --sky:#9CCBEB; --sky-wash:#F0F7FC; --sand:#F7EFE5; --sand-line:#E6D6C2; --sand-ink:#6B4B26;
+  --proof:#127A4B; --proof-wash:#E4F4EB; --proof-line:#A6D7BA; --led:#2BC873;
+  --warn:#7C5700; --warn-wash:#FCF4DE; --warn-line:#E9CF8C;
+  --danger:#B42D24; --danger-wash:#FDECEA; --danger-line:#F0B8B2;
+  --metal-a:#FDFDFE; --metal-b:#E7ECF1; --metal-c:#C3CDD8; --hole:#4A5663; --rail-ink:#5E6A77;
+  --cav-a:#BFC9D4; --cav-b:#E0E6EC; --slot-ink:#56626E;
+  --stage-top:#FFFFFF; --stage-bot:#E8EFF5; --floor:rgba(10,49,80,.34);
+  --shadow-1:0 1px 2px rgba(13,27,42,.06),0 1px 1px rgba(13,27,42,.03);
+  --shadow-2:0 1px 2px rgba(13,27,42,.05),0 16px 36px -20px rgba(13,40,70,.30);
+  --shadow-3:0 50px 90px -46px rgba(13,40,70,.45);
+  --art-filter:none;
+  --sans:"Geist","Segoe UI",system-ui,-apple-system,Arial,sans-serif;
+  --mono:"Geist Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --voice:"Fraunces","Iowan Old Style",Georgia,serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --page:#070C12; --canvas:#0C141C; --surface:#121C27; --surface-2:#15202C; --sunk:#0F1822;
+    --ink:#E7EEF5; --ink-2:#C2CFDB; --muted:#93A5B7; --faint:#7F92A6; --faint-text:#8FA2B6; --line:#223245; --line-2:#1A2735;
+    --orange:#FF7B3A; --orange-hi:#FF8F56; --orange-lo:#EE6A28; --orange-ink:#1B0C04; --btn-a:#FF8F56; --btn-b:#EE6A28; --btn-kbd:rgba(0,0,0,.12); --orange-wash:#2B1A10; --orange-line:#6B3A1F; --orange-ring:rgba(255,123,58,.24);
+    --ocean:#7AB8E8; --ocean-2:#98CAF0; --ocean-deep:#BCDCF5; --ocean-wash:#10263A; --ocean-line:#284E6E; --ocean-ring:rgba(122,184,232,.24);
+    --sky:#4F86B0; --sky-wash:#0F1E2C; --sand:#1D1914; --sand-line:#4A3C2C; --sand-ink:#E3C9A4;
+    --proof:#5FD394; --proof-wash:#0F2A1D; --proof-line:#1F5A3B; --led:#3EE08F;
+    --warn:#F0C060; --warn-wash:#2A2110; --warn-line:#5A4520;
+    --danger:#FF8B80; --danger-wash:#2E1414; --danger-line:#6A2A26;
+    --metal-a:#D9DFE5; --metal-b:#B8C1CA; --metal-c:#8A96A2; --hole:#2A333C; --rail-ink:#56616D;
+    --cav-a:#0A1016; --cav-b:#18222C; --slot-ink:#8496AA;
+    --stage-top:#18232F; --stage-bot:#0C141C; --floor:rgba(0,0,0,.7);
+    --shadow-1:0 1px 2px rgba(0,0,0,.4);
+    --shadow-2:0 1px 2px rgba(0,0,0,.4),0 18px 40px -20px rgba(0,0,0,.8);
+    --shadow-3:0 40px 80px -40px rgba(0,0,0,.9);
+    --art-filter:brightness(.86) contrast(1.05);
+  }
+}
+:root[data-theme="dark"]{
+    color-scheme:dark;
+    --page:#070C12; --canvas:#0C141C; --surface:#121C27; --surface-2:#15202C; --sunk:#0F1822;
+    --ink:#E7EEF5; --ink-2:#C2CFDB; --muted:#93A5B7; --faint:#7F92A6; --faint-text:#8FA2B6; --line:#223245; --line-2:#1A2735;
+    --orange:#FF7B3A; --orange-hi:#FF8F56; --orange-lo:#EE6A28; --orange-ink:#1B0C04; --btn-a:#FF8F56; --btn-b:#EE6A28; --btn-kbd:rgba(0,0,0,.12); --orange-wash:#2B1A10; --orange-line:#6B3A1F; --orange-ring:rgba(255,123,58,.24);
+    --ocean:#7AB8E8; --ocean-2:#98CAF0; --ocean-deep:#BCDCF5; --ocean-wash:#10263A; --ocean-line:#284E6E; --ocean-ring:rgba(122,184,232,.24);
+    --sky:#4F86B0; --sky-wash:#0F1E2C; --sand:#1D1914; --sand-line:#4A3C2C; --sand-ink:#E3C9A4;
+    --proof:#5FD394; --proof-wash:#0F2A1D; --proof-line:#1F5A3B; --led:#3EE08F;
+    --warn:#F0C060; --warn-wash:#2A2110; --warn-line:#5A4520;
+    --danger:#FF8B80; --danger-wash:#2E1414; --danger-line:#6A2A26;
+    --metal-a:#D9DFE5; --metal-b:#B8C1CA; --metal-c:#8A96A2; --hole:#2A333C; --rail-ink:#56616D;
+    --cav-a:#0A1016; --cav-b:#18222C; --slot-ink:#8496AA;
+    --stage-top:#18232F; --stage-bot:#0C141C; --floor:rgba(0,0,0,.7);
+    --shadow-1:0 1px 2px rgba(0,0,0,.4);
+    --shadow-2:0 1px 2px rgba(0,0,0,.4),0 18px 40px -20px rgba(0,0,0,.8);
+    --shadow-3:0 40px 80px -40px rgba(0,0,0,.9);
+    --art-filter:brightness(.86) contrast(1.05);
+}
+[hidden]{display:none!important}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;padding:16px;background:var(--page);background-image:radial-gradient(1000px 520px at 8% -8%,rgba(31,111,163,.11),transparent 62%),radial-gradient(760px 420px at 100% 0%,rgba(226,87,15,.08),transparent 60%);color:var(--ink);font:400 14px/1.5 var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden;font-feature-settings:"tnum" 1}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+button:disabled{cursor:not-allowed}
+:focus-visible{outline:2px solid var(--ocean-2);outline-offset:2px}
+.ic{width:16px;height:16px;flex:none;display:inline-block;vertical-align:middle}
+.ic.s{width:13px;height:13px}
+.mono{font-family:var(--mono);font-size:.94em}
+kbd{font:500 10.5px/1 var(--mono);padding:3px 6px;border-radius:6px;border:1px solid var(--line);border-bottom-width:2px;background:var(--surface);color:var(--muted);white-space:nowrap}
+.grow{flex:1}
+
+/* ---------- mockup screen tabs (outside the app) ---------- */
+.demo{max-width:1408px;margin:0 auto 12px;display:flex;align-items:center;gap:12px;min-width:0}
+.demo-l{font:600 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--faint-text);flex:none}
+.tabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;min-width:0;padding:3px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line)}
+.tabs::-webkit-scrollbar{display:none}
+[role=tab]{flex:none;border:1px solid transparent;background:transparent;border-radius:9px;padding:5px 11px;font-size:12.5px;color:var(--muted);white-space:nowrap}
+[role=tab]:hover{color:var(--ink)}
+[role=tab][aria-selected=true]{background:var(--surface);color:var(--ink);border-color:var(--line);box-shadow:var(--shadow-1);font-weight:600}
+[role=tab] i{font-style:normal;color:var(--faint-text);font-size:11px;margin-left:4px;font-weight:400}
+
+/* ---------- app frame + header ---------- */
+.app{max-width:1408px;margin:0 auto;background:var(--canvas);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow-3);overflow:hidden}
+.top{display:flex;align-items:center;gap:8px;padding:11px 18px;background:var(--surface);border-bottom:1px solid var(--line-2);min-width:0}
+.brand{display:flex;align-items:center;gap:10px;font:650 15px var(--sans);letter-spacing:-.01em;white-space:nowrap;margin-right:8px}
+.brand svg{width:30px;height:30px;flex:none}
+.kit{position:relative}
+.kit-btn{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:5px 10px 5px 12px;text-align:left;white-space:nowrap}
+.kit-btn small{display:block;font:600 9.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint-text)}
+.kit-btn b{font-weight:600;font-size:13.5px}
+.menu{position:absolute;z-index:40;top:calc(100% + 6px);left:0;width:250px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-2);padding:6px}
+.menu button{display:flex;width:100%;align-items:center;gap:10px;border:0;background:transparent;padding:8px 10px;border-radius:8px;text-align:left;font-size:13px}
+.menu button:hover{background:var(--sunk)}
+.menu hr{border:0;border-top:1px solid var(--line-2);margin:6px 4px}
+.menu .cur{color:var(--ocean);font-weight:600}
+.lnk{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;border-radius:8px;padding:6px 8px;font-size:12.5px;color:var(--ink-2);white-space:nowrap}
+.lnk:hover{background:var(--sunk);color:var(--ink)}
+.lnk .ic{color:var(--muted)}
+.sep{width:1px;height:22px;background:var(--line);flex:none;margin:0 4px}
+.cmdk{display:flex;align-items:center;gap:10px;min-width:0;width:240px;border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:6px 7px 6px 11px;color:var(--muted);font-size:13px}
+.cmdk span{flex:1;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.icon-btn{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--muted);flex:none}
+.icon-btn:hover{color:var(--ink)}
+
+/* ---------- shell ---------- */
+.shell{display:grid;grid-template-columns:232px minmax(0,1fr);align-items:stretch;min-height:780px}
+.main{min-width:0;padding:20px 22px 26px;display:grid;gap:18px;align-content:start}
+
+/* ---------- rail: build steps + device lights ---------- */
+.rail{border-right:1px solid var(--line-2);background:linear-gradient(180deg,var(--surface),var(--canvas));padding:18px 12px 16px;display:flex;flex-direction:column;gap:18px;min-width:0}
+.rail h4{margin:0 0 8px 8px;font:600 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--faint-text)}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:2px;position:relative}
+.steps::before{content:"";position:absolute;left:19px;top:20px;bottom:20px;border-left:1.5px solid var(--line)}
+.st{position:relative;display:grid;grid-template-columns:26px minmax(0,1fr);gap:10px;align-items:start;width:100%;text-align:left;border:1px solid transparent;background:transparent;border-radius:12px;padding:7px 8px 7px 7px}
+.st:hover:not(:disabled){background:var(--sunk)}
+.st .dot{position:relative;z-index:1;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font:600 11px var(--mono);border:1.5px solid var(--line);color:var(--muted);background:var(--surface)}
+.st b{display:block;font-size:13px;font-weight:600;line-height:1.3}
+.st small{display:block;font-size:11.5px;color:var(--muted);line-height:1.35;margin-top:1px}
+.st.done .dot{background:var(--ocean-wash);border-color:var(--ocean-line);color:var(--ocean)}
+.st.now{background:var(--surface);border-color:var(--orange-line);box-shadow:0 10px 22px -16px rgba(226,87,15,.7)}
+.st.now .dot{background:var(--orange);border-color:var(--orange);color:var(--orange-ink);box-shadow:0 0 0 4px var(--orange-ring)}
+.st.now small{color:var(--orange-lo)}
+.st.next .dot{border-color:var(--ocean-line);color:var(--ocean)}
+.st.lock .dot{border-style:dashed;color:var(--faint-text)}
+.st.lock b{color:var(--muted)}
+.st.viewing:not(.now){background:var(--ocean-wash);border-color:var(--ocean-line)}
+.st.viewing:not(.now) b::after{content:"Viewing";display:inline-block;margin-left:7px;padding:1px 5px;border-radius:5px;border:1px solid var(--ocean-line);background:var(--surface);color:var(--ocean);font:600 9.5px/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;vertical-align:1px}
+.lights{display:flex;gap:4px;margin-top:6px;align-items:center}
+.lights i{width:6px;height:6px;border-radius:50%;border:1.3px solid var(--faint)}
+.lights i.ok{background:var(--ocean-2);border-color:var(--ocean-2)}
+.lights i.bad{background:var(--danger);border-color:var(--danger)}
+.lights em{font:normal 500 10.5px var(--mono);color:var(--faint-text);margin-left:3px}
+.devs{list-style:none;margin:0;padding:0;display:grid;gap:1px}
+.devs button{display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:10px;align-items:center;width:100%;border:0;background:transparent;border-radius:9px;padding:6px 8px;text-align:left;font-size:12.5px;color:var(--ink-2)}
+.devs button:hover{background:var(--sunk)}
+.devs button.cur{background:var(--ocean-wash);color:var(--ink);font-weight:600}
+.devs time{font:500 11px var(--mono);color:var(--faint-text)}
+.devs time.ok{color:var(--proof)}
+.devs time.bad{color:var(--danger)}
+.led{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--faint);display:inline-block;flex:none}
+.led.ok{background:var(--led);border-color:var(--led);box-shadow:0 0 0 3px rgba(43,200,115,.18),0 0 8px var(--led)}
+.led.bad{background:var(--danger);border-color:var(--danger)}
+.rail-foot{margin-top:auto;border-top:1px solid var(--line-2);padding:12px 8px 0;display:grid;gap:8px;font-size:12px;color:var(--muted)}
+.rail-foot .row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.rail-foot .row b{font-weight:600;color:var(--ink-2)}
+.warnlink{border:0;background:none;padding:0;color:var(--warn);font-weight:600;font-size:12px}
+.keys{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11px;color:var(--faint-text)}
+.keys span{display:inline-flex;gap:5px;align-items:center}
+.rail-sum{display:none;width:100%;align-items:center;gap:10px;border:1px solid var(--orange-line);background:var(--surface);border-radius:12px;padding:8px 10px;text-align:left}
+.rail-sum .dot{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font:600 11px var(--mono);background:var(--orange);color:var(--orange-ink);flex:none;box-shadow:0 0 0 4px var(--orange-ring)}
+.rail-sum b{display:block;font-size:13px}
+.rail-sum small{display:block;font-size:11.5px;color:var(--muted)}
+.rail-sum>svg{margin-left:auto;transition:transform .15s}
+.rail.open .rail-sum>svg{transform:rotate(180deg)}
+.more-wrap{display:none}
+.more-wrap .menu{left:auto;right:0;width:220px}
+
+/* ---------- guide banner (Companion voice, fixed top of every screen) ---------- */
+.guide{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 18px;align-items:center;padding:18px 20px 14px;border-radius:20px;border:1px solid var(--line);background:
+  radial-gradient(420px 160px at 0% 0%,rgba(255,176,120,.20),transparent 70%),
+  radial-gradient(520px 200px at 100% 0%,rgba(156,203,235,.28),transparent 70%),var(--surface);box-shadow:var(--shadow-2);overflow:hidden}
+.guide::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:linear-gradient(90deg,var(--ocean),var(--sky) 55%,var(--orange))}
+.orb{width:40px;height:40px;border-radius:50%;flex:none;align-self:start;margin-top:2px;background:radial-gradient(circle at 32% 30%,#fff 0 11%,transparent 12%),conic-gradient(from 210deg,var(--ocean),var(--sky),#F7A36E,var(--orange),var(--ocean));box-shadow:0 8px 18px -6px rgba(15,76,117,.55),inset 0 0 0 2px rgba(255,255,255,.6)}
+.g-eyebrow{margin:0 0 3px;font:600 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.g-eyebrow b{color:var(--orange-lo);font-weight:600}
+.say{margin:0;font:400 21px/1.36 var(--voice);letter-spacing:-.006em;color:var(--ink);max-width:40em;text-wrap:pretty}
+.say em{font-style:normal;font-weight:500;color:var(--ocean)}
+.reassure{display:flex;gap:7px;align-items:flex-start;margin:7px 0 0;font-size:12.5px;color:var(--muted)}
+.reassure .ic{color:var(--ocean-2);margin-top:2px}
+.g-act{display:grid;justify-items:end;gap:6px;align-self:center}
+.g-act .aside{font-size:11.5px;color:var(--muted);text-align:right;max-width:260px}
+.g-more{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:8px 18px;align-items:flex-start;margin-top:8px;padding-top:9px;border-top:1px dashed var(--line)}
+.trail{font-size:12.5px;color:var(--muted);min-width:0}
+.trail summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;color:var(--ocean);font-weight:600;font-size:12.5px}
+.trail summary::-webkit-details-marker{display:none}
+.trail summary::before{content:"";width:6px;height:6px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(-45deg);transition:transform .15s}
+.trail[open] summary::before{transform:rotate(45deg)}
+.trail ol{list-style:none;margin:8px 0 0;padding:0 0 0 14px;border-left:2px solid var(--line);display:grid;gap:6px;max-width:62em}
+.trail li{position:relative;line-height:1.45}
+.trail li::before{content:"";position:absolute;left:-20px;top:5px;width:8px;height:8px;border-radius:50%;background:var(--surface);border:2px solid var(--faint)}
+.trail li.last{color:var(--ink)}
+.trail li.last::before{border-color:var(--ocean);background:var(--ocean)}
+.trail time{font:500 11px var(--mono);color:var(--ocean);margin-right:5px}
+.newlabel{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2)}
+.newlabel>b{font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--sand-ink);background:var(--sand);border:1px solid var(--sand-line);border-radius:6px;padding:3px 6px}
+
+/* ---------- buttons ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:13.5px;font-weight:500;box-shadow:var(--shadow-1);white-space:nowrap;text-decoration:none;max-width:100%}
+.btn:hover:not(:disabled){border-color:var(--ocean-line);background:var(--surface-2)}
+.btn.sm{height:31px;padding:0 11px;font-size:12.5px;border-radius:9px}
+.btn.primary{background:linear-gradient(180deg,var(--btn-a),var(--btn-b));border-color:var(--btn-b);color:var(--orange-ink);font-weight:600;box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 12px 24px -12px rgba(226,87,15,.85)}
+.btn.primary:hover{filter:brightness(1.06);background:linear-gradient(180deg,var(--btn-a),var(--btn-b))}
+.btn.primary kbd{background:var(--btn-kbd);border-color:rgba(0,0,0,.18);color:var(--orange-ink)}
+.btn.big{height:48px;padding:0 14px 0 18px;font-size:15px;border-radius:13px;gap:12px}
+.btn.ocean{color:var(--ocean);border-color:var(--ocean-line);background:var(--ocean-wash)}
+.btn.quiet{background:transparent;border-color:transparent;box-shadow:none;color:var(--ocean)}
+.btn.quiet:hover:not(:disabled){background:var(--ocean-wash)}
+.btn.risk{color:var(--danger);border-color:var(--danger-line)}
+.btn.risk:hover:not(:disabled){background:var(--danger-wash);border-color:var(--danger-line)}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.btn:disabled{opacity:.5;box-shadow:none}
+.btn .tag{font:600 9.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--danger-wash);color:var(--danger)}
+.why{display:inline-flex;gap:6px;align-items:flex-start;font-size:12px;color:var(--muted);line-height:1.4}
+.why .ic{margin-top:1px;color:var(--faint-text)}
+
+/* ---------- provenance chips ---------- */
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:999px;border:1px solid var(--line);font:500 11.5px/1 var(--sans);white-space:nowrap;vertical-align:middle;color:var(--muted);background:var(--surface)}
+.chip .ic{width:11px;height:11px}
+.chip.proof{color:var(--proof);background:var(--proof-wash);border-color:var(--proof-line);font-weight:600}
+.chip.proof::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--proof);box-shadow:0 0 0 2px rgba(18,122,75,.16)}
+.chip.saved{color:var(--ocean);background:var(--ocean-wash);border-color:var(--ocean-line)}
+.chip.rec{color:var(--sand-ink);background:var(--sand);border-color:var(--sand-line)}
+.chip.sugg{color:var(--ocean-2);border-style:dashed;border-color:var(--ocean-line);background:transparent}
+.chip.sugg::before{content:"";width:6px;height:6px;border-radius:50%;border:1.5px solid var(--ocean-2)}
+.chip.blank{color:var(--muted);background:transparent;border:1px dotted var(--faint)}
+.chip.warn{color:var(--warn);background:var(--warn-wash);border-color:var(--warn-line)}
+.chip.danger{color:var(--danger);background:var(--danger-wash);border-color:var(--danger-line)}
+.chip.xs{height:19px;padding:0 7px;font-size:10.5px}
+.chip.long{white-space:normal;height:auto;min-height:22px;line-height:1.3;padding-top:3px;padding-bottom:3px;max-width:100%}
+.chip.src{color:var(--ink-2);background:transparent;border:1px solid var(--line);font:600 9.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;height:20px}
+
+/* ---------- cards ---------- */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-2);padding:18px 20px;min-width:0}
+.card-h{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.card-h h3{margin:0;font-size:16px;font-weight:600;letter-spacing:-.01em}
+.card-h p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.eyebrow{font:600 10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 4px}
+.def{font-size:12px;color:var(--muted)}
+.def b{color:var(--ink-2);font-weight:600}
+.sec{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:6px 2px -4px}
+.sec h2{margin:0;font-size:19px;font-weight:600;letter-spacing:-.015em}
+.hint{font-size:12px;color:var(--muted);line-height:1.45}
+
+/* ---------- equipment art: crop to the face rectangle ---------- */
+.face{position:relative;display:block;overflow:hidden;flex:none}
+.face>img{position:absolute;display:block;max-width:none;max-height:none;user-select:none;-webkit-user-drag:none;pointer-events:none;filter:var(--art-filter)}
+.f-dl360>img{width:102.652%;height:236.686%;left:-1.283%;top:-65.089%}
+.f-dl380>img{width:101.095%;height:195.631%;left:-.590%;top:-43.204%}
+.f-cat>img{width:100.587%;height:358.407%;left:-.251%;top:-122.124%}
+.f-sfp>img{width:100.587%;height:353.043%;left:-.251%;top:-119.130%}
+.f-pdu>img{width:101.523%;height:388.350%;left:-.761%;top:-132.039%}
+.f-ups>img{width:100.925%;height:186.047%;left:-.505%;top:-39.535%}
+.f-eaton>img{width:102.041%;height:341.880%;left:-1.105%;top:-117.094%}
+.f-netapp>img{width:100.840%;height:184.332%;left:-.420%;top:-39.171%}
+.th{width:100%;border-radius:3px;box-shadow:0 6px 12px -6px rgba(13,27,42,.5)}
+.th.f-dl360{aspect-ratio:1169/169}.th.f-dl380{aspect-ratio:1187/206}.th.f-cat{aspect-ratio:1193/113}.th.f-sfp{aspect-ratio:1193/115}
+.th.f-pdu{aspect-ratio:1182/103}.th.f-ups{aspect-ratio:1189/215}.th.f-eaton{aspect-ratio:1176/117}.th.f-netapp{aspect-ratio:1190/217}
+
+/* ---------- stage ---------- */
+.stage{position:relative;container-type:inline-size;border:1px solid var(--line);border-radius:24px;padding:18px 22px 30px;box-shadow:var(--shadow-2);overflow:hidden;min-width:0;
+  background:radial-gradient(55% 45% at 50% 0%,rgba(255,255,255,.95),transparent 70%),radial-gradient(40% 50% at 92% 6%,rgba(226,87,15,.07),transparent 70%),radial-gradient(50% 60% at 4% 100%,rgba(31,111,163,.10),transparent 70%),linear-gradient(180deg,var(--stage-top),var(--stage-bot))}
+.stage.blueprint{background:linear-gradient(rgba(31,111,163,.06) 1px,transparent 1px) 0 0/24px 24px,linear-gradient(90deg,rgba(31,111,163,.06) 1px,transparent 1px) 0 0/24px 24px,radial-gradient(50% 40% at 70% 0%,rgba(255,176,120,.18),transparent 70%),linear-gradient(180deg,var(--stage-top),var(--stage-bot))}
+:root[data-theme="dark"] .stage{background:radial-gradient(55% 45% at 50% 0%,rgba(122,184,232,.10),transparent 70%),linear-gradient(180deg,var(--stage-top),var(--stage-bot))}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .stage{background:radial-gradient(55% 45% at 50% 0%,rgba(122,184,232,.10),transparent 70%),linear-gradient(180deg,var(--stage-top),var(--stage-bot))}}
+.stage::after{content:"";position:absolute;left:0;right:0;bottom:0;height:110px;background:linear-gradient(180deg,transparent,rgba(15,76,117,.05));border-top:1px solid rgba(15,76,117,.05);pointer-events:none}
+.stage-h{position:relative;z-index:2;display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.stage-h h2{margin:0;font-size:19px;font-weight:600;letter-spacing:-.015em}
+.stage-h p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.stagecap{position:relative;z-index:2;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--faint-text);margin:0 0 14px}
+.seg{display:inline-flex;padding:3px;border-radius:10px;background:var(--sunk);border:1px solid var(--line)}
+.seg button{border:0;background:transparent;border-radius:7px;padding:5px 12px;font-size:12.5px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.seg button[aria-pressed=true]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-1);font-weight:600}
+.seg button:disabled{opacity:.45}
+
+/* ---------- the rack: white metal product shot ---------- */
+.rackrow{position:relative;z-index:1;display:flex;justify-content:center;align-items:flex-start;padding-left:46px}
+.rack{--rail:30px;--u:calc(var(--rw) / 8);position:relative;width:calc(var(--rw) + 2 * var(--rail));flex:none}
+.rack::after{content:"";position:absolute;left:-12%;right:-12%;bottom:-34px;height:54px;background:radial-gradient(closest-side,var(--floor),transparent);z-index:-1}
+.metal{background-image:url(08-assets/white-rack-metal.webp),linear-gradient(180deg,var(--metal-a),var(--metal-b));background-size:256px,100%;background-blend-mode:multiply}
+.rk-cap{height:38px;border-radius:10px 10px 2px 2px;position:relative;display:flex;align-items:flex-end;justify-content:center;padding-bottom:7px;box-shadow:inset 0 1px 0 #fff,inset 0 -3px 0 rgba(0,0,0,.07),0 1px 0 rgba(0,0,0,.10),-14px 0 26px -20px rgba(13,40,70,.5),14px 0 26px -20px rgba(13,40,70,.5)}
+.rk-cap::before{content:"";position:absolute;left:16%;right:16%;top:9px;height:6px;background:repeating-linear-gradient(90deg,rgba(40,52,64,.30) 0 12px,transparent 12px 17px);border-radius:3px}
+.rk-cap span{display:inline-flex;align-items:center;gap:8px;font:600 8.5px/1 var(--mono);letter-spacing:.32em;color:#8E99A5;white-space:nowrap;padding:3px 9px;border-radius:4px;background:rgba(255,255,255,.55);box-shadow:inset 0 0 0 1px rgba(20,30,40,.08)}
+.rk-cap span i{width:5px;height:5px;border-radius:50%;background:var(--orange);box-shadow:0 0 6px var(--orange)}
+.rk-body{display:grid;grid-template-columns:var(--rail) minmax(0,var(--rw)) var(--rail)}
+.rk-rail{position:relative;display:grid;grid-template-rows:var(--rows,repeat(var(--H),var(--u)));background-image:url(08-assets/white-rack-metal.webp),linear-gradient(90deg,var(--metal-c) 0,var(--metal-a) 22%,var(--metal-b) 72%,var(--metal-c) 100%);background-size:256px,100%;background-blend-mode:multiply;box-shadow:-14px 0 26px -20px rgba(13,40,70,.55)}
+.rk-rail.r{background-image:url(08-assets/white-rack-metal.webp),linear-gradient(270deg,var(--metal-c) 0,var(--metal-a) 22%,var(--metal-b) 72%,var(--metal-c) 100%);box-shadow:14px 0 26px -20px rgba(13,40,70,.55)}
+.rk-rail::after{content:"";position:absolute;top:0;bottom:0;width:6px;left:19px;background:repeating-linear-gradient(180deg,transparent 0,transparent calc(var(--u) / 6 - 3px),var(--hole) calc(var(--u) / 6 - 3px),var(--hole) calc(var(--u) / 6 + 3px),transparent calc(var(--u) / 6 + 3px),transparent calc(var(--u) / 3));opacity:.42;border-radius:1px}
+.rk-rail.r::after{left:5px}
+.rk-rail span{font:600 9px/1 var(--mono);color:var(--rail-ink);display:flex;align-items:center;padding-left:4px;border-top:1px solid rgba(20,30,40,.07)}
+.cav{position:relative;display:grid;grid-template-rows:var(--rows,repeat(var(--H),var(--u)));grid-template-columns:minmax(0,1fr);background:
+  repeating-linear-gradient(180deg,transparent 0,transparent calc(var(--u) - 1px),rgba(20,30,40,.08) calc(var(--u) - 1px),rgba(20,30,40,.08) var(--u)),
+  linear-gradient(90deg,var(--cav-a),var(--cav-b) 9%,var(--cav-b) 91%,var(--cav-a));box-shadow:inset 0 12px 18px -10px rgba(0,0,0,.35),inset 0 -8px 12px -10px rgba(0,0,0,.3)}
+.cav::after{content:"";position:absolute;inset:0;background:linear-gradient(112deg,transparent 34%,rgba(255,255,255,.18) 46%,rgba(255,255,255,0) 58%);pointer-events:none;z-index:7}
+.slot{grid-column:1;position:relative;margin:4px 6px;border:1px dashed transparent;border-radius:5px;background:transparent;display:flex;align-items:center;justify-content:center;font:600 9.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--slot-ink);min-width:0}
+.slot.t{border-color:rgba(15,76,117,.26);cursor:copy}
+.slot.band{margin:3px 6px;border-color:rgba(15,76,117,.22);background:repeating-linear-gradient(135deg,transparent 0 7px,rgba(15,76,117,.06) 7px 8px)}
+.slot.t:hover,.slot.over{background:rgba(226,87,15,.10);border-color:var(--orange);color:var(--orange-lo)}
+.unit{grid-column:1;position:relative;display:flex;align-items:center;justify-content:center;padding:0 2px;border:0;background:transparent;min-width:0;cursor:pointer;transition:transform .35s cubic-bezier(.2,.8,.2,1)}
+.unit .face{width:100%;border-radius:2px;box-shadow:0 1px 0 rgba(0,0,0,.28),0 3px 6px -3px rgba(0,0,0,.45);transition:box-shadow .3s}
+.h100{height:calc(100% - 2px)}.h92{height:91%}.h88{height:88%}.h80{height:80%}.h84{height:84%}
+.unit.never .face>img{filter:var(--art-filter) saturate(.82) brightness(1.02)}
+.unit:hover .face{box-shadow:0 0 0 2px var(--ocean-line),0 6px 12px -6px rgba(0,0,0,.4)}
+.unit.sel{z-index:5;transform:translate(-3px,-4px) scale(1.035)}
+.unit.sel .face{box-shadow:0 0 0 2px var(--ocean-2),0 0 0 7px var(--ocean-ring),0 26px 34px -14px rgba(10,49,80,.65)}
+.cn{position:absolute;width:12px;height:12px;border:2.5px solid var(--ocean);z-index:6;display:none}
+.unit.sel .cn{display:block}
+.cn.tl{left:-7px;top:-6px;border-right:0;border-bottom:0;border-radius:4px 0 0 0}
+.cn.tr{right:-7px;top:-6px;border-left:0;border-bottom:0;border-radius:0 4px 0 0}
+.cn.bl{left:-7px;bottom:-6px;border-right:0;border-top:0;border-radius:0 0 0 4px}
+.cn.br{right:-7px;bottom:-6px;border-left:0;border-top:0;border-radius:0 0 4px 0}
+.uled{position:absolute;right:5.5%;top:50%;width:14px;height:6px;margin-top:-3px;border-radius:3px;border:1px solid rgba(255,255,255,.9);background:#8A96A2;box-shadow:0 1px 2px rgba(0,0,0,.35);z-index:3}
+.uled.ok{width:8px;height:8px;margin-top:-4px;border-radius:50%;background:var(--led);border-color:#fff;box-shadow:0 0 0 3px rgba(43,200,115,.25),0 0 12px 2px var(--led);animation:ledp 2.6s ease-in-out infinite}
+@keyframes ledp{50%{box-shadow:0 0 0 5px rgba(43,200,115,.08),0 0 16px 4px var(--led)}}
+.plate{display:none;position:absolute;left:6px;bottom:3px;z-index:4;background:rgba(255,255,255,.93);color:#0D1B2A;border-radius:5px;padding:1px 5px;font:600 9.5px/1.3 var(--sans);box-shadow:0 2px 6px rgba(0,0,0,.25);white-space:nowrap}
+.bm{position:absolute;border-radius:3px;z-index:2}
+.bm.on{border:1.5px solid rgba(156,203,235,.95);background:linear-gradient(180deg,#24587F,#173F5E);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
+.bm.on::after{content:"";position:absolute;left:20%;right:20%;bottom:22%;height:2px;border-radius:2px;background:rgba(156,203,235,.6)}
+.bm.off{border:1.5px dashed rgba(255,255,255,.8);background:repeating-linear-gradient(135deg,#1B222B 0 4px,#3A444F 4px 8px)}
+.bm b{position:absolute;left:2px;top:2px;font:600 8.5px/1 var(--mono);padding:2px 3px;border-radius:3px;background:#0F4C75;color:#fff}
+.bm.off b{background:rgba(255,255,255,.92);color:#0F4C75}
+.rk-base{height:28px;border-radius:2px 2px 7px 7px;position:relative;box-shadow:inset 0 2px 0 rgba(0,0,0,.06),inset 0 -1px 0 rgba(0,0,0,.08)}
+.rk-base::before,.rk-base::after{content:"";position:absolute;bottom:-11px;width:42px;height:12px;border-radius:0 0 5px 5px;background:linear-gradient(180deg,#56616D,#2D3640)}
+.rk-base::before{left:14px}.rk-base::after{right:14px}
+.rk-base span{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font:600 8px/1 var(--mono);letter-spacing:.34em;color:#98A2AD;white-space:nowrap}
+.dimrule{position:absolute;left:-38px;top:38px;bottom:28px;width:12px;border-top:1.5px solid var(--ocean-2);border-bottom:1.5px solid var(--ocean-2)}
+.dimrule::before{content:"";position:absolute;left:50%;top:0;bottom:0;border-left:1px solid var(--ocean-line)}
+.dimrule span{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-90deg);white-space:nowrap;font:600 10px var(--mono);letter-spacing:.08em;color:var(--ocean);background:var(--stage-bot);padding:3px 8px;border-radius:999px;border:1px solid var(--ocean-line)}
+.tags{display:grid;grid-template-rows:var(--rows,repeat(var(--H),var(--u)));margin-top:38px;width:var(--tw,220px);flex:none;min-width:0;--u:calc(var(--rw) / 8)}
+.tagc{position:relative;align-self:center;padding-left:30px;min-width:0;border:0;background:none;text-align:left;cursor:pointer}
+.tagc::before{content:"";position:absolute;left:0;top:50%;width:22px;border-top:1px solid var(--line)}
+.tagc::after{content:"";position:absolute;left:-3px;top:calc(50% - 3px);width:7px;height:7px;border-radius:50%;background:var(--surface);border:1.5px solid var(--faint)}
+.tagc b{display:block;font-weight:600;font-size:13px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tagc small{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);white-space:nowrap;margin-top:2px}
+.tagc.sel b{color:var(--ocean)}
+.tagc.sel::before{border-top:2px solid var(--ocean-2)}
+.tagc.sel::after{background:var(--ocean);border-color:var(--ocean);box-shadow:0 0 0 4px var(--ocean-ring)}
+.tagc.free{cursor:default;align-self:center}
+.tagc.free b{font-weight:500;color:var(--faint-text);font-size:12px}
+.tagc.free::before{border-top-style:dashed}
+.legend{position:relative;z-index:2;display:flex;flex-wrap:wrap;gap:6px 16px;justify-content:center;font-size:11.5px;color:var(--muted);margin-top:30px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend .note{justify-content:center}
+.pill-key{width:14px;height:6px;border-radius:3px;background:#8A96A2;display:inline-block;flex:none}
+.sw{width:12px;height:9px;border-radius:2px;border:1.5px solid #6FA9D6;background:rgba(15,76,117,.14);display:inline-block}
+.sw.o{border:1.5px dashed var(--muted);background:repeating-linear-gradient(135deg,rgba(20,26,34,.5) 0 3px,transparent 3px 6px)}
+
+/* list view */
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{font:600 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td{padding:9px 10px;border-bottom:1px solid var(--line-2);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.tbl tr.sel td{background:var(--ocean-wash)}
+.tbl .th{width:110px}
+.scrollx{overflow-x:auto;max-width:100%}
+.listwrap{position:relative;z-index:2;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:4px 6px}
+
+/* ---------- selected device: few key facts with provenance ---------- */
+.dev-h{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.dev-h .th{width:128px}
+.dev-h h3{margin:0;font-size:18px;font-weight:600;letter-spacing:-.015em}
+.dev-h p{margin:2px 0 0;font-size:12.5px;color:var(--muted);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.kf{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;margin:16px 0 0;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.kf>div{padding:12px 14px;border-left:1px solid var(--line-2);min-width:0}
+.kf>div:first-child{border-left:0}
+.kf dt{font-size:12px;color:var(--muted)}
+.kf dd{margin:2px 0 7px;font-size:15px;font-weight:600;letter-spacing:-.01em;overflow-wrap:anywhere}
+.kf .x{margin:7px 0 0;font-size:11.5px;line-height:1.45;color:var(--muted)}
+.kf .x b{color:var(--ink-2);font-weight:600}
+.ready{display:flex!important;flex-wrap:wrap;gap:6px 22px;margin:12px 0 0;padding:9px 12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line-2)}
+.ready>div{display:flex;gap:8px;align-items:baseline;min-width:0}
+.ready dt{font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:6px;flex:none}
+.ready dd{margin:0;font-size:12.5px;font-weight:600}
+.ready dd small{font-weight:400;color:var(--muted);font-size:12px}
+.ready .ok dd{color:var(--proof)}
+details.tech{margin-top:14px;border-top:1px solid var(--line-2);padding-top:11px}
+details.tech summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--ocean);display:flex;align-items:center;gap:8px;list-style:none}
+details.tech summary::-webkit-details-marker{display:none}
+details.tech summary::before{content:"";width:7px;height:7px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(-45deg);transition:transform .15s}
+details.tech[open] summary::before{transform:rotate(45deg)}
+details.tech summary span{font-weight:400;color:var(--muted);font-size:12px}
+.tech-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 28px;margin:10px 0 0}
+.tech-grid>div{display:grid;grid-template-columns:130px minmax(0,1fr);gap:10px;padding:8px 0;border-bottom:1px dashed var(--line-2);font-size:12.5px}
+.tech-grid dt{color:var(--muted)}.tech-grid dd{margin:0}
+.tech-grid .wide{grid-column:1/-1}
+
+/* ---------- evidence drawer ---------- */
+.drawer{width:284px;border-left:1px solid var(--line-2);background:var(--surface);min-width:0;position:relative}
+.dr-in{position:sticky;top:0}
+.dr-head{display:flex;align-items:center;gap:8px;padding:16px 12px 12px 18px;border-bottom:1px solid var(--line-2)}
+.dr-head b{font:600 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--faint-text);flex:1}
+.dr-toggle{display:flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:4px 6px;color:var(--muted)}
+.dr-body{padding:14px 18px 18px;display:grid;gap:12px;font-size:12.5px}
+.dr-body p{margin:0;color:var(--ink-2)}
+.ev-t{display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap}
+.ev-t strong{font-size:14px;font-weight:600}
+.kv{margin:0;border-radius:12px;background:var(--sunk);border:1px solid var(--line-2);padding:10px 12px;display:grid;gap:7px;font-size:12px}
+.kv>div{display:grid;grid-template-columns:74px minmax(0,1fr);gap:8px}
+.kv dt{color:var(--muted)}.kv dd{margin:0;color:var(--ink);font-weight:500}
+.kv dd.pv{color:var(--proof)}
+.dr-body h5{margin:4px 0 0;font:600 10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint-text)}
+.reads{list-style:none;margin:0;padding:0;display:grid}
+.reads li{display:grid;grid-template-columns:40px minmax(0,1fr);gap:8px;padding:7px 0;border-bottom:1px dashed var(--line-2);font-size:12px;color:var(--ink-2)}
+.reads li:last-child{border-bottom:0}
+.reads time{font:500 11px var(--mono);color:var(--muted)}
+.fine{font-size:11.5px!important;color:var(--muted)!important;line-height:1.45}
+.none3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.none3 div{border-radius:10px;border:1px dashed var(--line);padding:8px;text-align:center}
+.none3 b{display:block;font-size:13px}
+.none3 small{font-size:10.5px;color:var(--muted)}
+.evg{display:grid;gap:12px;align-content:start;min-width:0}
+.dr-rail{display:none;border:0;background:transparent;width:100%;padding:16px 0;align-items:center;gap:10px;color:var(--muted);font:600 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase}
+.drawer.collapsed{width:52px}
+.drawer.collapsed .dr-head,.drawer.collapsed .dr-body{display:none}
+.drawer.collapsed .dr-rail{display:flex;flex-direction:column;writing-mode:vertical-rl}
+.dr-rail .pip{width:8px;height:8px;border-radius:50%;background:transparent;border:1.5px solid var(--ocean-2);flex:none}
+.dr-rail .pip.ok{background:var(--led);border-color:var(--led)}
+.dr-rail .pip.bad{background:var(--danger);border-color:var(--danger)}
+.dr-rail em{font-style:normal;color:var(--ink-2)}
+
+/* ---------- add equipment: the showpiece ---------- */
+.toolbar{position:relative;z-index:2;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.stepper{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:10px;background:var(--surface);overflow:hidden;height:36px}
+.stepper button{width:34px;height:100%;border:0;background:transparent;display:grid;place-items:center;color:var(--ink-2)}
+.stepper button:hover:not(:disabled){background:var(--sunk)}
+.stepper button:disabled{opacity:.35}
+.stepper output{min-width:56px;text-align:center;font:600 14px var(--sans);border-left:1px solid var(--line);border-right:1px solid var(--line);line-height:34px}
+.lbl{font-size:12.5px;font-weight:500;color:var(--ink-2)}
+.unsaved{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2);font-weight:500;padding:4px 10px;border-radius:999px;background:var(--surface);border:1px solid var(--line)}
+.unsaved::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--orange)}
+.unsaved.ok::before{background:var(--ocean-2)}
+.build{position:relative;z-index:2;display:grid;grid-template-columns:250px minmax(0,1fr);gap:20px;align-items:start;margin-top:16px}
+.shelf{display:grid;gap:10px}
+.shelf-h{display:flex;justify-content:space-between;align-items:baseline}
+.shelf-h b{font:600 10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.shelf-h small{font-size:11.5px;color:var(--muted)}
+.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.hw{position:relative;display:flex;flex-direction:column;gap:8px;padding:10px 9px 9px;border:1px solid var(--line);border-radius:13px;text-align:left;background:linear-gradient(180deg,var(--surface),var(--surface-2));box-shadow:var(--shadow-1);cursor:grab;min-width:0;transition:transform .15s,box-shadow .15s}
+.hw:hover{transform:translateY(-2px);box-shadow:var(--shadow-2);border-color:var(--ocean-line)}
+.hw .tile{height:44px;border-radius:8px;background:radial-gradient(80% 90% at 50% 0%,#fff,#E8EEF4);display:flex;align-items:center;padding:0 6px;box-shadow:inset 0 0 0 1px rgba(13,27,42,.05)}
+:root[data-theme="dark"] .hw .tile{background:radial-gradient(80% 90% at 50% 0%,#2a3847,#17212c)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .hw .tile{background:radial-gradient(80% 90% at 50% 0%,#2a3847,#17212c)}}
+.hw .tile .th{box-shadow:0 5px 8px -4px rgba(13,27,42,.55)}
+.hw b{font-size:12.5px;font-weight:600;line-height:1.2;display:flex;justify-content:space-between;align-items:flex-start;gap:4px}
+.hw b i{font:600 10px var(--mono);font-style:normal;color:var(--ocean);background:var(--ocean-wash);border-radius:5px;padding:1px 5px;flex:none}
+.hw small{display:block;font-size:11px;color:var(--muted);line-height:1.3;margin-top:2px}
+.hw.lifted{border-color:var(--orange);box-shadow:0 0 0 4px var(--orange-ring),0 20px 30px -14px rgba(226,87,15,.55);transform:translateY(-3px) rotate(-1.2deg);background:var(--surface)}
+.hw.lifted .flag{position:absolute;top:-9px;right:8px;background:var(--orange);color:var(--orange-ink);font:600 9.5px var(--mono);padding:3px 7px;border-radius:999px;letter-spacing:.06em}
+.hw.picked{border-color:var(--ocean-2);box-shadow:0 0 0 4px var(--ocean-ring)}
+.bin{grid-column:1/-1;width:100%;text-align:left;font:inherit;cursor:pointer;display:flex;align-items:center;gap:11px;border:1.5px dashed var(--danger-line);border-radius:13px;padding:11px 12px;color:var(--danger);background:repeating-linear-gradient(135deg,transparent 0 10px,var(--danger-wash) 10px 11px)}
+.bin b{font-size:12.5px;display:block}
+.bin small{color:var(--muted);font-size:11px;display:block;line-height:1.35}
+.bin.over{background:var(--danger-wash)}
+.buildrack{container-type:inline-size;min-width:0;position:relative}
+.buildrack .rack{--rw:min(440px,calc(100cqw - 310px))}
+.buildrack .tags{--rw:min(440px,calc(100cqw - 310px));--tw:250px}
+.ghost{grid-column:1;position:relative;margin:2px 3px;border:2px dashed var(--orange);border-radius:6px;background:rgba(226,87,15,.10);display:flex;align-items:center;justify-content:center;z-index:4;animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{50%{background:rgba(226,87,15,.19)}}
+.ghost .face{width:100%;opacity:.55;box-shadow:none}
+.ghost .gl{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--surface);color:var(--ink);border-radius:10px;padding:6px 12px;box-shadow:0 10px 24px -10px rgba(10,39,64,.5);font-size:12px;white-space:nowrap;text-align:center;z-index:2;line-height:1.35}
+.ghost .gl b{display:block;font-weight:700;color:var(--orange-lo)}
+.ghost .gl small{font-size:11px;color:var(--muted)}
+.pop-hold{position:relative;width:120px;margin:0 0 9px;transform:rotate(-2.5deg);filter:drop-shadow(0 10px 10px rgba(13,40,70,.3))}
+.pop-hold svg.cur{position:absolute;right:-14px;bottom:-12px;width:20px;height:20px}
+.pop{position:relative;align-self:end;margin-left:26px;background:var(--surface);border:1px solid var(--orange-line);border-radius:14px;padding:11px 13px;box-shadow:0 18px 34px -18px rgba(191,69,8,.55);font-size:12.5px;min-width:0}
+.pop::before{content:"";position:absolute;left:-7px;bottom:var(--ah,40%);width:12px;height:12px;background:var(--surface);border-left:1px solid var(--orange-line);border-bottom:1px solid var(--orange-line);transform:rotate(45deg)}
+.pop b{display:block;font-size:13px;color:var(--orange-lo)}
+.pop p{margin:2px 0 8px;color:var(--ink-2)}
+.pop .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.holdcard{position:relative;align-self:end;justify-self:start;margin:0 0 6px 34px;width:150px;padding:8px;border-radius:12px;background:var(--surface);border:1px solid var(--orange-line);box-shadow:0 24px 30px -16px rgba(13,40,70,.5);transform:rotate(-3deg)}
+.holdcard small{display:block;font-size:10.5px;color:var(--muted);margin-top:5px}
+.holdcard b{font-size:12px}
+.holdcard svg.cur{position:absolute;left:-16px;bottom:-14px;width:22px;height:22px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))}
+.keyleg{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;font-size:11.5px;color:var(--muted);margin-top:34px}
+.keyleg span{display:inline-flex;gap:5px;align-items:center}
+.status-line{min-height:20px;font-size:12.5px;color:var(--ocean);text-align:center;margin:8px 0 0}
+.editor{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr) minmax(0,1.6fr);gap:24px}
+.editor>div{min-width:0}
+.editor h4,.subh{margin:0 0 10px;font:600 10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.fld{display:grid;gap:5px;margin-bottom:12px;min-width:0;align-content:start}
+.fld>label,.fld>.lb{font-size:12.5px;font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.inp{height:38px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:0 11px;font-size:13.5px;width:100%;min-width:0;box-shadow:inset 0 1px 2px rgba(13,27,42,.04)}
+.inp:focus{outline:2px solid var(--ocean-ring);border-color:var(--ocean-2)}
+.inp:disabled{background:var(--sunk);color:var(--faint-text)}
+.slots{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.slots button{border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:6px 4px;font:600 12px var(--sans);display:grid;gap:1px;text-align:center;min-width:0}
+.slots button small{font:400 10px/1.2 var(--sans);color:var(--muted);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.slots button[aria-pressed=true]{background:var(--ocean);color:#fff;border-color:var(--ocean)}
+.slots button[aria-pressed=true] small{color:rgba(255,255,255,.82)}
+.slots button:disabled{background:var(--sunk);color:var(--faint-text)}
+.hgt{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.bayed{position:relative;width:100%;aspect-ratio:1169/169;border-radius:4px;box-shadow:0 10px 18px -10px rgba(13,27,42,.6)}
+.bayed button{position:absolute;border-radius:4px;border:1.5px dashed rgba(255,255,255,.85);background:repeating-linear-gradient(135deg,#1B222B 0 4px,#3A444F 4px 8px);color:#fff;font:600 10.5px var(--mono);padding:0;display:grid;place-items:center;z-index:2}
+.bayed button[aria-pressed=true]{border:1.5px solid #9CCBEB;background:linear-gradient(180deg,#24587F,#173F5E);box-shadow:inset 0 0 0 1px rgba(255,255,255,.2)}
+.bayed button:disabled{opacity:.3;cursor:not-allowed}
+.baygrid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px}
+.baygrid button{height:30px;border-radius:6px;border:1.5px dashed var(--line);background:var(--sunk);font:600 10.5px var(--mono);color:var(--muted);padding:0}
+.baygrid button[aria-pressed=true]{border:1.5px solid var(--ocean-2);background:var(--ocean);color:#fff}
+.bayed button:hover{outline:2px solid var(--ocean-2)}
+.ed-foot{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px;padding-top:14px;border-top:1px solid var(--line-2)}
+
+/* ---------- connect ---------- */
+.picker{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.pick{display:grid;gap:8px;padding:10px;border:1px solid var(--line);border-radius:14px;background:var(--surface);text-align:left;min-width:0}
+.pick b{font-size:13px}
+.pick small{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:11.5px;color:var(--muted)}
+.pick[aria-checked=true]{border-color:var(--ocean-2);box-shadow:0 0 0 4px var(--ocean-ring)}
+.form2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 18px}
+.pw{display:flex;gap:8px}
+.toggle{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:12px;border:1px solid var(--warn-line);background:var(--warn-wash);grid-column:1/-1}
+.switch{flex:none;width:40px;height:23px;border-radius:999px;background:var(--line);border:1px solid var(--faint);position:relative;margin-top:1px;padding:0}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .15s}
+.switch[aria-checked=true]{background:var(--ocean);border-color:var(--ocean)}
+.switch[aria-checked=true]::after{left:19px}
+.toggle b{font-size:13px}
+.toggle p{margin:3px 0 0;font-size:12.5px;color:var(--ink-2)}
+.check-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--line-2)}
+
+/* ---------- drives & raid ---------- */
+.tiles3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.tile3{border-radius:14px;padding:13px 15px;border:1px solid var(--line);background:var(--surface-2);min-width:0}
+.tile3 dt{font-size:12px;color:var(--muted)}
+.tile3 dd{margin:2px 0 8px;font-size:22px;font-weight:600;letter-spacing:-.02em}
+.tile3.plan{background:linear-gradient(180deg,var(--ocean-wash),var(--surface))}
+.tile3.rec{background:linear-gradient(180deg,var(--sand),var(--surface))}
+.tile3.none{border-style:dashed;background:transparent}
+.tile3.none dd{color:var(--muted)}
+.result{position:relative;overflow:hidden;border-color:var(--sand-line);background:radial-gradient(70% 100% at 100% 0%,var(--sand),transparent 65%),var(--surface)}
+.res-top{display:grid;grid-template-columns:auto minmax(0,1fr);gap:16px;align-items:start}
+.res-mark{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:var(--surface);color:var(--sand-ink);border:1px solid var(--sand-line);box-shadow:0 12px 22px -12px rgba(107,75,38,.55)}
+.res-mark .ic{width:26px;height:26px}
+.result h3{margin:0;font-size:21px;font-weight:600;letter-spacing:-.02em;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.result .lead{margin:6px 0 0;color:var(--ink-2);font-size:13.5px;max-width:70ch}
+.stages{list-style:none;margin:18px 0 4px;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));position:relative}
+.stages::before{content:"";position:absolute;left:12px;right:calc(33.33% - 12px);top:11px;height:2px;background:var(--sand-line)}
+.stages li{position:relative;padding-top:32px;font-size:12.5px;min-width:0}
+.stages li::before{content:"";position:absolute;top:0;left:0;width:24px;height:24px;border-radius:50%;background:var(--surface);border:2px solid var(--sand-ink);box-sizing:border-box}
+.stages li::after{content:"";position:absolute;top:7px;left:7px;width:9px;height:5px;border-left:2px solid var(--sand-ink);border-bottom:2px solid var(--sand-ink);transform:rotate(-45deg)}
+.stages b{display:block;font-size:13px}
+.stages span{font-size:12px;color:var(--muted)}
+.dgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+.dgrid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:18px;align-items:center;min-width:0}
+.dgrid .tbl td{white-space:nowrap}
+.bootpair{border-radius:14px;border:1px solid var(--ocean-line);background:var(--ocean-wash);padding:13px 15px}
+.bootpair h4{margin:0 0 8px;font-size:13.5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.bootpair .pair{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:9px}
+.bootpair .pair span{background:var(--surface);border:1px solid var(--ocean-line);border-radius:9px;text-align:center;padding:6px;font:600 13px var(--mono)}
+.bootpair p{margin:0;font-size:12.5px;color:var(--ink-2)}
+.bootpair .pair span.tbd{border-style:dashed;background:transparent;color:var(--muted);font:500 11.5px var(--sans)}
+.alerts{display:flex;gap:16px;align-items:center;flex-wrap:wrap;border-color:var(--warn-line);background:linear-gradient(90deg,var(--warn-wash),var(--surface) 75%)}
+.alerts .big{font:600 34px/1 var(--sans);color:var(--warn);letter-spacing:-.03em}
+.alerts p{margin:0;font-size:13px;color:var(--ink-2);flex:1;min-width:220px}
+.alerts p b{color:var(--ink)}
+.more{display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px 14px;align-items:center}
+.more .k{font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.more .v{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.more hr{grid-column:1/-1;border:0;border-top:1px dashed var(--line);margin:0}
+
+/* ---------- network / firmware / failure ---------- */
+.fs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px 16px;align-items:start}
+.choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.choice{display:grid;grid-template-columns:18px minmax(0,1fr);gap:10px;align-items:start;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);text-align:left;min-width:0}
+.choice .rd{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--faint);margin-top:2px;display:grid;place-items:center}
+.choice[aria-checked=true]{border-color:var(--ocean-2);box-shadow:0 0 0 3px var(--ocean-ring)}
+.choice[aria-checked=true] .rd{border-color:var(--ocean)}
+.choice[aria-checked=true] .rd::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--ocean)}
+.choice:disabled{background:var(--sunk);opacity:1}
+.choice:disabled b{color:var(--muted)}
+.choice b{display:block;font-size:13px}
+.choice small{display:block;font-size:12px;color:var(--muted);margin-top:1px}
+.choice .no{color:var(--warn);display:flex;gap:5px;align-items:flex-start;margin-top:4px}
+.svc{border-top:1px solid var(--line-2);padding-top:14px;margin-top:10px;display:grid;grid-template-columns:210px minmax(0,1fr);gap:16px;align-items:start}
+.svc-h{display:flex;gap:10px;align-items:flex-start}
+.svc-h b{display:block;font-size:13.5px}
+.svc-h small{display:block;font-size:12px;color:var(--muted)}
+.fs3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.addrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.pkg{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:14px 16px;border-radius:14px;background:linear-gradient(90deg,var(--ocean-wash),var(--surface));border:1px solid var(--ocean-line)}
+.pkg .box{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--surface);border:1px solid var(--ocean-line);color:var(--ocean)}
+.pkg code{font:600 14px var(--mono);overflow-wrap:anywhere}
+.blocked{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 14px;border-radius:12px;background:var(--sunk);border:1px solid var(--line)}
+.blocked .why{flex:1;min-width:220px;font-size:12.5px;color:var(--ink-2)}
+.example{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-radius:12px;border:1px dashed var(--ocean-line);background:var(--sky-wash);font-size:12.5px;color:var(--ink-2)}
+.example b{font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ocean)}
+.fail{border-color:var(--danger-line);background:radial-gradient(70% 90% at 100% 0%,var(--danger-wash),transparent 60%),var(--surface)}
+.fail-mark{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;background:var(--danger-wash);border:1px solid var(--danger-line);color:var(--danger)}
+.fail-mark .ic{width:26px;height:26px}
+.fail h3{margin:0;font-size:21px;font-weight:600;letter-spacing:-.02em}
+.qa{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}
+.qa h4{margin:0 0 5px;font:600 10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.qa p{margin:0;font-size:13.5px;color:var(--ink-2)}
+.order{margin:0;padding:0;list-style:none;counter-reset:o;display:grid;gap:8px}
+.order li{counter-increment:o;display:grid;grid-template-columns:26px minmax(0,1fr);gap:10px;font-size:13.5px;color:var(--ink-2)}
+.order li::before{content:counter(o);width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font:600 11.5px var(--mono);background:var(--ocean-wash);color:var(--ocean);border:1px solid var(--ocean-line)}
+.order b{color:var(--ink)}
+
+/* ---------- storage states ---------- */
+.states{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.op{position:relative;display:grid;gap:12px;align-content:start;padding:18px 18px 16px;border-radius:18px;border:1px solid var(--line);background:var(--surface);box-shadow:var(--shadow-2);overflow:hidden;min-width:0}
+.op::before{content:"";position:absolute;inset:0 0 auto 0;height:4px;background:var(--c,var(--line))}
+.op.done{grid-column:1/-1}
+.op.off::before{background:repeating-linear-gradient(90deg,var(--warn) 0 12px,transparent 12px 18px)}
+.op.pending{--c:var(--ocean-2)}.op.running{--c:var(--sky)}.op.bad{--c:var(--danger)}.op.off{--c:var(--warn)}.op.done{--c:var(--sand-ink);background:radial-gradient(80% 90% at 100% 0%,var(--sand),transparent 60%),var(--surface)}
+.op-h{display:flex;gap:12px;align-items:flex-start}
+.op-ic{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;flex:none;background:var(--sunk);color:var(--muted);border:1px solid var(--line)}
+.op.pending .op-ic{background:var(--ocean-wash);color:var(--ocean);border-color:var(--ocean-line)}
+.op.running .op-ic{background:var(--sky-wash);color:var(--ocean-2);border-color:var(--ocean-line)}
+.op.bad .op-ic{background:var(--danger-wash);color:var(--danger);border-color:var(--danger-line)}
+.op.off .op-ic{background:var(--warn-wash);color:var(--warn);border-color:var(--warn-line)}
+.op.done .op-ic{background:var(--surface);color:var(--sand-ink);border-color:var(--sand-line)}
+.op h3{margin:0;font-size:15.5px;font-weight:600;letter-spacing:-.01em}
+.op .n{font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint-text)}
+.op p{margin:0;font-size:13px;color:var(--ink-2)}
+.mini{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.mini li{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12.5px}
+.mini li i{width:14px;height:14px;border-radius:50%;border:2px solid var(--line);display:block}
+.mini li.y i{border-color:var(--ocean-2);background:var(--ocean-2);box-shadow:inset 0 0 0 2px var(--surface)}
+.mini li.w i{border-color:var(--ocean-2);border-style:dashed}
+.mini li.x i{border-color:var(--danger);background:var(--danger-wash)}
+.mini li.q i{border-color:var(--warn);border-style:dotted}
+.mini li.r i{border-color:var(--sand-ink);background:var(--sand-ink);box-shadow:inset 0 0 0 2px var(--surface)}
+.mini li span:last-child{font:500 11.5px var(--mono);color:var(--muted)}
+.bar{height:6px;border-radius:999px;background:var(--sunk);overflow:hidden;position:relative}
+.bar::after{content:"";position:absolute;top:0;bottom:0;width:30%;border-radius:999px;background:linear-gradient(90deg,transparent,var(--sky),transparent);animation:sweep 2.2s ease-in-out infinite}
+@keyframes sweep{0%{left:-30%}100%{left:100%}}
+.op .acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.stop{display:flex;gap:8px;align-items:flex-start;padding:9px 11px;border-radius:10px;background:var(--danger-wash);border:1px solid var(--danger-line);font-size:12.5px;font-weight:600;color:var(--danger)}
+
+/* ---------- overlays ---------- */
+.scrim{position:fixed;inset:0;z-index:60;background:rgba(10,22,36,.40);backdrop-filter:blur(3px);display:grid;place-items:start center;padding:9vh 16px 16px;overflow:auto}
+.palette{width:min(620px,100%);background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 30px 80px -20px rgba(0,0,0,.45);overflow:hidden}
+.pal-h{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line-2)}
+.pal-h input{flex:1;border:0;background:transparent;font-size:15px;outline:none;min-width:0}
+.palette ul{list-style:none;margin:0;padding:6px;max-height:min(52vh,440px);overflow:auto}
+.palette li.g{font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--faint-text);padding:8px 10px 4px}
+.palette li button{display:flex;width:100%;align-items:center;gap:10px;padding:8px 10px;border:0;border-radius:9px;background:transparent;text-align:left;font-size:13.5px}
+.palette li button:hover,.palette li button:focus{background:var(--ocean-wash);outline:none}
+.palette li button span{flex:1}
+.palette li button small{color:var(--muted);font-size:11.5px}
+.pal-f{display:flex;gap:14px;flex-wrap:wrap;padding:9px 14px;border-top:1px solid var(--line-2);font-size:11.5px;color:var(--muted);background:var(--surface-2)}
+.pal-f span{display:inline-flex;gap:5px;align-items:center}
+.modal{width:min(660px,100%);background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 30px 80px -20px rgba(0,0,0,.5);padding:20px 22px}
+.modal h3{margin:0;font-size:18px}
+.warnline{display:flex;gap:10px;padding:10px 12px;border-radius:12px;background:var(--danger-wash);border:1px solid var(--danger-line);color:var(--ink-2);font-size:13px;margin:12px 0}
+.warnline .ic{color:var(--danger);margin-top:2px}
+pre.cmd{margin:6px 0 0;padding:12px 14px;border-radius:12px;background:#0F1A26;color:#D7E6F3;font:500 12px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word}
+.cmd-h{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px;font-weight:600;margin-top:12px}
+.ack{display:flex;gap:10px;align-items:flex-start;font-size:13.5px;margin-top:14px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2)}
+.ack input{margin-top:3px;width:16px;height:16px;accent-color:var(--danger)}
+.m-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:16px;flex-wrap:wrap}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:70;background:var(--ink);color:var(--canvas);padding:10px 16px;border-radius:12px;font-size:13px;box-shadow:0 16px 40px -14px rgba(0,0,0,.6);max-width:calc(100vw - 32px)}
+
+/* ---------- design note ---------- */
+.dnote{max-width:1408px;margin:26px auto 8px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px 32px;font-size:13px;color:var(--ink-2)}
+.dnote h2{grid-column:1/-1;margin:0;font:500 24px var(--voice);color:var(--ink)}
+.dnote h3{margin:0 0 6px;font:600 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.dnote p{margin:0 0 8px}
+.dnote ul{margin:0;padding-left:18px;display:grid;gap:4px}
+.swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.swatches>span{display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.swatches i{width:22px;height:22px;border-radius:7px;flex:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.swatches small{display:block;font:500 10.5px var(--mono);color:var(--muted)}
+.ftable{grid-column:1/-1}
+.ftable table{width:100%;border-collapse:collapse;font-size:12.5px;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.ftable th,.ftable td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line-2);vertical-align:top}
+.ftable th{font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);background:var(--surface-2)}
+
+/* screens sit beside the shared rail */
+.screens{min-width:0}
+.screen{display:grid;grid-template-columns:minmax(0,1fr) auto;min-width:0;min-height:100%}
+.homerack .rack,.homerack .tags{--rw:min(440px,calc(100cqw - 320px))}
+.homerack .cav{background:linear-gradient(90deg,var(--cav-a),var(--cav-b) 9%,var(--cav-b) 91%,var(--cav-a))}
+.homerack .tags{--tw:230px}
+.hero-row{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;gap:10px 22px;flex-wrap:wrap}
+.hero-row .homerack .rack,.hero-row .homerack .tags{--rw:min(420px,calc(100cqw - 600px))}
+.hero-row .homerack .tags{--tw:218px}
+.facts{flex:0 0 250px;min-width:0;background:color-mix(in srgb,var(--surface) 88%,transparent);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow-2);padding:12px 14px 6px;margin-top:20px}
+.fx-h{margin:0 0 4px;display:flex;flex-direction:column;gap:2px}
+.fx-h span{font:600 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--orange-lo)}
+.fx-h b{font-size:15px;font-weight:600;letter-spacing:-.01em;color:var(--ocean)}
+.facts dl{margin:0}
+.facts dl>div{padding:9px 0;border-top:1px solid var(--line-2);min-width:0}
+.facts dt{font-size:11.5px;color:var(--muted)}
+.facts dd{margin:1px 0 5px;font-size:14.5px;font-weight:600;letter-spacing:-.01em;overflow-wrap:anywhere}
+.facts small{display:block;margin-top:5px;font-size:11px;line-height:1.4;color:var(--muted)}
+.labkey{display:flex;flex-wrap:wrap;gap:6px 20px;margin:14px 0 0;padding:10px 12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line-2);font-size:12px;color:var(--muted)}
+.labkey>span{display:inline-flex;align-items:center;gap:7px;min-width:0}
+.labkey .chip{flex:none}
+@container (max-width:860px){
+  .hero-row .homerack .rack,.hero-row .homerack .tags{--rw:min(440px,calc(100cqw - 320px))}
+  .facts{flex:1 1 100%;margin-top:30px}
+  .facts dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:22px}
+}
+
+/* ---------- responsive ---------- */
+@media (max-width:1320px){
+  .lnk .l{display:none}
+  .cmdk{width:200px}
+}
+@media (max-width:1240px){
+  .shell{grid-template-columns:216px minmax(0,1fr)}
+  .screen{grid-template-columns:minmax(0,1fr)}
+  .drawer{grid-column:1/-1;width:auto;border-left:0;border-top:1px solid var(--line-2)}
+  .drawer.collapsed{width:auto}
+  .drawer.collapsed .dr-rail{writing-mode:horizontal-tb;flex-direction:row;justify-content:center}
+  .dr-body{grid-template-columns:repeat(auto-fit,minmax(240px,1fr));align-items:start}
+  .editor{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .editor>div:last-child{grid-column:1/-1}
+  .fs{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:1100px){
+  .kit-x{display:none}
+  .tabs{flex-wrap:wrap}
+  .cmdk span{display:none}.cmdk{width:auto}
+}
+@media (max-width:1024px){
+  .shell{grid-template-columns:minmax(0,1fr)}
+  .rail{border-right:0;border-bottom:1px solid var(--line-2);padding:14px 16px}
+  .steps{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .steps::before{display:none}
+  .devs{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .rail-foot{display:flex;flex-wrap:wrap;gap:6px 22px;margin-top:0;padding:10px 8px 0}
+  .rail-foot .keys{display:none}
+  .build{grid-template-columns:minmax(0,1fr)}
+  .cards{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .ready{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kf{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kf>div:nth-child(3){border-left:0}
+  .kf>div:nth-child(n+3){border-top:1px solid var(--line-2)}
+  .dgrid{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:800px){
+  .guide{grid-template-columns:auto minmax(0,1fr)}
+  .g-act{grid-column:1/-1;justify-items:stretch}
+  .g-act .btn{width:100%;justify-content:space-between}
+  .g-act .aside{text-align:left;max-width:none}
+  .g-more{grid-column:1/-1}
+  .steps{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .devs{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .top{flex-wrap:wrap}
+  .picker,.tiles3,.choices{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .editor,.form2,.qa,.tech-grid{grid-template-columns:minmax(0,1fr)}
+  .editor>div:last-child{grid-column:auto}
+  .dgrid2{grid-template-columns:minmax(0,1fr)}
+  .svc{grid-template-columns:minmax(0,1fr)}
+  .dnote{grid-template-columns:minmax(0,1fr)}
+  .main{padding:16px 14px 22px}
+}
+@media (max-width:600px){
+  body{padding:16px}
+  .app{border-radius:16px}
+  .demo{flex-direction:column;align-items:stretch;gap:6px}
+  .top{padding:10px 12px;gap:6px}
+  .brand span{display:none}
+  .top{flex-wrap:nowrap}
+  .lnk{display:none}
+  .more-wrap{display:block}
+  .rail{gap:10px}
+  .rail-sum{display:flex}
+  .rail:not(.open)>div:not(.rail-foot){display:none}
+  .unit.sel{transform:none}
+  .unit.bays .plate{bottom:auto;top:calc(100% + 5px)}
+  .btn kbd,.cmdk kbd,.dr-toggle kbd{display:none}
+  .sep{display:none}
+  .stage{padding:14px 12px 22px;border-radius:18px}
+  .card{padding:14px}
+  .rackrow{padding-left:0}
+  .dimrule{display:none}
+  .tags,.pop,.holdcard{display:none!important}
+  .plate{display:block}
+  .rack,.buildrack .rack{--rw:calc(100cqw - 62px)!important}
+  .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kf,.ready,.fs,.fs3,.picker,.tiles3,.choices,.steps,.devs{grid-template-columns:minmax(0,1fr)}
+  .kf>div{border-left:0!important;border-top:1px solid var(--line-2)}
+  .kf>div:first-child{border-top:0}
+  .tech-grid>div{grid-template-columns:110px minmax(0,1fr)}
+  .stages{grid-template-columns:minmax(0,1fr);gap:12px}
+  .stages::before{display:none}
+  .more{grid-template-columns:minmax(0,1fr)}
+  .say{font-size:18px}
+  .states{grid-template-columns:minmax(0,1fr)}
+}
+@media (pointer:coarse){.btn kbd,.cmdk kbd,.dr-toggle kbd,.keyleg{display:none}}
+@media (prefers-reduced-motion:reduce){.uled.ok,.ghost,.bar::after{animation:none}.unit{transition:none}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-check" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 16 16"><path d="M3 13l.7-2.8 7.2-7.2a1.4 1.4 0 012 2l-7.2 7.2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 7V5.3a2.5 2.5 0 015 0V7" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+  <symbol id="i-rec" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.2 8.2l1.9 1.9 3.7-4.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 16 16"><path d="M8 2.2l6.3 11.1H1.7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 6.4v3.3M8 11.5v.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+  <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.4 10.4L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 16 16"><path d="M3.5 14V2.5M3.5 3h8l-1.6 3 1.6 3h-8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.8V8l2.2 1.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 16 16"><path d="M4 1.8h5.2L12 4.6v9.6H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6 8h4M6 10.6h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3 10.5V3.8c0-.5.4-.8.8-.8h6.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 16 16"><path d="M13 9.6A5.5 5.5 0 016.4 3a5.5 5.5 0 106.6 6.6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10 2.5v11" stroke="currentColor" stroke-width="1.4"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 16 16"><path d="M3 8h9.5M9 4.5L12.5 8 9 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 16 16"><path d="M4.5 6.5L8 10l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 16 16"><path d="M3.5 8h9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+  <symbol id="i-move" viewBox="0 0 16 16"><path d="M8 2v12M2 8h12M8 2L6 4M8 2l2 2M8 14l-2-2M8 14l2-2M2 8l2-2M2 8l2 2M14 8l-2-2M14 8l-2 2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 9h5.8l.6-9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 16 16"><path d="M13 8a5 5 0 11-1.5-3.6M13 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 16 16"><path d="M8 1.8l5 2v3.8c0 3.2-2.2 5.5-5 6.6-2.8-1.1-5-3.4-5-6.6V3.8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M5.8 8l1.6 1.6 2.9-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-list" viewBox="0 0 16 16"><path d="M5.5 4h8M5.5 8h8M5.5 12h8M2.5 4h.1M2.5 8h.1M2.5 12h.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="i-rack" viewBox="0 0 16 16"><rect x="2.5" y="1.8" width="11" height="12.4" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2.5 6h11M2.5 10h11" stroke="currentColor" stroke-width="1.4"/></symbol>
+  <symbol id="i-link" viewBox="0 0 16 16"><path d="M9 3h4v4M13 3L7.5 8.5M11 9.5V13H3V5h3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-box" viewBox="0 0 16 16"><path d="M2.5 5L8 2.2 13.5 5v6L8 13.8 2.5 11z M2.5 5L8 7.8 13.5 5M8 7.8v6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 16 16"><path d="M6 2v3.5M10 2v3.5M4.5 5.5h7v2.5a3.5 3.5 0 01-7 0zM8 11.5V14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-key" viewBox="0 0 16 16"><circle cx="5.5" cy="10.5" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7.7 8.3L13.5 2.5M11.5 4.5l1.5 1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="i-power" viewBox="0 0 16 16"><path d="M8 2v5.5M4.6 4.2a5 5 0 106.8 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 16 16"><path d="M1.5 8.5h3l1.8-4 3 8 1.8-4h3.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-x" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6 6l4 4M10 6l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="i-offline" viewBox="0 0 16 16"><path d="M2 6.2a9 9 0 0112 0M4.3 8.6a5.6 5.6 0 017.4 0M6.6 11a2.3 2.3 0 012.8 0M2.5 2.5l11 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor"/></symbol>
+  <symbol id="i-home" viewBox="0 0 16 16"><path d="M2.5 7.5L8 3l5.5 4.5M4 6.5v7h8v-7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+</svg>
+
+<div class="demo">
+  <span class="demo-l">Mockup screens</span>
+  <div class="tabs" role="tablist" aria-label="Mockup screens">
+    <button role="tab" id="t0" aria-controls="s0" aria-selected="true">My Rack</button>
+    <button role="tab" id="t1" aria-controls="s1" aria-selected="false">Add equipment</button>
+    <button role="tab" id="t2" aria-controls="s2" aria-selected="false">Connect · Drives &amp; RAID</button>
+    <button role="tab" id="t3" aria-controls="s3" aria-selected="false">Network settings</button>
+    <button role="tab" id="t4" aria-controls="s4" aria-selected="false">Check firmware</button>
+    <button role="tab" id="t5" aria-controls="s5" aria-selected="false">Sign-in refused<i>example</i></button>
+    <button role="tab" id="t6" aria-controls="s6" aria-selected="false">Storage states<i>all outcomes</i></button>
+  </div>
+</div>
+
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 30 30" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1F6FA3"/><stop offset="1" stop-color="#0A3150"/></linearGradient></defs><rect x="1" y="1" width="28" height="28" rx="8" fill="url(#lg)"/><rect x="8" y="7.5" width="14" height="3.6" rx="1" fill="#fff" opacity=".95"/><rect x="8" y="13.2" width="14" height="3.6" rx="1" fill="#fff" opacity=".7"/><rect x="8" y="18.9" width="14" height="3.6" rx="1" fill="#fff" opacity=".45"/><circle cx="19.6" cy="9.3" r="1.25" fill="#F26B24"/></svg>
+      <span>Lab Builder</span>
+    </div>
+    <div class="kit">
+      <button class="kit-btn" id="kitBtn" aria-expanded="false" aria-haspopup="true"><span><small>Kit</small><b>Kit Single Gen 10</b></span><svg class="ic s"><use href="#i-chev"/></svg></button>
+      <div class="menu" id="kitMenu" hidden>
+        <button class="cur"><svg class="ic s"><use href="#i-check"/></svg>Kit Single Gen 10</button>
+        <button data-toast="A new, empty kit would open here."><svg class="ic s"><use href="#i-plus"/></svg>New kit…</button>
+        <hr>
+        <button data-toast="Rename opens an inline name field."><svg class="ic s"><use href="#i-pencil"/></svg>Rename</button>
+        <button data-toast="Save as new kit copies this plan under a new name."><svg class="ic s"><use href="#i-copy"/></svg>Save as new kit</button>
+      </div>
+    </div>
+    <span class="grow"></span>
+    <button class="cmdk" id="cmdkBtn" aria-label="Search or run a command"><svg class="ic"><use href="#i-search"/></svg><span>Search or run…</span><kbd>Ctrl K</kbd></button>
+    <span class="sep" aria-hidden="true"></span>
+    <button class="lnk" aria-label="Build reports" title="Build reports" data-toast="Build reports lists the reports saved for this kit."><svg class="ic s"><use href="#i-doc"/></svg><span class="l">Build reports</span></button>
+    <button class="lnk" aria-label="Run history" title="Run history" data-toast="Run history lists every read and every confirmed write."><svg class="ic s"><use href="#i-clock"/></svg><span class="l">Run history</span></button>
+    <button class="lnk" aria-label="Report an issue" title="Report an issue" data-toast="Report an issue opens a short form with this screen attached."><svg class="ic s"><use href="#i-flag"/></svg><span class="l">Report an issue</span></button>
+    <div class="kit more-wrap"><button class="icon-btn" id="moreBtn" aria-label="More: build reports, run history, report an issue" aria-expanded="false" aria-haspopup="true"><svg class="ic"><use href="#i-dots"/></svg></button><div class="menu" id="moreMenu" hidden>
+      <button data-toast="Build reports lists the reports saved for this kit."><svg class="ic s"><use href="#i-doc"/></svg>Build reports</button>
+      <button data-toast="Run history lists every read and every confirmed write."><svg class="ic s"><use href="#i-clock"/></svg>Run history</button>
+      <button data-toast="Report an issue opens a short form with this screen attached."><svg class="ic s"><use href="#i-flag"/></svg>Report an issue</button>
+    </div></div>
+    <button class="icon-btn" id="themeBtn" aria-label="Switch light or dark theme" title="Light or dark theme"><svg class="ic"><use href="#i-moon"/></svg></button>
+  </header>
+
+  <div class="shell">
+    <nav class="rail" aria-label="Build steps and equipment">
+      <button class="rail-sum" id="railSum" aria-expanded="false"><span class="dot">3</span><span><b>Step 3 of 6 · Connect equipment</b><small id="railSumSub">Now · plan the new RAID · 1 of 4 answered</small></span><svg class="ic s"><use href="#i-chev"/></svg></button>
+      <div>
+        <h4>Build steps</h4>
+        <ol class="steps">
+          <li><button class="st done" data-go="1" data-step="1"><span class="dot"><svg class="ic s"><use href="#i-check"/></svg></span><span><b>Add equipment</b><small>Done · saved plan · 4 pieces</small></span></button></li>
+          <li><button class="st done" data-go="3" data-step="2"><span class="dot"><svg class="ic s"><use href="#i-check"/></svg></span><span><b>Network settings</b><small>Done · saved plan</small></span></button></li>
+          <li><button class="st now" data-go="2" data-step="3"><span class="dot">3</span><span><b>Connect equipment</b><small>Now · plan the new RAID</small><span class="lights" id="lights" aria-label="1 of 4 answered"><i class="ok"></i><i></i><i></i><i></i><i class="bad" id="lab7Light" hidden></i><em id="lightsTxt">1 of 4 answered</em></span></span></button></li>
+          <li><button class="st next" data-go="4" data-step="4"><span class="dot">4</span><span><b>Check firmware</b><small>Next · not compared yet</small></span></button></li>
+          <li><button class="st lock" disabled><span class="dot"><svg class="ic s"><use href="#i-lock"/></svg></span><span><b>Prepare ESXi</b><small>Locked · needs firmware review</small></span></button></li>
+          <li><button class="st lock" disabled><span class="dot"><svg class="ic s"><use href="#i-lock"/></svg></span><span><b>Install Windows</b><small>Locked · needs ESXi</small></span></button></li>
+        </ol>
+      </div>
+      <div>
+        <h4>Equipment · last answer</h4>
+        <ul class="devs">
+          <li><button data-dev="dl3" class="cur"><span class="led ok"></span><span>HPE DL360 3</span><time class="ok">08:35</time></button></li>
+          <li><button data-dev="sw6"><span class="led"></span><span>Cisco switch 6</span><time>never</time></button></li>
+          <li><button data-dev="pdu4"><span class="led"></span><span>PDU 4</span><time>never</time></button></li>
+          <li><button data-dev="pdu5"><span class="led"></span><span>PDU 5</span><time>never</time></button></li>
+          <li id="lab7Row" hidden><button data-go="5"><span class="led bad"></span><span>Lab server 7 · example</span><time class="bad">refused</time></button></li>
+        </ul>
+      </div>
+      <div class="rail-foot">
+        <div class="row"><span>Hardware alerts</span><button class="warnlink" data-modal="alerts">10 · review</button></div>
+        <div class="row"><span>Writes waiting</span><b>0 · read-only</b></div>
+        <div class="keys"><span><kbd>Ctrl K</kbd>commands</span><span><kbd>E</kbd>evidence</span></div>
+      </div>
+    </nav>
+
+    <div class="screens">
+    <!-- ================= 0 · MY RACK ================= -->
+    <section class="screen" id="s0" role="tabpanel" aria-labelledby="t0">
+      <main class="main">
+        <section class="guide" aria-label="Your guide">
+          <span class="orb" aria-hidden="true"></span>
+          <div>
+            <p class="g-eyebrow">Your guide · <b>Step 3 of 6</b> · Connect equipment</p>
+            <p class="say"><em>HPE DL360 3</em> answered today’s read-only check, so the next step is to plan a new RAID for its disks.</p>
+            <p class="reassure"><svg class="ic s"><use href="#i-shield"/></svg>This opens Connect · Drives &amp; RAID, where the RAID is planned. Nothing on the hardware changes.</p>
+          </div>
+          <div class="g-act">
+            <button class="btn primary big" data-go="2" data-primary>Continue · Drives &amp; RAID <kbd>Ctrl ↵</kbd></button>
+          </div>
+          <div class="g-more">
+            <details class="trail">
+              <summary>How we got here · 3 notes</summary>
+              <ol>
+                <li>You opened Kit Single Gen 10: four pieces in a rack eight units tall.</li>
+                <li>The rack layout and the network settings are saved in your plan, so steps 1 and 2 are done.</li>
+                <li class="last"><time>08:35</time>HPE DL360 3 answered a read-only check today.</li>
+              </ol>
+            </details>
+          </div>
+        </section>
+
+        <div class="stage">
+          <div class="stage-h">
+            <div style="flex:1;min-width:200px">
+              <h2>Kit Single Gen 10</h2>
+              <p>Front view, U1 at the bottom · U = one shelf height · 4 pieces · 1 answered today</p>
+            </div>
+            <div class="seg" role="group" aria-label="View">
+              <button aria-pressed="true" data-view="rack"><svg class="ic s"><use href="#i-rack"/></svg>Rack</button>
+              <button aria-pressed="false" data-view="list"><svg class="ic s"><use href="#i-list"/></svg>List</button>
+            </div>
+          </div>
+          <div class="view-rack">
+            <div class="hero-row">
+            <div class="rackrow homerack" id="homeRack"></div>
+            <aside class="facts" id="factsDL" aria-label="Key facts for HPE DL360 3">
+              <p class="fx-h"><span>Key facts</span><b>HPE DL360 3</b></p>
+              <dl>
+                <div><dt>iLO firmware</dt><dd>iLO 5 v1.37</dd><span class="chip proof xs">proven · 08:35</span></div>
+                <div><dt>iLO address</dt><dd>192.0.2.27</dd><span class="chip saved xs"><svg class="ic"><use href="#i-pencil"/></svg>saved plan</span></div>
+                <div><dt>Drive bays</dt><dd>8 of 10 planned</dd><span class="chip saved xs"><svg class="ic"><use href="#i-pencil"/></svg>saved plan</span><small>Your plan, not a drive read.</small></div>
+                <div><dt>Disks</dt><dd>Disk erasure verified</dd><span class="chip rec xs"><svg class="ic"><use href="#i-rec"/></svg>recorded 24/09 16:22</span><small>6 reviewed disks · recorded result, not a live check.</small></div>
+              </dl>
+            </aside>
+            <aside class="facts" id="factsOther" aria-label="Key facts for the selected piece" hidden>
+              <p class="fx-h"><span>Key facts</span><b id="fName">Cisco switch 6</b></p>
+              <dl>
+                <div><dt>Kind in your plan</dt><dd id="oPlan">Switch</dd><span class="chip saved xs"><svg class="ic"><use href="#i-pencil"/></svg>saved plan</span></div>
+                <div><dt>Model it reports</dt><dd>—</dd><span class="chip blank xs">not known yet</span><small>It has never answered.</small></div>
+                <div><dt>Last answer</dt><dd>Never</dd><span class="chip blank xs">no proof</span></div>
+                <div><dt>Position</dt><dd id="oPos">U3 · front</dd><span class="chip saved xs"><svg class="ic"><use href="#i-pencil"/></svg>saved plan</span></div>
+              </dl>
+            </aside>
+            </div>
+            <div class="legend"><span><i class="sw"></i>drive in your plan</span><span><i class="sw o"></i>empty bay in your plan</span><span><i class="led ok"></i>answered today, shown with its time</span><span><i class="pill-key"></i>never answered</span><span class="note">Bay marks are your saved plan (8 of 10), not a drive read.</span></div>
+          </div>
+          <div class="view-list" hidden>
+            <div class="listwrap scrollx">
+              <table class="tbl">
+                <thead><tr><th>Slot</th><th>Picture</th><th>Name</th><th>Kind and model</th><th>Last answer</th></tr></thead>
+                <tbody>
+                  <tr><td>U5–U8</td><td></td><td class="hint">empty</td><td><span class="chip saved xs">saved plan</span></td><td></td></tr>
+                  <tr data-dev="pdu5"><td>U4</td><td><span class="face th f-pdu"><img src="08-assets/pdu-front.webp" alt=""></span></td><td><b>PDU 5</b></td><td>Power strip <span class="chip saved xs">saved plan</span></td><td><span class="chip blank xs">never answered</span></td></tr>
+                  <tr data-dev="sw6"><td>U3</td><td><span class="face th f-sfp"><img src="08-assets/catalyst-sfp-front.webp" alt=""></span></td><td><b>Cisco switch 6</b></td><td>Catalyst 9300, 24 ports + 4 SFP <span class="chip saved xs">saved plan</span></td><td><span class="chip blank xs">never answered</span></td></tr>
+                  <tr data-dev="pdu4"><td>U2</td><td><span class="face th f-pdu"><img src="08-assets/pdu-front.webp" alt=""></span></td><td><b>PDU 4</b></td><td>Power strip <span class="chip saved xs">saved plan</span></td><td><span class="chip blank xs">never answered</span></td></tr>
+                  <tr data-dev="dl3" class="sel"><td>U1</td><td><span class="face th f-dl360"><img src="08-assets/dl360-front.webp" alt=""></span></td><td><b>HPE DL360 3</b></td><td>HPE DL360 Gen10 · 1U <span class="chip saved xs">saved plan</span></td><td><span class="chip proof xs">answered 08:35</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <article class="card" id="devDL" aria-label="Selected equipment">
+          <div class="dev-h">
+            <span class="face th f-dl360"><img src="08-assets/dl360-front.webp" alt=""></span>
+            <div style="flex:1;min-width:180px">
+              <h3>HPE DL360 3</h3>
+              <p>Server · HPE DL360 Gen10 · U1 <span class="chip saved xs"><svg class="ic"><use href="#i-pencil"/></svg>saved plan</span></p>
+            </div>
+            <button class="btn sm" data-go="1"><svg class="ic s"><use href="#i-pencil"/></svg>Edit in rack</button>
+          </div>
+          <p class="labkey"><span><span class="chip proof xs">proven</span>this server itself answered today’s read-only check. Only that is ever green.</span><span><span class="chip saved xs"><svg class="ic"><use href="#i-pencil"/></svg>saved plan</span>written in your plan; nobody has checked it against the machine.</span><span><span class="chip rec xs"><svg class="ic"><use href="#i-rec"/></svg>recorded</span>a result stored earlier, not a live check, so never green.</span></p>
+          <p class="def" style="margin:8px 2px 0"><b>iLO</b> is the server’s built-in management chip. <b>ESXi</b> is the VMware system that will run the Windows VM on this server.</p>
+          <details class="tech">
+            <summary>More facts, what comes next and technical details <span>· 10 more</span></summary>
+            <dl class="tech-grid">
+              <div><dt>System ROM</dt><dd>U32 v1.46 <span class="chip proof xs">proven · 08:35</span><br><span class="hint">The server's own startup firmware.</span></dd></div>
+              <div><dt>Model</dt><dd>HPE DL360 Gen10 · 1U <span class="chip saved xs">saved plan</span></dd></div>
+              <div><dt>Drives today</dt><dd>Not read in today's check <span class="chip blank xs">not known yet</span><br><span class="hint"><b>Not known yet</b>: nothing knows it, and nobody has guessed.</span></dd></div>
+              <div><dt>Boot pair</dt><dd>Chosen after the drive read <span class="chip blank xs">not planned yet</span><br><span class="hint">Two drives on every ESXi host become the RAID 1 boot pair and never count as capacity.</span></dd></div>
+              <div><dt>Hardware alerts</dt><dd>10 recorded before the erase · current state unknown <button class="btn quiet sm" data-modal="alerts">Review the 10 alerts</button></dd></div>
+              <div><dt>Serial number</dt><dd><span class="chip blank xs">not known yet</span></dd></div>
+              <div><dt>Firmware</dt><dd>Not compared yet <span class="chip blank xs">blank</span><br><span class="hint">An HPE firmware package is selected in your plan.</span></dd></div>
+              <div><dt>ESXi</dt><dd>Not installed <span class="chip blank xs">blank</span><br><span class="hint">Locked: needs firmware review.</span></dd></div>
+              <div><dt>Windows VM</dt><dd>Not deployed <span class="chip blank xs">blank</span><br><span class="hint">Locked: needs ESXi.</span></dd></div>
+              <div class="wide"><dt>Certificate</dt><dd>Verify TLS is off because this iLO's certificate is self-signed. The connection is encrypted, but the server's identity is not checked, so a different machine at this address would not be noticed. Turn it on once a trusted certificate is installed.</dd></div>
+            </dl>
+          </details>
+        </article>
+
+        <article class="card" id="devOther" aria-label="Selected equipment" hidden>
+          <div class="dev-h">
+            <span class="face th" id="oThumb"></span>
+            <div style="flex:1;min-width:180px"><h3 id="oName">Cisco switch 6</h3><p><span id="oKind">Switch</span> · <span id="oSlot">U3</span> <span class="chip saved xs"><svg class="ic"><use href="#i-pencil"/></svg>saved plan</span></p></div>
+            <span class="chip blank">never answered</span>
+            <button class="btn sm" data-go="1"><svg class="ic s"><use href="#i-pencil"/></svg>Edit in rack</button>
+          </div>
+          <p class="labkey"><span><span class="chip saved xs"><svg class="ic"><use href="#i-pencil"/></svg>saved plan</span>written in your plan; nobody has checked it against the machine.</span><span><span class="chip blank xs">no proof</span>nothing here turns green until this piece answers a check itself.</span></p>
+          <dl class="ready" aria-label="What comes next">
+            <div><dt><svg class="ic s"><use href="#i-box"/></svg>Firmware</dt><dd>Not read <small id="oFw">· no reading yet</small></dd></div>
+            <div><dt><svg class="ic s"><use href="#i-lock"/></svg>ESXi</dt><dd>Not for this piece</dd></div>
+            <div><dt><svg class="ic s"><use href="#i-lock"/></svg>Windows VM</dt><dd>Not for this piece</dd></div>
+          </dl>
+        </article>
+      </main>
+
+      <aside class="drawer collapsed" aria-label="Evidence drawer">
+        <div class="dr-in">
+        <div class="dr-head"><b>Evidence · last check</b><button class="dr-toggle" data-drawer aria-label="Fold the evidence drawer"><kbd>E</kbd><svg class="ic s"><use href="#i-panel"/></svg></button></div>
+        <div class="dr-body">
+          <div class="evg">
+            <div class="ev-t"><strong>HPE DL360 3</strong><span class="chip proof">today 08:35</span></div>
+            <p>A read-only check of the server's iLO at 192.0.2.27. Nothing was written.</p>
+            <dl class="kv">
+              <div><dt>iLO</dt><dd class="pv">iLO 5 v1.37</dd></div>
+              <div><dt>ROM</dt><dd class="pv">U32 v1.46</dd></div>
+              <div><dt>certificate</dt><dd>self-signed, identity not checked</dd></div>
+              <div><dt>drives</dt><dd>not read in this check</dd></div>
+              <div><dt>alerts</dt><dd>not read in this check</dd></div>
+            </dl>
+            <button class="btn sm" data-toast="Read again: a read-only check of HPE DL360 3. Nothing is written."><svg class="ic s"><use href="#i-refresh"/></svg>Read again, read-only</button>
+          </div>
+          <div class="evg">
+            <h5>Recorded · 24/09 · not live</h5>
+            <dl class="kv">
+              <div><dt>result</dt><dd>Disk erasure verified</dd></div>
+              <div><dt>verified</dt><dd>24/09 16:22</dd></div>
+              <div><dt>scope</dt><dd>6 reviewed disks</dd></div>
+            </dl>
+          </div>
+          <div class="evg">
+            <h5>Recent reads</h5>
+            <ul class="reads">
+              <li><time>08:35</time><span>HPE DL360 3 answered; iLO and ROM read</span></li>
+              <li><time>24/09</time><span>HPE DL360 3 · Disk erasure verified, recorded</span></li>
+              <li><time>—</time><span>Cisco switch 6, PDU 4, PDU 5 · never answered</span></li>
+            </ul>
+            <p class="fine">Green appears only for today's read of this exact device, always with its time. One device's answer never colours another.</p>
+          </div>
+        </div>
+        <button class="dr-rail" data-drawer aria-label="Open the evidence drawer"><span class="pip ok"></span><span>Evidence · <em>DL360 3 · 08:35</em> · E</span></button>
+        </div>
+      </aside>
+    </section>
+
+    <!-- ================= 1 · ADD EQUIPMENT ================= -->
+    <section class="screen" id="s1" role="tabpanel" aria-labelledby="t1" hidden>
+      <main class="main">
+        <section class="guide" aria-label="Your guide">
+          <span class="orb" aria-hidden="true"></span>
+          <div>
+            <p class="g-eyebrow">Your guide · <b>Step 1 of 6</b> · Add equipment · you are on step 3</p>
+            <p class="say" id="addSay">The <em>HPE DL380</em> you are holding fits in U5 and U6, and nothing else has to move.</p>
+            <p class="reassure"><svg class="ic s"><use href="#i-shield"/></svg><span id="addCalm">Placing it changes your plan only. No hardware is touched.</span></p>
+          </div>
+          <div class="g-act">
+            <button class="btn primary big" id="addPrimary" data-primary>Place in U5–U6 <kbd>↵</kbd></button>
+          </div>
+          <div class="g-more">
+            <details class="trail" open>
+              <summary>How we got here · 3 notes</summary>
+              <ol id="addTrail">
+                <li>You came back to arrange the rack. This is a drawing of what goes where.</li>
+                <li>You picked up an HPE DL380 from the shelf. It is 2 U tall.</li>
+                <li class="last">You are holding it over U5, so the preview shows U5 and U6.</li>
+              </ol>
+            </details>
+            <p class="newlabel"><b>A new label on this page</b><span class="chip saved xs"><svg class="ic"><use href="#i-pencil"/></svg>saved plan</span>Everything on this page is your plan. Nobody has checked it against the machines.</p>
+          </div>
+        </section>
+
+        <div class="stage blueprint">
+          <div class="stage-h">
+            <div style="flex:1;min-width:220px">
+              <h2>Arrange the rack</h2>
+              <p>Drag a card onto a slot, or tap a card and then a free slot. Planning writes nothing to hardware.</p>
+            </div>
+            <div class="toolbar">
+              <span class="lbl">Rack height</span>
+              <span class="stepper"><button id="hMinus" aria-label="Make the rack one U shorter"><svg class="ic"><use href="#i-minus"/></svg></button><output id="hOut">8 U</output><button id="hPlus" aria-label="Make the rack one U taller"><svg class="ic"><use href="#i-plus"/></svg></button></span>
+              <span class="hint">4 to 60 U</span>
+            </div>
+          </div>
+          <div class="toolbar">
+            <span class="unsaved" id="unsaved">1 change not saved · HPE DL380 being placed</span>
+            <span class="grow"></span>
+            <button class="btn sm" data-toast="Load plan opens a saved layout. Your current changes are kept until you choose."><svg class="ic s"><use href="#i-doc"/></svg>Load plan</button>
+            <button class="btn sm" data-toast="Save a copy stores this layout as a separate plan."><svg class="ic s"><use href="#i-copy"/></svg>Save a copy</button>
+            <button class="btn sm" id="tbSave" disabled>Save layout <kbd>Ctrl S</kbd></button>
+            <button class="btn sm ocean" id="tbCont" disabled data-go="3">Continue · Network settings <svg class="ic s"><use href="#i-arrow"/></svg></button>
+          </div>
+          <p class="why" id="tbWhy" style="justify-content:flex-end;display:flex;margin:6px 0 0;position:relative;z-index:2"><svg class="ic s"><use href="#i-lock"/></svg><span>Save layout and Continue wait until the held HPE DL380 is placed or put back.</span></p>
+
+          <div class="build">
+            <div class="shelf">
+              <div class="shelf-h"><b>The shelf</b><small>drag or tap</small></div>
+              <div class="cards" id="cards"></div>
+            </div>
+            <div class="buildrack">
+              <div class="rackrow" id="addRack"></div>
+              <div class="keyleg"><span><kbd>↑</kbd><kbd>↓</kbd>move selected</span><span><kbd>Del</kbd>remove from plan</span><span><kbd>↵</kbd>place</span><span><kbd>Esc</kbd>put back</span><span>U = one shelf height, 44.45 mm</span></div>
+              <p class="status-line" id="addStatus" role="status">Tap or drag works the same.</p>
+            </div>
+          </div>
+        </div>
+
+        <article class="card" id="edCard" aria-label="Edit selected equipment">
+          <div class="card-h">
+            <div style="flex:1;min-width:200px"><h3>Edit · <span id="edName">HPE DL360 3</span></h3><p>Changes stay in your plan until you save the layout. The equipment's own answers appear after it connects.</p></div>
+            <span class="chip saved"><svg class="ic"><use href="#i-pencil"/></svg>saved plan</span>
+          </div>
+          <div class="editor">
+            <div>
+              <h4>Identity</h4>
+              <div class="fld"><label for="e-name">Name</label><input class="inp" id="e-name" value="HPE DL360 3"><span class="hint">Any name works. It is only a label in your plan.</span></div>
+              <div class="fld"><label for="e-model">Model</label><select class="inp" id="e-model"></select><span class="hint" id="e-model-h">The real generation is read on first contact.</span></div>
+            </div>
+            <div>
+              <h4>Placement</h4>
+              <div class="fld"><span class="lb">Bottom slot</span><div class="slots" id="slotPick"></div><span class="hint" id="slotHint"></span></div>
+              <div class="fld"><span class="lb">Height</span><div class="hgt" id="hgtRow"></div></div>
+            </div>
+            <div id="bayCol"></div>
+          </div>
+          <div class="ed-foot">
+            <button class="btn sm" data-toast="Move: pick a new bottom slot, drag it in the rack, or use ↑ and ↓."><svg class="ic s"><use href="#i-move"/></svg>Move equipment</button>
+            <button class="btn sm risk" id="rmBtn"><svg class="ic s"><use href="#i-trash"/></svg>Remove equipment <kbd>Del</kbd></button>
+            <span class="hint">Removing takes it out of the plan only. Hardware is untouched.</span>
+          </div>
+        </article>
+      </main>
+
+      <aside class="drawer collapsed" aria-label="Evidence drawer">
+        <div class="dr-in">
+        <div class="dr-head"><b>Evidence · this screen</b><button class="dr-toggle" data-drawer aria-label="Fold the evidence drawer"><kbd>E</kbd><svg class="ic s"><use href="#i-panel"/></svg></button></div>
+        <div class="dr-body">
+          <div class="evg">
+            <p><b>No check on this screen.</b> Arranging the rack is planning only.</p>
+            <div class="none3"><div><b>0</b><small>reads</small></div><div><b>0</b><small>writes</small></div><div><b>0</b><small>checks</small></div></div>
+            <p class="fine">The last read is still HPE DL360 3 at 08:35. Planned bays are drawn from your plan, not from that read.</p>
+          </div>
+        </div>
+        <button class="dr-rail" data-drawer aria-label="Open the evidence drawer"><span class="pip"></span><span>Evidence · <em>no check here</em> · E</span></button>
+        </div>
+      </aside>
+    </section>
+
+    <!-- ================= 2 · CONNECT / DRIVES & RAID ================= -->
+    <section class="screen" id="s2" role="tabpanel" aria-labelledby="t2" hidden>
+      <main class="main">
+        <section class="guide" aria-label="Your guide">
+          <span class="orb" aria-hidden="true"></span>
+          <div>
+            <p class="g-eyebrow">Your guide · <b>Step 3 of 6</b> · Connect equipment</p>
+            <p class="say">The erase of the 6 reviewed disks on <em>HPE DL360 3</em> is recorded as verified (24/09 16:22), so the next step is to plan a new RAID.</p>
+            <p class="reassure"><svg class="ic s"><use href="#i-shield"/></svg>Planning writes nothing. Creating the RAID waits for the firmware review, then its own preview and confirmation.</p>
+          </div>
+          <div class="g-act">
+            <button class="btn primary big" data-modal="raid" data-primary>Plan new RAID <kbd>Ctrl ↵</kbd></button>
+          </div>
+          <div class="g-more">
+            <details class="trail">
+              <summary>How we got here · 3 notes</summary>
+              <ol>
+                <li><time>24/09</time>The controller reported erase completion for the 6 reviewed disks at 16:22.</li>
+                <li><time>08:35</time>HPE DL360 3 answered a read-only check today.</li>
+                <li class="last">You opened Connect equipment from My Rack.</li>
+              </ol>
+            </details>
+            <p class="newlabel"><b>A new label on this page</b><span class="chip rec xs"><svg class="ic"><use href="#i-rec"/></svg>recorded 24/09 16:22</span>A result recorded back then. It is not a live check, so it is never green.</p>
+          </div>
+        </section>
+
+        <div class="sec"><h2>Connect equipment</h2><span class="def"><b>iLO</b> is the server's built-in management chip.</span></div>
+        <div class="card">
+          <div class="picker" role="radiogroup" aria-label="Equipment to connect">
+            <button class="pick" role="radio" aria-checked="true" data-cdev="dl3"><span class="face th f-dl360"><img src="08-assets/dl360-front.webp" alt=""></span><b>HPE DL360 3</b><small><span class="chip proof xs">answered 08:35</span>U1</small></button>
+            <button class="pick" role="radio" aria-checked="false" data-cdev="sw6"><span class="face th f-sfp"><img src="08-assets/catalyst-sfp-front.webp" alt=""></span><b>Cisco switch 6</b><small><span class="chip blank xs">never answered</span>U3</small></button>
+            <button class="pick" role="radio" aria-checked="false" data-cdev="pdu4"><span class="face th f-pdu"><img src="08-assets/pdu-front.webp" alt=""></span><b>PDU 4</b><small><span class="chip blank xs">never answered</span>U2</small></button>
+            <button class="pick" role="radio" aria-checked="false" data-cdev="pdu5"><span class="face th f-pdu"><img src="08-assets/pdu-front.webp" alt=""></span><b>PDU 5</b><small><span class="chip blank xs">never answered</span>U4</small></button>
+          </div>
+          <div class="form2" id="connForm" style="margin-top:18px"></div>
+          <div class="check-row" id="connCheck"></div>
+        </div>
+
+        <div class="sec"><h2>Drives &amp; RAID · HPE DL360 3</h2><span class="def"><b>RAID</b> groups drives so they act as one.</span></div>
+        <dl class="tiles3">
+          <div class="tile3 plan"><dt>Saved bay plan</dt><dd>8 of 10 bays</dd><span class="chip saved xs"><svg class="ic"><use href="#i-pencil"/></svg>saved plan</span></div>
+          <div class="tile3 rec"><dt>Recorded erase scope</dt><dd>6 reviewed disks</dd><span class="chip rec xs"><svg class="ic"><use href="#i-rec"/></svg>recorded 24/09 16:22</span></div>
+          <div class="tile3 none"><dt>Current drive list</dt><dd>Not read yet</dd><span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="chip blank xs">not known yet</span><button class="btn sm" data-toast="Refresh drive inventory: a read-only read of the drive list."><svg class="ic s"><use href="#i-refresh"/></svg>Refresh drive inventory</button></span></div>
+        </dl>
+        <p class="hint" style="margin:-8px 2px 0">Three numbers from three places: your plan, the recorded erase, and today's read, which has not counted drives yet.</p>
+
+        <article class="card result" aria-label="Recorded storage result">
+          <div class="res-top">
+            <span class="res-mark"><svg class="ic"><use href="#i-check"/></svg></span>
+            <div>
+              <p class="eyebrow">Recorded storage result</p>
+              <h3>Disk erasure verified <span class="chip rec long"><svg class="ic"><use href="#i-rec"/></svg>recorded 24/09 16:22</span><span class="chip rec long">recorded result, not a live check</span></h3>
+              <p class="lead">The controller reported erase completion for the 6 reviewed disks after erase activity was observed. Method: Overwrite (device sanitize). Next action: plan new RAID, the orange button in your guide.</p>
+            </div>
+          </div>
+          <ol class="stages">
+            <li><b>Erase requested</b><span>24/09 14:34</span></li>
+            <li><b>Power-on requested</b><span>24/09 14:35</span></li>
+            <li><b>Erasure verified</b><span>24/09 16:22</span></li>
+          </ol>
+        </article>
+
+        <div class="dgrid">
+          <div class="card" style="padding:8px 10px">
+            <div class="scrollx">
+              <table class="tbl">
+                <thead><tr><th>Controller location</th><th>Model</th><th>Size · type</th></tr></thead>
+                <tbody>
+                  <tr><td class="mono">1I:1:1</td><td class="mono">EG000300JWEBF</td><td>300 GB HDD</td></tr>
+                  <tr><td class="mono">1I:1:2</td><td class="mono">EG000300JWEBF</td><td>300 GB HDD</td></tr>
+                  <tr><td class="mono">2I:1:5</td><td class="mono">EG001200JWJNQ</td><td>1200 GB HDD</td></tr>
+                  <tr><td class="mono">2I:1:6</td><td class="mono">EG001200JWJNQ</td><td>1200 GB HDD</td></tr>
+                  <tr><td class="mono">2I:1:7</td><td class="mono">EG001200JWJNQ</td><td>1200 GB HDD</td></tr>
+                  <tr><td class="mono">2I:1:8</td><td class="mono">EG001200JWJNQ</td><td>1200 GB HDD</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="hint" style="margin:6px 10px 6px">The 6 reviewed disks, from the recorded erase. Controller locations are port : box : bay on the storage controller, not the numbers on the front bays, so they are not matched to the picture.</p>
+          </div>
+          <div class="dgrid2">
+            <div class="bootpair">
+              <h4>Boot pair for ESXi (RAID 1) <span class="chip blank xs">not planned yet</span></h4>
+              <div class="pair"><span class="tbd">first drive · after the read</span><span class="tbd">second drive · after the read</span></div>
+              <p>Two drives on every ESXi host become the RAID 1 boot pair and never count as capacity; you'll choose them after the drive read. A hot spare is optional and is not a backup.</p>
+            </div>
+            <div>
+              <span class="face th f-dl360" style="display:block" data-bays="1,2,3,4,6,7,8,9"><img src="08-assets/dl360-front.webp" alt=""></span>
+              <p class="hint" style="margin:8px 0 0">Front bays in your saved plan: 1–4 and 6–9 of 10. This is the plan, not a drive read.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card alerts">
+          <span class="big">10</span>
+          <p><b>Hardware alerts were recorded before the erase.</b> Their current state is unknown. Review them before approving firmware. This does not hold up planning the RAID.</p>
+          <button class="btn" data-modal="alerts"><svg class="ic s"><use href="#i-alert"/></svg>Review the 10 alerts</button>
+        </div>
+
+        <div class="card">
+          <div class="card-h" style="margin-bottom:10px"><h3>More for these disks</h3></div>
+          <div class="more">
+            <span class="k">Read-only</span>
+            <span class="v"><button class="btn sm" data-toast="Erasure report: the recorded result with its three stages, ready to save."><svg class="ic s"><use href="#i-doc"/></svg>Erasure report</button><button class="btn sm" data-toast="Diagnostics: read-only details from the storage controller."><svg class="ic s"><use href="#i-pulse"/></svg>Diagnostics</button></span>
+            <hr>
+            <span class="k" style="color:var(--danger)">Destructive</span>
+            <span class="v"><button class="btn sm risk" data-modal="erase"><svg class="ic s"><use href="#i-alert"/></svg>Erase disks again… <span class="tag">destructive</span></button><button class="btn sm risk" data-modal="recovery"><svg class="ic s"><use href="#i-alert"/></svg>Advanced recovery… <span class="tag">destructive</span></button><span class="hint">Each opens a preview first, then a separate confirmation.</span></span>
+          </div>
+        </div>
+      </main>
+
+      <aside class="drawer" aria-label="Evidence drawer">
+        <div class="dr-in">
+        <div class="dr-head"><b>Evidence · what came back</b><button class="dr-toggle" data-drawer aria-label="Fold the evidence drawer"><kbd>E</kbd><svg class="ic s"><use href="#i-panel"/></svg></button></div>
+        <div class="dr-body">
+          <div class="evg">
+            <div class="ev-t"><strong>Today · 08:35</strong><span class="chip proof">proven · 08:35</span></div>
+            <dl class="kv">
+              <div><dt>target</dt><dd>HPE DL360 3 at 192.0.2.27</dd></div>
+              <div><dt>kind</dt><dd>read-only iLO check</dd></div>
+              <div><dt>iLO</dt><dd class="pv">iLO 5 v1.37</dd></div>
+              <div><dt>ROM</dt><dd class="pv">U32 v1.46</dd></div>
+              <div><dt>drives</dt><dd>not read in this check</dd></div>
+            </dl>
+          </div>
+          <div class="evg">
+            <div class="ev-t"><strong>Recorded · 24/09</strong><span class="chip rec"><svg class="ic"><use href="#i-rec"/></svg>not live</span></div>
+            <dl class="kv">
+              <div><dt>result</dt><dd>Disk erasure verified</dd></div>
+              <div><dt>requested</dt><dd>24/09 14:34</dd></div>
+              <div><dt>power-on</dt><dd>24/09 14:35, requested</dd></div>
+              <div><dt>verified</dt><dd>24/09 16:22</dd></div>
+              <div><dt>scope</dt><dd>6 reviewed disks</dd></div>
+            </dl>
+            <p class="fine">A request, a boot or an empty RAID list alone is never counted as proof of erasure.</p>
+          </div>
+        </div>
+        <button class="dr-rail" data-drawer aria-label="Open the evidence drawer"><span class="pip ok"></span><span>Evidence · <em>DL360 3 · 08:35</em> · E</span></button>
+        </div>
+      </aside>
+    </section>
+
+    <!-- ================= 3 · NETWORK ================= -->
+    <section class="screen" id="s3" role="tabpanel" aria-labelledby="t3" hidden>
+      <main class="main">
+        <section class="guide" aria-label="Your guide">
+          <span class="orb" aria-hidden="true"></span>
+          <div>
+            <p class="g-eyebrow">Your guide · <b>Step 2 of 6</b> · Network settings · you are on step 3</p>
+            <p class="say">These network settings are saved in your plan, so when they look right, carry on to connecting the equipment.</p>
+            <p class="reassure"><svg class="ic s"><use href="#i-shield"/></svg>Saving writes your plan only. Nothing on the network is changed.</p>
+          </div>
+          <div class="g-act"><button class="btn primary big" data-go="2" data-primary>Save and continue · Connect <kbd>Ctrl ↵</kbd></button></div>
+          <div class="g-more">
+            <details class="trail"><summary>How we got here · 2 notes</summary><ol><li>The rack layout is saved in your plan.</li><li class="last">These settings were saved before. Nothing has checked them against the network.</li></ol></details>
+          </div>
+        </section>
+
+        <div class="card">
+          <div class="card-h"><div style="flex:1;min-width:200px"><h3>Addresses</h3><p>Shared by every piece of equipment in this kit.</p></div><span class="chip saved"><svg class="ic"><use href="#i-pencil"/></svg>saved plan</span></div>
+          <div class="fs">
+            <div class="fld"><label for="n1">Subnet</label><input class="inp" id="n1" value="192.0.2.0/27"></div>
+            <div class="fld"><label for="n2">Gateway</label><input class="inp" id="n2" value="192.0.2.1"></div>
+            <div class="fld"><label for="n3">VLAN</label><input class="inp" id="n3" value="100"></div>
+            <div class="fld"><label for="n4">MTU</label><input class="inp" id="n4" value="1500"><span class="hint">1500 is the usual size.</span></div>
+          </div>
+          <h4 class="subh" style="margin-top:8px">Where VMs are stored</h4>
+          <div class="choices" role="radiogroup" aria-label="VM storage">
+            <button class="choice" role="radio" aria-checked="true"><span class="rd"></span><span><b>Local datastore</b><small>Each host keeps its VMs on its own disks. Works with one host.</small></span></button>
+            <button class="choice" role="radio" aria-checked="false" disabled><span class="rd"></span><span><b>vSAN</b><small>Pools the hosts' drives into one shared datastore.</small><small class="no"><svg class="ic s"><use href="#i-lock"/></svg>Needs 3 hosts. This kit has 1.</small></span></button>
+            <button class="choice" role="radio" aria-checked="false" disabled><span class="rd"></span><span><b>NetApp</b><small>Shared storage served by a NetApp system.</small><small class="no"><svg class="ic s"><use href="#i-lock"/></svg>No NetApp in the rack. Add one on Add equipment.</small></span></button>
+          </div>
+          <div class="svc">
+            <div class="svc-h"><button class="switch" role="switch" aria-checked="true" aria-label="DNS"></button><div><b>DNS · on</b><small>Servers that turn names into addresses</small></div></div>
+            <div>
+              <div class="fs3"><input class="inp" aria-label="DNS server 1" value="198.51.100.10"><input class="inp" aria-label="DNS server 2" value="198.51.100.11"><input class="inp" aria-label="DNS server 3" value="198.51.100.12"></div>
+              <div class="addrow"><button class="btn sm" data-toast="Add server adds an empty DNS field."><svg class="ic s"><use href="#i-plus"/></svg>Add server</button><span class="hint">3 servers</span></div>
+            </div>
+          </div>
+          <div class="svc">
+            <div class="svc-h"><button class="switch" role="switch" aria-checked="false" aria-label="NTP"></button><div><b>NTP · off</b><small>Time servers keep every clock in step</small></div></div>
+            <div>
+              <div class="fld" style="max-width:360px"><label for="ntp1">Time server</label><input class="inp" id="ntp1" disabled placeholder="none in your plan"></div>
+              <span class="why"><svg class="ic s"><use href="#i-lock"/></svg>Turn NTP on to add a time server.</span>
+            </div>
+          </div>
+          <div class="svc">
+            <div class="svc-h"><button class="switch" role="switch" aria-checked="true" aria-label="SNMP"></button><div><b>SNMP · on</b><small>Lets a monitoring manager read status</small></div></div>
+            <div>
+              <div class="hgt" style="margin-bottom:10px"><span class="lbl">Version</span><span class="seg"><button aria-pressed="true">v3</button><button aria-pressed="false">v2c</button></span><span class="hint">v3 signs and encrypts; v2c does not.</span></div>
+              <div class="fld" style="margin:0"><label for="snmp1">Managers</label><input class="inp" id="snmp1" value="198.51.100.20"></div>
+              <div class="addrow"><button class="btn sm" data-toast="Add manager adds an empty manager field."><svg class="ic s"><use href="#i-plus"/></svg>Add manager</button><span class="hint">1 manager</span></div>
+            </div>
+          </div>
+          <div class="check-row"><button class="btn sm quiet" data-toast="Reset puts back the values saved in your plan.">Reset</button><button class="btn sm" data-toast="Save as defaults: new kits start with these values.">Save as defaults</button><span class="hint">Defaults are used for new kits.</span></div>
+        </div>
+      </main>
+      <aside class="drawer" aria-label="Evidence drawer">
+        <div class="dr-in">
+        <div class="dr-head"><b>Evidence · this screen</b><button class="dr-toggle" data-drawer aria-label="Fold the evidence drawer"><kbd>E</kbd><svg class="ic s"><use href="#i-panel"/></svg></button></div>
+        <div class="dr-body">
+          <div class="evg">
+            <p><b>No check on this screen.</b> These values are your plan; the app has not checked them against the network.</p>
+            <div class="none3"><div><b>0</b><small>reads</small></div><div><b>0</b><small>writes</small></div><div><b>0</b><small>checks</small></div></div>
+            <p class="fine">They are used when equipment is connected and when ESXi is prepared.</p>
+          </div>
+        </div>
+        <button class="dr-rail" data-drawer aria-label="Open the evidence drawer"><span class="pip"></span><span>Evidence · <em>no check here</em> · E</span></button>
+        </div>
+      </aside>
+    </section>
+
+    <!-- ================= 4 · FIRMWARE ================= -->
+    <section class="screen" id="s4" role="tabpanel" aria-labelledby="t4" hidden>
+      <main class="main">
+        <section class="guide" aria-label="Your guide">
+          <span class="orb" aria-hidden="true"></span>
+          <div>
+            <p class="g-eyebrow">Your guide · <b>Step 4 of 6</b> · Check firmware · next; you are on step 3</p>
+            <p class="say">Compare <em>HPE DL360 3</em> with the selected HPE package; the comparison only reads and changes nothing.</p>
+            <p class="reassure"><svg class="ic s"><use href="#i-shield"/></svg>Any upgrade comes later, previewed, and waits for a separate yes.</p>
+          </div>
+          <div class="g-act"><button class="btn primary big" data-primary data-toast="Compare with the HPE firmware package: a read-only comparison of HPE DL360 3. Nothing is installed.">Compare with the HPE firmware package <kbd>Ctrl ↵</kbd></button></div>
+          <div class="g-more">
+            <details class="trail"><summary>How we got here · 2 notes</summary><ol><li><time>08:35</time>HPE DL360 3 reported iLO 5 v1.37 and System ROM U32 v1.46.</li><li class="last">The package P95170_001_gen10spp-2026.05.00.00 is selected in your plan.</li></ol></details>
+          </div>
+        </section>
+        <div class="card">
+          <div class="pkg">
+            <span class="box"><svg class="ic"><use href="#i-box"/></svg></span>
+            <div style="flex:1;min-width:200px"><p class="eyebrow">Selected package · HPE Service Pack for ProLiant</p><code>P95170_001_gen10spp-2026.05.00.00</code><p class="def" style="margin:5px 0 0"><b>SPP</b> (Service Pack for ProLiant) is HPE's firmware package. <b>ROM</b> is the server's own startup firmware.</p></div>
+            <button class="btn sm" data-toast="Change package lists the packages saved on this machine.">Change package</button>
+            <button class="btn sm quiet" data-toast="Get HPE SPP link shows where to download the package from HPE."><svg class="ic s"><use href="#i-link"/></svg>Get HPE SPP link</button>
+          </div>
+          <div class="scrollx" style="margin-top:14px">
+            <table class="tbl">
+              <thead><tr><th>Equipment</th><th>Current readings</th><th>Against the package</th></tr></thead>
+              <tbody>
+                <tr><td><b>HPE DL360 3</b></td><td>iLO 5 v1.37 · ROM U32 v1.46 <span class="chip proof xs">proven · 08:35</span></td><td><span class="chip blank">not compared yet</span></td></tr>
+                <tr><td><b>Cisco switch 6</b></td><td><span class="chip blank xs">never answered</span></td><td class="hint">Switch firmware reading is not supported yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="check-row"><button class="btn sm" disabled>Review upgrades</button><span class="why"><svg class="ic s"><use href="#i-lock"/></svg>Nothing compared yet.</span><span class="grow"></span><button class="btn sm quiet" data-toast="Saved readings: 1 reading, HPE DL360 3 at 08:35."><svg class="ic s"><use href="#i-clock"/></svg>Saved readings · 1</button></div>
+        </div>
+        <div class="blocked">
+          <button class="btn" disabled>Continue · Prepare ESXi <svg class="ic s"><use href="#i-arrow"/></svg></button>
+          <span class="why"><svg class="ic s"><use href="#i-lock"/></svg>Blocked: firmware has not been compared or reviewed, and the 10 hardware alerts are not reviewed yet.</span>
+        </div>
+        <div class="blocked">
+          <span class="why"><svg class="ic s"><use href="#i-lock"/></svg><span><b>Prepare ESXi</b> is locked until the firmware review is done. <b>Install Windows</b> is locked until ESXi is installed. ESXi is never a rack unit; it runs on HPE DL360 3.</span></span>
+        </div>
+      </main>
+      <aside class="drawer" aria-label="Evidence drawer">
+        <div class="dr-in">
+        <div class="dr-head"><b>Evidence · readings</b><button class="dr-toggle" data-drawer aria-label="Fold the evidence drawer"><kbd>E</kbd><svg class="ic s"><use href="#i-panel"/></svg></button></div>
+        <div class="dr-body"><div class="evg"><div class="ev-t"><strong>HPE DL360 3</strong><span class="chip proof">today 08:35</span></div><dl class="kv"><div><dt>iLO</dt><dd class="pv">iLO 5 v1.37</dd></div><div><dt>ROM</dt><dd class="pv">U32 v1.46</dd></div><div><dt>package</dt><dd>not compared yet</dd></div></dl><p class="fine">The comparison reads only. It does not install anything.</p></div></div>
+        <button class="dr-rail" data-drawer aria-label="Open the evidence drawer"><span class="pip ok"></span><span>Evidence · <em>DL360 3 · 08:35</em> · E</span></button>
+        </div>
+      </aside>
+    </section>
+
+    <!-- ================= 5 · SIGN-IN REFUSED ================= -->
+    <section class="screen" id="s5" role="tabpanel" aria-labelledby="t5" hidden>
+      <main class="main">
+        <section class="guide" aria-label="Your guide">
+          <span class="orb" aria-hidden="true"></span>
+          <div>
+            <p class="g-eyebrow">Your guide · <b>First contact</b> · Lab server 7 · example</p>
+            <p class="say">Something at <em>192.0.2.29</em> answered as an iLO but refused the username or password, so check the pull-out tag, correct the details below and try again.</p>
+            <p class="reassure"><svg class="ic s"><use href="#i-shield"/></svg>This is a read-only sign-in to the iLO, the server's built-in management chip. Nothing on the server changes.</p>
+          </div>
+          <div class="g-act"><button class="btn primary big" data-primary data-toast="Check connection again: a read-only sign-in to 192.0.2.29.">Check connection again <kbd>Ctrl ↵</kbd></button></div>
+        </section>
+        <p class="example"><b>Example state</b>This example adds a fifth server, “Lab server 7” at 192.0.2.29, to the plan. It shows in the equipment list only while this example is open. It has never answered. HPE DL360 3 is not affected; its 08:35 answer still stands.</p>
+        <div class="card">
+          <div class="card-h"><div style="flex:1"><h3>Saved details · still editable</h3><p>Nothing was lost. Correct them, then use the orange button to check again.</p></div></div>
+          <div class="form2">
+            <div class="fld"><label for="f-addr">iLO address <span class="chip saved xs"><svg class="ic"><use href="#i-pencil"/></svg>saved plan</span></label><input class="inp" id="f-addr" value="192.0.2.29"></div>
+            <div class="fld"><label for="f-user">Username <span class="chip saved xs"><svg class="ic"><use href="#i-pencil"/></svg>saved plan</span></label><input class="inp" id="f-user" placeholder="saved · type to replace" autocomplete="off"></div>
+            <div class="fld"><label for="f-pass">Password <span class="hint">saved on this kit · never shown</span></label><div class="pw"><input class="inp" id="f-pass" type="password" placeholder="••••••••" autocomplete="off"><button class="btn sm" style="height:38px" data-toast="Change opens an empty password field.">Change</button></div></div>
+          </div>
+        </div>
+        <article class="card fail">
+          <div class="res-top">
+            <span class="fail-mark"><svg class="ic"><use href="#i-key"/></svg></span>
+            <div>
+              <p class="eyebrow">First contact · Lab server 7</p>
+              <h3>Sign-in refused</h3>
+              <p style="margin:4px 0 8px;color:var(--ink-2);font-size:13.5px">Something that speaks iLO answered and said no to the username or password.</p>
+              <span class="chip danger">sign-in refused</span>
+            </div>
+          </div>
+          <div class="qa">
+            <div><h4>What was tried</h4><p>A read-only sign-in to the iLO at <span class="mono">192.0.2.29</span> with the username and password saved for Lab server 7.</p></div>
+            <div><h4>What it means</h4><p>Something that speaks iLO answered at this address, so the network path works. The credentials were not accepted. Whether it is the server you meant is not known until a sign-in succeeds.</p></div>
+          </div>
+          <div style="margin-top:18px"><h4 class="eyebrow">What to check, in order</h4>
+            <ol class="order">
+              <li><span><b>Username.</b> Compare it letter by letter with the pull-out tag on the front of the server.</span></li>
+              <li><span><b>Password.</b> Retype it; it is case-sensitive. Watch for 0 and O, 1 and l.</span></li>
+              <li><span><b>Changed since?</b> If someone changed the password from the one on the tag, use the changed one.</span></li>
+            </ol>
+          </div>
+          <dl class="tech-grid" style="margin-top:14px">
+            <div><dt>Model</dt><dd><span class="chip blank xs">not known yet</span></dd></div>
+            <div><dt>Drive bays</dt><dd><span class="chip blank xs">not known yet</span></dd></div>
+            <div class="wide"><dt>Why blank</dt><dd>A server that has not signed in has no model, bays or drives here. Nothing is guessed from its name.</dd></div>
+          </dl>
+        </article>
+      </main>
+      <aside class="drawer" aria-label="Evidence drawer">
+        <div class="dr-in">
+        <div class="dr-head"><b>Evidence · last attempt</b><button class="dr-toggle" data-drawer aria-label="Fold the evidence drawer"><kbd>E</kbd><svg class="ic s"><use href="#i-panel"/></svg></button></div>
+        <div class="dr-body"><div class="evg"><div class="ev-t"><strong>192.0.2.29</strong><span class="chip danger">refused</span></div><dl class="kv"><div><dt>kind</dt><dd>read-only sign-in</dd></div><div><dt>answered as</dt><dd>iLO</dd></div><div><dt>outcome</dt><dd>sign-in refused</dd></div><div><dt>inventory</dt><dd>none read</dd></div></dl><p class="fine">Nothing turns green until a sign-in succeeds on this exact device.</p></div></div>
+        <button class="dr-rail" data-drawer aria-label="Open the evidence drawer"><span class="pip bad"></span><span>Evidence · <em>refused</em> · E</span></button>
+        </div>
+      </aside>
+    </section>
+
+    <!-- ================= 6 · STORAGE STATES ================= -->
+    <section class="screen" id="s6" role="tabpanel" aria-labelledby="t6" hidden>
+      <main class="main">
+        <section class="guide" aria-label="Your guide">
+          <span class="orb" aria-hidden="true"></span>
+          <div>
+            <p class="g-eyebrow">Your guide · <b>Reference</b> · every storage outcome</p>
+            <p class="say">The storage card can look five ways; <em>HPE DL360&nbsp;3</em>'s recorded result (24/09 16:22, not a live check) is the last one.</p>
+            <p class="reassure"><svg class="ic s"><use href="#i-shield"/></svg>These cards only show states. Nothing here sends anything.</p>
+          </div>
+          <div class="g-act"><button class="btn primary big" data-go="2" data-primary>Back to Drives &amp; RAID <kbd>Ctrl ↵</kbd></button></div>
+        </section>
+        <div class="states">
+          <article class="op pending">
+            <div class="op-h"><span class="op-ic"><svg class="ic"><use href="#i-power"/></svg></span><div><p class="n">1 · Pending</p><h3>Waiting for your power-on confirmation</h3></div></div>
+            <ul class="mini"><li class="y"><i></i><span>Erase requested</span><span>14:34</span></li><li class="w"><i></i><span>Power-on · waits for your yes</span><span>—</span></li><li><i></i><span>Verification</span><span>not yet</span></li></ul>
+            <p>The erase request was accepted. The erase runs when the server powers on, and power-on needs its own confirmation. Accepted is not done.</p>
+            <div class="acts"><button class="btn sm ocean" data-toast="Review power-on: a preview first, then a separate confirmation."><svg class="ic s"><use href="#i-power"/></svg>Review power-on…</button><span class="hint">preview, then confirm</span></div>
+          </article>
+          <article class="op running">
+            <div class="op-h"><span class="op-ic"><svg class="ic"><use href="#i-pulse"/></svg></span><div><p class="n">2 · Erasing</p><h3>Erasing · no percentage reported</h3></div></div>
+            <ul class="mini"><li class="y"><i></i><span>Erase requested</span><span>14:34</span></li><li class="y"><i></i><span>Power-on requested</span><span>14:35</span></li><li class="w"><i></i><span>Erase activity observed</span><span>no %</span></li></ul>
+            <div class="bar" aria-hidden="true"></div>
+            <p>The controller shows erase activity but reports no percentage, so none is shown. No time estimate is given.</p>
+            <div class="acts"><button class="btn sm" data-toast="Read status again: read-only."><svg class="ic s"><use href="#i-refresh"/></svg>Read status again</button><span class="hint">read-only</span></div>
+          </article>
+          <article class="op bad">
+            <div class="op-h"><span class="op-ic"><svg class="ic"><use href="#i-x"/></svg></span><div><p class="n">3 · Failed or uncertain</p><h3>No completion was reported</h3></div></div>
+            <ul class="mini"><li class="y"><i></i><span>Erase requested</span><span>14:34</span></li><li class="y"><i></i><span>Power-on requested</span><span>14:35</span></li><li class="x"><i></i><span>Completion</span><span>not reported</span></li></ul>
+            <p class="stop"><svg class="ic s"><use href="#i-alert"/></svg>Do not retry automatically.</p>
+            <p>The 6 reviewed disks are not counted as erased. Read Diagnostics before deciding anything; a new attempt starts only from Erase disks again, with its own preview and confirmation.</p>
+            <div class="acts"><button class="btn sm" data-toast="Diagnostics: read-only details from the storage controller."><svg class="ic s"><use href="#i-pulse"/></svg>Diagnostics</button><span class="hint">read-only</span></div>
+          </article>
+          <article class="op off">
+            <div class="op-h"><span class="op-ic"><svg class="ic"><use href="#i-offline"/></svg></span><div><p class="n">4 · Unreachable</p><h3>Server offline or not answering</h3></div></div>
+            <ul class="mini"><li class="y"><i></i><span>Erase requested</span><span>14:34</span></li><li class="y"><i></i><span>Power-on requested</span><span>14:35</span></li><li class="q"><i></i><span>Verification</span><span>no answer</span></li></ul>
+            <p>If the next read-only check cannot reach the server, the recorded stages stay as they were; nothing is assumed finished or failed. Do not retry automatically.</p>
+            <div class="acts"><button class="btn sm" data-toast="Check connection again: read-only."><svg class="ic s"><use href="#i-plug"/></svg>Check connection again</button><span class="hint">read-only</span></div>
+          </article>
+          <article class="op done">
+            <div class="op-h"><span class="op-ic"><svg class="ic"><use href="#i-check"/></svg></span><div><p class="n">5 · Verified · the recorded result (24/09)</p><h3>Disk erasure verified</h3></div></div>
+            <ul class="mini"><li class="r"><i></i><span>Erase requested</span><span>24/09 14:34</span></li><li class="r"><i></i><span>Power-on requested</span><span>24/09 14:35</span></li><li class="r"><i></i><span>Erasure verified</span><span>24/09 16:22</span></li></ul>
+            <span style="display:flex;gap:6px;flex-wrap:wrap"><span class="chip rec long"><svg class="ic"><use href="#i-rec"/></svg>recorded 24/09 16:22</span><span class="chip rec long">recorded result, not a live check</span></span>
+            <p>The controller reported erase completion for the 6 reviewed disks after erase activity was observed. Next action: plan new RAID, on Drives &amp; RAID.</p>
+          </article>
+        </div>
+        <p class="hint" style="margin:0 2px">Times in cards 1 to 4 reuse the stages of the recorded run to show where each state would stop; only card 5 is what happened, recorded 24/09 16:22. Each state uses a word and an icon as well as a colour.</p>
+      </main>
+      <aside class="drawer" aria-label="Evidence drawer">
+        <div class="dr-in">
+        <div class="dr-head"><b>Evidence · what counts</b><button class="dr-toggle" data-drawer aria-label="Fold the evidence drawer"><kbd>E</kbd><svg class="ic s"><use href="#i-panel"/></svg></button></div>
+        <div class="dr-body">
+          <div class="evg">
+            <p>Only the controller's report of erase completion makes a result <b>verified</b>.</p>
+            <p class="fine">A request, a boot or an empty RAID list alone is never counted as proof of erasure. A missing answer never allows an automatic retry.</p>
+          </div>
+        </div>
+        <button class="dr-rail" data-drawer aria-label="Open the evidence drawer"><span class="pip"></span><span>Evidence · <em>reference</em> · E</span></button>
+        </div>
+      </aside>
+    </section>
+    </div>
+  </div>
+</div>
+
+<section class="dnote" aria-label="Design note">
+  <h2>Design note · Lab Builder Studio</h2>
+  <div>
+    <h3>The idea</h3>
+    <p>One light product page per step. The white-metal rack is the hero, drawn as a product shot with the project's own equipment art. A calm guide sits in the same place at the top of every screen: one plain sentence, one orange button, one line that says what will not change. Mission Control's frame stays around it: build steps with device lights on the left, and on the right an evidence drawer showing exactly what the last read-only check returned.</p>
+    <p><b>Orange means only “do this next”.</b> Its complement, a deep ocean blue, carries structure, selection and saved-plan marks. Sand marks recorded results, and green is kept for today's proof on the exact device, always with its time.</p>
+    <h3 style="margin-top:14px">Type</h3>
+    <p><b>Fraunces</b> is the guide's voice: a warm serif for the one sentence. <b>Geist</b> is used for every label, value and control, with tabular figures. <b>Geist Mono</b> appears only where exact characters matter: controller locations, disk models, the command preview and small eyebrows.</p>
+  </div>
+  <div>
+    <h3>Palette · light (the hero)</h3>
+    <div class="swatches">
+      <span><i style="background:#E2570F"></i><span>Product orange<small>#E2570F · action only</small></span></span>
+      <span><i style="background:#0F4C75"></i><span>Deep ocean<small>#0F4C75 · structure, plan</small></span></span>
+      <span><i style="background:#1F6FA3"></i><span>Harbour<small>#1F6FA3 · selection rim</small></span></span>
+      <span><i style="background:#9CCBEB"></i><span>Sky<small>#9CCBEB · light, bays</small></span></span>
+      <span><i style="background:#F7EFE5"></i><span>Sand<small>#F7EFE5 · recorded</small></span></span>
+      <span><i style="background:#F6F9FB"></i><span>Cloud<small>#F6F9FB · canvas</small></span></span>
+      <span><i style="background:#0D1B2A"></i><span>Ink<small>#0D1B2A · text</small></span></span>
+      <span><i style="background:#127A4B"></i><span>Proof green<small>#127A4B · today only</small></span></span>
+      <span><i style="background:#7C5700"></i><span>Amber<small>#7C5700 · needs a look</small></span></span>
+      <span><i style="background:#B42D24"></i><span>Brick<small>#B42D24 · destructive</small></span></span>
+    </div>
+    <h3 style="margin-top:14px">Where each part came from</h3>
+    <ul>
+      <li><b>Mission Control:</b> the build-steps rail with device lights, the evidence drawer (fold it with E), the command palette (Ctrl K), keyboard hints on primary actions, the kit menu and the reports links in the top bar, the three-number drives summary.</li>
+      <li><b>Companion:</b> one sentence and one button per state, the reassurance line, “How we got here” written as sentences, each label explained the first time it appears, plain definitions beside jargon (iLO, RAID, U).</li>
+      <li><b>The original app:</b> the equipment art, the white-metal rack, the orange, the six-step setup, drag-and-drop rack building with a 4 to 60 U height control.</li>
+    </ul>
+  </div>
+  <div class="ftable scrollx">
+    <h3>Every function and where it lives</h3>
+    <table>
+      <thead><tr><th>Function</th><th>Screen and place</th></tr></thead>
+      <tbody>
+        <tr><td>Kit picker, new kit, rename, save as new kit</td><td>Kit menu in the top bar on every screen</td></tr>
+        <tr><td>Build reports, run history, report an issue</td><td>Top bar on every screen (under More on a phone), and in the command palette</td></tr>
+        <tr><td>Rack view and list view</td><td>My Rack · Rack / List switch on the stage</td></tr>
+        <tr><td>Select equipment, details with provenance, readiness (Connection, Firmware, ESXi, Windows), technical details</td><td>My Rack · tap a unit, a callout or a rail light; device card; “More facts and technical details” disclosure</td></tr>
+        <tr><td>Rack height 4 to 60 U, shelf of seven kinds, drag or tap, drop preview, remove zone</td><td>Add equipment · toolbar, shelf, rack, drop pop-over, “Remove from rack”</td></tr>
+        <tr><td>Move, edit name, model, bottom slot, height, bay count, per-bay plan, remove</td><td>Add equipment · edit card (bays drawn on the server's front), ↑ ↓ and Del keys</td></tr>
+        <tr><td>Save layout, save a copy, load plan, continue</td><td>Add equipment · guide button when it is next, otherwise the toolbar with its reason</td></tr>
+        <tr><td>Equipment picker, iLO address, username, password (saved, changeable), verify TLS, check connection</td><td>Connect · Drives &amp; RAID · Connect card</td></tr>
+        <tr><td>Refresh drive inventory, recorded erase result and stages, the six disks, plan new RAID</td><td>Connect · Drives &amp; RAID · tiles, result card, disk table; Plan new RAID is the guide's button</td></tr>
+        <tr><td>Erasure report, diagnostics, erase disks again, advanced recovery, the 10 alerts</td><td>Connect · Drives &amp; RAID · “More for these disks”, alerts band; destructive ones open a guarded dialog</td></tr>
+        <tr><td>Subnet, gateway, VLAN, MTU, VM storage (vSAN and NetApp shown blocked), DNS, NTP, SNMP, reset, save defaults, continue</td><td>Network settings</td></tr>
+        <tr><td>Package, change package, HPE SPP link, compare with the HPE firmware package, review upgrades, saved readings, continue blocked</td><td>Check firmware</td></tr>
+        <tr><td>Prepare ESXi and Install Windows, locked with reasons</td><td>Rail on every screen; Check firmware</td></tr>
+        <tr><td>First-contact failure</td><td>Sign-in refused (example on a second, never-answered server)</td></tr>
+        <tr><td>Every storage outcome</td><td>Storage states · pending, erasing, failed or uncertain, unreachable, verified</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="scrim" id="palScrim" hidden>
+  <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+    <div class="pal-h"><svg class="ic"><use href="#i-search"/></svg><input id="palInput" placeholder="Type a command or a device name" aria-label="Command"><kbd>Esc</kbd></div>
+    <ul id="palList">
+      <li class="g">Go to</li>
+      <li><button data-go="0"><svg class="ic s"><use href="#i-home"/></svg><span>My Rack</span><small>screen</small></button></li>
+      <li><button data-go="1"><svg class="ic s"><use href="#i-plus"/></svg><span>Add equipment</span><small>screen</small></button></li>
+      <li><button data-go="3"><svg class="ic s"><use href="#i-pencil"/></svg><span>Network settings</span><small>screen</small></button></li>
+      <li><button data-go="2"><svg class="ic s"><use href="#i-plug"/></svg><span>Connect equipment · Drives &amp; RAID</span><small>screen</small></button></li>
+      <li><button data-go="4"><svg class="ic s"><use href="#i-box"/></svg><span>Check firmware</span><small>screen</small></button></li>
+      <li class="g">HPE DL360 3</li>
+      <li><button data-go="2" data-toast="Refresh drive inventory: read-only."><svg class="ic s"><use href="#i-refresh"/></svg><span>Refresh drive inventory</span><small>read-only</small></button></li>
+      <li><button data-modal="alerts"><svg class="ic s"><use href="#i-alert"/></svg><span>Review the 10 alerts</span><small>read-only</small></button></li>
+      <li><button data-modal="raid"><svg class="ic s"><use href="#i-rack"/></svg><span>Plan new RAID</span><small>writes nothing</small></button></li>
+      <li class="g">Kit Single Gen 10</li>
+      <li><button data-toast="Rename opens an inline name field."><svg class="ic s"><use href="#i-pencil"/></svg><span>Rename kit</span><small></small></button></li>
+      <li><button data-toast="Save as new kit copies this plan under a new name."><svg class="ic s"><use href="#i-copy"/></svg><span>Save as new kit</span><small></small></button></li>
+      <li><button data-toast="Build reports lists the reports saved for this kit."><svg class="ic s"><use href="#i-doc"/></svg><span>Build reports</span><small></small></button></li>
+      <li><button data-toast="Run history lists every read and every confirmed write."><svg class="ic s"><use href="#i-clock"/></svg><span>Run history</span><small></small></button></li>
+      <li><button data-toast="Report an issue opens a short form with this screen attached."><svg class="ic s"><use href="#i-flag"/></svg><span>Report an issue</span><small></small></button></li>
+    </ul>
+    <div class="pal-f"><span><kbd>↑</kbd><kbd>↓</kbd>choose</span><span><kbd>↵</kbd>run</span><span><kbd>Esc</kbd>close</span><span>Nothing here writes to hardware without its own preview.</span></div>
+  </div>
+</div>
+
+<div class="scrim" id="modalScrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <div id="mErase1">
+      <p class="eyebrow">Erase disks again · step 1 of 2 · preview</p>
+      <h3 id="mTitle">Erase the 6 reviewed disks on HPE DL360 3?</h3>
+      <div class="warnline"><svg class="ic"><use href="#i-alert"/></svg><span>Destructive. This would erase the disks at <span class="mono">1I:1:1</span>, <span class="mono">1I:1:2</span>, <span class="mono">2I:1:5</span>, <span class="mono">2I:1:6</span>, <span class="mono">2I:1:7</span> and <span class="mono">2I:1:8</span>. Nothing is sent from this preview.</span></div>
+      <div class="cmd-h"><span>Request 1 · one grouped conditional PATCH to this server's SmartStorageConfig settings</span><span class="chip src">shown from the app's preview</span></div>
+<pre class="cmd">{
+  "DataGuard": "Disabled",
+  "LogicalDrives": [],
+  "Actions": [{
+    "Action": "PhysicalDriveErase",
+    "ErasePattern": "SanitizeRestrictedOverwrite",
+    "PhysicalDriveList": ["1I:1:1","1I:1:2","2I:1:5","2I:1:6","2I:1:7","2I:1:8"]
+  }]
+}</pre>
+      <div class="cmd-h"><span>Request 2 · power-on</span><span class="hint">confirmed separately, after request 1</span></div>
+      <p class="hint" style="margin:8px 0 0">No time estimate is given. The result counts as verified only when the controller reports erase completion.</p>
+      <label class="ack"><input type="checkbox" id="ack">I understand the 6 reviewed disks will be erased and cannot be recovered.</label>
+      <div class="m-foot"><button class="btn" data-close>Cancel <kbd>Esc</kbd></button><button class="btn risk" id="toConfirm" disabled>Continue to confirmation</button></div>
+    </div>
+    <div id="mErase2" hidden>
+      <p class="eyebrow">Erase disks again · step 2 of 2 · confirmation</p>
+      <h3>Send the erase request to 192.0.2.27?</h3>
+      <div class="warnline"><svg class="ic"><use href="#i-alert"/></svg><span>This sends request 1 only. The power-on waits for its own confirmation afterwards. Accepted is not done, and no answer never means “try again”.</span></div>
+      <p class="hint" id="sentNote" role="status"></p>
+      <div class="m-foot"><button class="btn" data-close>Cancel</button><button class="btn danger" id="sendErase">Send erase request</button></div>
+    </div>
+    <div id="mRecovery" hidden>
+      <p class="eyebrow">Advanced recovery · step 1 of 3 · choose</p>
+      <h3 id="mRecTitle">Advanced recovery · HPE DL360 3</h3>
+      <div class="warnline"><svg class="ic"><use href="#i-alert"/></svg><span>Destructive recovery operations are prepared one at a time. Each shows its exact request in a preview, then asks for a separate confirmation.</span></div>
+      <div class="m-foot"><button class="btn" data-close>Cancel <kbd>Esc</kbd></button><button class="btn risk" id="recPrev">Prepare a preview</button></div>
+    </div>
+    <div id="mRecovery2" hidden>
+      <p class="eyebrow">Advanced recovery · step 2 of 3 · preview</p>
+      <h3>Preview · nothing is sent from here</h3>
+      <dl class="kv" style="margin-top:12px">
+        <div><dt>target</dt><dd>HPE DL360 3 at <span class="mono">192.0.2.27</span></dd></div>
+        <div><dt>operation</dt><dd>none prepared yet</dd></div>
+      </dl>
+      <div class="cmd-h"><span>Request</span><span class="chip src">shown from the app's preview</span></div>
+      <p class="hint" style="margin:8px 0 0;padding:12px 14px;border-radius:12px;border:1px dashed var(--line)">No request to show. A request appears here only when the app has prepared one; nothing is made up in its place.</p>
+      <div class="m-foot"><button class="btn" data-close>Cancel</button><button class="btn risk" disabled>Continue to confirmation</button></div>
+      <p class="why" style="justify-content:flex-end;display:flex;margin:8px 0 0"><svg class="ic s"><use href="#i-lock"/></svg>Blocked: no operation is prepared, so there is nothing to confirm. Step 3, the confirmation, is always separate.</p>
+    </div>
+    <div id="mRaid" hidden>
+      <p class="eyebrow">Plan new RAID · HPE DL360 3</p>
+      <h3>RAID planner</h3>
+      <p style="font-size:13.5px;color:var(--ink-2)">The planner starts with a current drive read, because today's check did not count drives. After the read you choose two drives as the RAID 1 boot pair for ESXi; those two never count as capacity. Planning writes nothing. Creating the RAID waits for the firmware review, then its own preview and confirmation.</p>
+      <div class="m-foot"><button class="btn" data-close>Close</button><button class="btn ocean" data-close>Read drives and open the planner</button></div>
+    </div>
+    <div id="mAlerts" hidden>
+      <p class="eyebrow">Hardware alerts · HPE DL360 3</p>
+      <h3>10 alerts recorded before the erase</h3>
+      <p style="font-size:13.5px;color:var(--ink-2)">Their current state is unknown. Reading them again is read-only; their contents are shown only from that read. Looking at them does not mark them as inspected, and firmware approval waits for your review.</p>
+      <div class="m-foot"><button class="btn" data-close>Close</button><button class="btn ocean" data-close>Read the alerts, read-only</button></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(function(){
+  var $=function(s,r){return (r||document).querySelector(s);};
+  var $$=function(s,r){return [].slice.call((r||document).querySelectorAll(s));};
+  var ART={dl360:['f-dl360','dl360-front.webp','h100'],dl380:['f-dl380','dl380-front.webp','h80'],sfp:['f-sfp','catalyst-sfp-front.webp','h88'],pdu:['f-pdu','pdu-front.webp','h80'],ups:['f-ups','ups-front.webp','h84'],eaton:['f-eaton','eaton-1550-front.webp','h92'],netapp:['f-netapp','netapp-front.webp','h84']};
+  var KIND={
+    dl360:{label:'HPE DL360',h:1,art:'dl360',spec:'1U server · up to 10 bays',type:'Server'},
+    dl380:{label:'HPE DL380',h:2,art:'dl380',spec:'2U server · up to 24 bays',type:'Server'},
+    cisco:{label:'Cisco switch',h:1,art:'sfp',spec:'24 or 48 ports + 4 SFP',type:'Switch'},
+    ups:{label:'UPS',h:2,art:'ups',spec:'2U battery backup',type:'UPS'},
+    eaton:{label:'Eaton 5P 1550',h:1,art:'eaton',spec:'1U battery backup',type:'UPS'},
+    pdu:{label:'PDU',h:1,art:'pdu',spec:'Power strip · rack or side mount',type:'Power strip'},
+    netapp:{label:'NetApp storage',h:2,art:'netapp',spec:'2U storage · 24 bays',type:'Storage'}
+  };
+  function base(){return [
+    {id:'pdu5',name:'PDU 5',kind:'pdu',u:4},
+    {id:'sw6',name:'Cisco switch 6',kind:'cisco',u:3,plan:'Catalyst 9300, 24 ports + 4 SFP',model:0},
+    {id:'pdu4',name:'PDU 4',kind:'pdu',u:2},
+    {id:'dl3',name:'HPE DL360 3',kind:'dl360',u:1,occ:[1,2,3,4,6,7,8,9],proof:'08:35',model:0}];}
+  var HOME=base();
+  var S={H:8,units:base(),sel:'dl3',addSel:'dl3',held:'dl380',ghostU:5,phase:'held',changes:0,next:7,moving:null};
+
+  function face(k,inner){var a=ART[k];return '<span class="face '+a[0]+' '+a[2]+'"><img src="08-assets/'+a[1]+'" alt="">'+(inner||'')+'</span>';}
+  function thumb(k){var a=ART[k];return '<span class="face th '+a[0]+'"><img src="08-assets/'+a[1]+'" alt=""></span>';}
+  function bayPos(i){var c=(i-1)%5,r=i>5;return 'left:'+(7.4+c*17.1).toFixed(1)+'%;top:'+(r?54.5:6)+'%;width:16.3%;height:40%';}
+  function bayMarks(occ){var s='';for(var i=1;i<=10;i++){var on=occ.indexOf(i)>=0;s+='<span class="bm '+(on?'on':'off')+'" style="'+bayPos(i)+'"><b>'+i+'</b></span>';}return s;}
+  function row(H,u,h){return (H-u-h+2)+' / span '+h;}
+  function span(u,h){return h>1?'U'+u+'–U'+(u+h-1):'U'+u;}
+  function spanAnd(u,h){return h>1?'U'+u+' and U'+(u+h-1):'U'+u;}
+  function occ(units,skip){var m={};units.forEach(function(x){if(x.id===skip)return;for(var i=0;i<KIND[x.kind].h;i++)m[x.u+i]=x;});return m;}
+  function runs(H,m,gs){var out=[],cur=null;for(var n=H;n>=1;n--){var free=!m[n]&&!(gs&&gs[n]);if(free){if(cur&&cur.lo===n+1)cur.lo=n;else{cur={hi:n,lo:n};out.push(cur);}}else cur=null;}return out;}
+  function rtxt(r){return r.hi===r.lo?'U'+r.lo:'U'+r.lo+'–U'+r.hi;}
+
+  function rackHTML(o){
+    var H=o.H,m=occ(o.units),g=o.ghost,gs={},l='',r='',b='',t='',i,n,cmp={},rows=[];
+    if(g)for(i=0;i<KIND[g.kind].h;i++)gs[g.u+i]=1;
+    var fr=runs(H,m,gs);
+    if(!o.edit)fr.forEach(function(x){if(x.hi>x.lo)for(var q=x.lo;q<=x.hi;q++)cmp[q]=1;});
+    for(n=H;n>=1;n--){l+='<span>'+n+'</span>';r+='<span></span>';rows.push(cmp[n]?'calc(var(--u) * .4)':'var(--u)');}
+    var rs=o.edit?'':';--rows:'+rows.join(' ');
+    if(o.edit){for(n=H;n>=1;n--){if(m[n]||gs[n])continue;
+      b+='<button class="slot t" data-slot="'+n+'" style="grid-row:'+row(H,n,1)+'" aria-label="U'+n+', empty. Drop or tap to place here">U'+n+' · drop here</button>';}}
+    else fr.forEach(function(x){var len=x.hi-x.lo+1;
+      b+='<span class="slot'+(len>1?' band':'')+'" style="grid-row:'+(H-x.hi+1)+' / span '+len+'">'+rtxt(x)+(len>1?' · free':' · empty')+'</span>';});
+    o.units.forEach(function(x){var k=KIND[x.kind],h=k.h,sel=x.id===o.sel;
+      b+='<div class="unit'+(sel?' sel':'')+(x.proof||o.edit?'':' never')+(x.occ?' bays':'')+'" role="button" tabindex="0" data-unit="'+x.id+'"'+(o.edit?' draggable="true"':'')+' style="grid-row:'+row(H,x.u,h)+'" aria-label="'+x.name+', '+span(x.u,h)+(sel?', selected':'')+'">'
+        +'<span class="cn tl"></span><span class="cn tr"></span><span class="cn bl"></span><span class="cn br"></span>'
+        +face(k.art,x.occ?bayMarks(x.occ):'')+(o.edit?'':'<span class="uled'+(x.proof?' ok':'')+'"></span>')+'<span class="plate">'+x.name+'</span></div>';
+      var sub;
+      if(o.edit){sub=sel?'Selected · editing below':span(x.u,h)+' · '+k.type.toLowerCase();}
+      else{sub=x.proof?'<span class="chip proof xs">answered '+x.proof+'</span>':'<i class="pill-key"></i>'+k.type+' · never answered';}
+      t+='<button class="tagc'+(sel?' sel':'')+'" data-unit="'+x.id+'" style="grid-row:'+row(H,x.u,h)+'"><b>'+x.name+'</b><small>'+sub+'</small></button>';
+    });
+    if(g){var k=KIND[g.kind],left=fr.map(rtxt);
+      b+='<div class="ghost" style="grid-row:'+row(H,g.u,k.h)+'">'+face(k.art)+'<span class="gl"><b>'+k.label+' → '+span(g.u,k.h)+'</b><small>Nothing moves'+(left.length?' · '+left.join(', ')+' stay empty':'')+'</small></span></div>';
+      t+='<div class="pop" style="grid-row:1 / span '+(H-g.u+1)+';--ah:calc(var(--u) * '+(k.h/2)+' - 6px)"><div class="pop-hold">'+thumb(k.art)+'<svg class="cur" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6 1.6L10 19z" fill="#0D1B2A" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg></div><b>Drops into '+span(g.u,k.h)+'</b><p>'+k.label+' · '+k.h+'U. Nothing else moves.'+(left.length?' '+left.join(', ')+' stay empty.':'')+'</p><div class="row"><button class="btn sm" data-cancel>Put back <kbd>Esc</kbd></button><span class="hint">↵ or the orange button places it</span></div></div>';
+    } else if(!o.edit){
+      fr.forEach(function(x){t+='<span class="tagc free" style="grid-row:'+(H-x.hi+1)+' / span '+(x.hi-x.lo+1)+'"><b>'+rtxt(x)+' · empty</b><small>'+(x.hi-x.lo+1)+' U free</small></span>';});
+    }
+    return '<div class="rack" style="--H:'+H+rs+'"><span class="dimrule"><span>'+H+'U · '+(H*44.45).toFixed(1)+' mm</span></span><div class="rk-cap metal"><span aria-hidden="true"><i></i>LAB BUILDER · '+H+'U</span></div><div class="rk-body"><div class="rk-rail l">'+l+'</div><div class="cav">'+b+'</div><div class="rk-rail r">'+r+'</div></div><div class="rk-base metal"><span aria-hidden="true">FRONT</span></div></div><div class="tags" style="--H:'+H+rs+'">'+t+'</div>';
+  }
+
+  /* ---------- tabs ---------- */
+  var tabs=$$('[role=tab]'),screens=$$('.screen');
+  var stepFor={1:'1',2:'3',3:'2',4:'4',5:'3',6:'3'};
+  var cur=0;
+  function go(i){i=Number(i);cur=i;
+    tabs.forEach(function(t,j){t.setAttribute('aria-selected',String(j===i));t.tabIndex=j===i?0:-1;});
+    screens.forEach(function(s,j){s.hidden=j!==i;});
+    $$('.st').forEach(function(s){s.classList.toggle('viewing',!!s.dataset.step&&s.dataset.step===stepFor[i]);});
+    var ex=i===5,lt=ex?'1 of 5 answered':'1 of 4 answered';
+    $('#lab7Row').hidden=!ex;$('#lab7Light').hidden=!ex;$('#lightsTxt').textContent=lt;$('#lights').setAttribute('aria-label',lt);
+    $('#railSumSub').textContent='Now · plan the new RAID · '+lt+(ex?' · Lab server 7 refused (example)':'');
+  }
+  tabs.forEach(function(t,i){t.addEventListener('click',function(){go(i);});
+    t.addEventListener('keydown',function(e){if(e.key==='ArrowRight'||e.key==='ArrowLeft'){var n=(i+(e.key==='ArrowRight'?1:tabs.length-1))%tabs.length;go(n);tabs[n].focus();}});});
+
+  /* ---------- toast ---------- */
+  var tt;function toast(m){var el=$('#toast');el.textContent=m;el.hidden=false;clearTimeout(tt);tt=setTimeout(function(){el.hidden=true;},3400);}
+
+  /* ---------- home ---------- */
+  function renderHome(){
+    $('#homeRack').innerHTML=rackHTML({H:8,units:HOME,sel:S.sel});
+    var u=HOME.filter(function(x){return x.id===S.sel;})[0];
+    $('#devDL').hidden=$('#factsDL').hidden=S.sel!=='dl3';$('#devOther').hidden=$('#factsOther').hidden=S.sel==='dl3';
+    if(S.sel!=='dl3'){var k=KIND[u.kind];
+      $('#oThumb').className='face th '+ART[k.art][0];$('#oThumb').innerHTML='<img src="08-assets/'+ART[k.art][1]+'" alt="">';
+      $('#oName').textContent=$('#fName').textContent=u.name;$('#oKind').textContent=k.type;$('#oSlot').textContent=span(u.u,k.h);
+      $('#oPlan').textContent=u.plan||k.type;$('#oPos').textContent=span(u.u,k.h)+' · front';
+      $('#oFw').textContent=u.kind==='cisco'?'switch reading not supported yet':'no reading yet';}
+    $$('.devs button').forEach(function(b){b.classList.toggle('cur',b.dataset.dev===S.sel);});
+    $$('#s0 .tbl tr[data-dev]').forEach(function(tr){tr.classList.toggle('sel',tr.dataset.dev===S.sel);});
+  }
+  function pickHome(id){S.sel=id;renderHome();}
+
+  /* ---------- add equipment ---------- */
+  function unitById(id){return S.units.filter(function(x){return x.id===id;})[0];}
+  function findSpan(target,h,skip){var m=occ(S.units,skip);
+    function ok(b){if(b<1||b+h-1>S.H)return false;for(var i=0;i<h;i++)if(m[b+i])return false;return true;}
+    for(var d=0;d<h;d++)if(ok(target-d))return target-d;
+    for(d=1;d<h;d++)if(ok(target+d))return target+d;return null;}
+  function renderCards(){
+    $('#cards').innerHTML=Object.keys(KIND).map(function(id){var k=KIND[id],held=S.held===id;
+      return '<button class="hw'+(held&&S.phase==='held'?' lifted':'')+(held&&S.phase==='picked'?' picked':'')+'" draggable="true" data-kind="'+id+'" aria-pressed="'+held+'">'+(held&&S.phase==='held'?'<span class="flag">HOLDING</span>':'')+'<span class="tile">'+thumb(k.art)+'</span><span><b>'+k.label+'<i>'+k.h+'U</i></b><small>'+k.spec+'</small></span></button>';}).join('')
+      +'<button type="button" class="bin" id="bin"><svg class="ic"><use href="#i-trash"/></svg><span><b>Remove from rack</b><small>Drop a piece here, or select one in the rack and tap here. It leaves the plan; hardware is untouched.</small></span></button>';
+  }
+  var PRIMARY={
+    held:function(){var k=KIND[S.held],g=S.ghostU;return ['Place in '+span(g,k.h)+' <kbd>↵</kbd>',place];},
+    picked:function(){return ['Choose a free slot first',null];},
+    dirty:function(){return ['Save layout <kbd>Ctrl S</kbd>',save];},
+    saved:function(){return ['Continue · Network settings <kbd>Ctrl ↵</kbd>',function(){go(3);window.scrollTo(0,0);}];},
+    idle:function(){return ['Continue · Network settings <kbd>Ctrl ↵</kbd>',function(){go(3);window.scrollTo(0,0);}];}
+  };
+  var primaryFn=null;
+  function renderAdd(){
+    var g=S.phase==='held'?{kind:S.held,u:S.ghostU}:null;
+    $('#addRack').innerHTML=rackHTML({H:S.H,units:S.units,sel:S.addSel,ghost:g,edit:true});
+    renderCards();
+    var p=PRIMARY[S.phase](),btn=$('#addPrimary');btn.innerHTML=p[0];btn.disabled=!p[1];primaryFn=p[1];
+    var k=S.held&&KIND[S.held],say,calm,why;
+    if(S.phase==='held'){say='The <em>'+k.label+'</em> you are holding fits in '+spanAnd(S.ghostU,k.h)+', and nothing else has to move.';calm='Placing it changes your plan only. No hardware is touched.';why='Save layout and Continue wait until the held '+k.label+' is placed or put back.';}
+    else if(S.phase==='picked'){say='You picked up the <em>'+k.label+'</em>, so tap a free slot in the rack, or drag it there.';calm='Nothing is placed until you choose a slot.';why='Save layout and Continue wait until the held '+k.label+' is placed or put back.';}
+    else if(S.phase==='dirty'){say='Your rack has '+S.changes+' unsaved change'+(S.changes>1?'s':'')+', so save the layout to keep '+(S.changes>1?'them':'it')+'.';calm='Saving writes your plan only. No hardware is touched.';why='Continue waits until the layout is saved.';}
+    else if(S.phase==='saved'){say='The layout is saved in your plan, so carry on to the network settings.';calm='This opens the network settings. Nothing on the hardware changes.';why='Everything is saved.';}
+    else{say='Nothing is held and nothing is waiting, so carry on to the network settings or drag a card onto a free slot.';calm='This opens the network settings. Nothing on the hardware changes.';why='No changes to save.';}
+    $('#addSay').innerHTML=say;$('#addCalm').textContent=calm;$('#tbWhy span').textContent=why;
+    var holding=S.phase==='held'||S.phase==='picked';
+    $('#tbSave').hidden=S.phase==='dirty';$('#tbSave').disabled=true;
+    $('#tbCont').hidden=S.phase==='saved'||S.phase==='idle';$('#tbCont').disabled=true;
+    var un=$('#unsaved');
+    if(holding){un.className='unsaved';un.textContent=(S.changes?S.changes+' change'+(S.changes>1?'s':'')+' not saved · ':'')+k.label+' being placed';}
+    else if(S.changes){un.className='unsaved';un.textContent=S.changes+' change'+(S.changes>1?'s':'')+' not saved';}
+    else{un.className='unsaved ok';un.textContent='All changes saved';}
+    $('#hOut').textContent=S.H+' U';
+    renderEditor();
+  }
+  var MODELS={dl360:['HPE DL360 Gen10','HPE DL360 (generation found when it connects)'],dl380:['HPE DL380 (generation found when it connects)'],cisco:['Catalyst 9300, 24 ports + 4 SFP','Cisco switch (model found when it connects)'],ups:['UPS, 2U (model found when it connects)'],eaton:['Eaton 5P 1550'],pdu:['PDU, power strip (model found when it connects)'],netapp:['NetApp storage (model found when it connects)']};
+  var BAYS={dl360:10,dl380:24,netapp:24};
+  function renderEditor(){
+    var x=unitById(S.addSel),card=$('#edCard');
+    if(!x){card.hidden=true;return;}card.hidden=false;
+    var k=KIND[x.kind],h=k.h,i,n;
+    $('#edName').textContent=x.name;if(document.activeElement!==$('#e-name'))$('#e-name').value=x.name;
+    var ms=MODELS[x.kind],mi=x.model!=null?x.model:ms.length-1;
+    $('#e-model').innerHTML=ms.map(function(md,j){return '<option value="'+j+'"'+(j===mi?' selected':'')+'>'+md+'</option>';}).join('');
+    $('#e-model-h').textContent=k.type==='Server'?'The real generation is read on first contact.':'The model it reports is read on first contact.';
+    var m=occ(S.units,x.id),gs={},html='';
+    if(S.phase==='held')for(i=0;i<KIND[S.held].h;i++)gs[S.ghostU+i]=1;
+    for(n=1;n<=S.H;n++){var lbl,dis=false,pr=n===x.u;
+      if(pr)lbl='here now';
+      else if(m[n]){lbl=m[n].name;dis=true;}
+      else if(gs[n]){lbl='preview';dis=true;}
+      else{var fits=n+h-1<=S.H;for(i=0;i<h&&fits;i++)if(m[n+i]||gs[n+i])fits=false;lbl=fits?'free':'no room';dis=!fits;}
+      html+='<button data-slotpick="'+n+'" aria-pressed="'+pr+'"'+(dis?' disabled':'')+'>U'+n+'<small>'+lbl+'</small></button>';}
+    $('#slotPick').innerHTML=html;
+    $('#slotHint').textContent=(h>1?'A '+h+'U piece sits on its bottom slot and fills the one above. ':'')+'Taken slots name who holds them. Tap a free slot to move '+x.name+' there.';
+    $('#hgtRow').innerHTML='<span class="seg"><button aria-pressed="'+(h===1)+'"'+(h===1?'':' disabled')+'>1U</button><button aria-pressed="'+(h===2)+'"'+(h===2?'':' disabled')+'>2U</button></span><span class="hint">Height comes from the model. '+k.label+': '+h+'U.</span>';
+    var max=BAYS[x.kind]||0,col=$('#bayCol');
+    if(!max){col.innerHTML='<h4>Drive bays</h4><p class="hint" style="margin:0">'+x.name+' is a '+k.type.toLowerCase()+', which has no drive bays, so there is nothing to plan here.</p>';return;}
+    var cnt=x.bays||max,o=(x.occ||[]).filter(function(bb){return bb<=cnt;});
+    var s='<h4>Drive bays'+(x.kind==='dl360'?' · drawn on the server\'s front':'')+'</h4>'
+      +'<div class="fld"><span class="lb">Bay count</span><div class="hgt"><span class="stepper"><button data-baystep="-1" aria-label="Fewer bays"'+(cnt<=1?' disabled':'')+'><svg class="ic"><use href="#i-minus"/></svg></button><output>'+cnt+'</output><button data-baystep="1" aria-label="More bays"'+(cnt>=max?' disabled':'')+'><svg class="ic"><use href="#i-plus"/></svg></button></span><span class="hint">A '+k.label+' plan stops at '+max+' bays.</span></div></div>'
+      +'<div class="fld"><span class="lb">Bays in your plan · tap a bay to change it <span class="chip saved xs">'+o.length+' of '+cnt+'</span></span>';
+    if(x.kind==='dl360'){s+='<div class="bayed face f-dl360"><img src="08-assets/dl360-front.webp" alt="">';
+      for(i=1;i<=10;i++)s+='<button data-bay="'+i+'" style="'+bayPos(i)+'" aria-label="Bay '+i+'" aria-pressed="'+(o.indexOf(i)>=0)+'"'+(i>cnt?' disabled':'')+'>'+i+'</button>';s+='</div>';}
+    else{s+='<div class="baygrid">';for(i=1;i<=cnt;i++)s+='<button data-bay="'+i+'" aria-label="Bay '+i+'" aria-pressed="'+(o.indexOf(i)>=0)+'">'+i+'</button>';s+='</div>';}
+    s+='<span class="hint">'+(x.id==='dl3'?'This is your plan, not a drive read. The recorded erase covered 6 reviewed disks by controller location, which are not front bay numbers.':'This is your plan, not a drive read. Nothing is known about its drives until it connects.')+'</span></div>';
+    col.innerHTML=s;
+  }
+  function planChanged(){S.changes++;if(S.phase==='saved'||S.phase==='idle')S.phase='dirty';renderAdd();}
+  function trail(txt){var ol=$('#addTrail');$$('li',ol).forEach(function(li){li.classList.remove('last');});var li=document.createElement('li');li.className='last';li.textContent=txt;ol.appendChild(li);while(ol.children.length>4)ol.removeChild(ol.firstChild);}
+  function status(t){$('#addStatus').textContent=t;}
+  function place(){if(S.phase!=='held')return;var k=KIND[S.held],name=k.label+' '+(S.next++);
+    S.units.push({id:'n'+S.next,name:name,kind:S.held,u:S.ghostU});S.changes++;
+    status('Placed '+name+' in '+span(S.ghostU,k.h)+'. Nothing else moved.');trail('You placed '+name+' in '+span(S.ghostU,k.h)+'.');
+    S.held=null;S.phase='dirty';renderAdd();}
+  function save(){S.changes=0;S.phase='saved';status('Layout saved to your plan. No hardware was touched.');trail('You saved the layout.');renderAdd();}
+  function putBack(){if(!S.held)return;status('Put back. Nothing was placed.');trail('You put the '+KIND[S.held].label+' back on the shelf.');S.held=null;S.phase=S.changes?'dirty':'idle';renderAdd();}
+  function holdAt(n){var k=KIND[S.held];var b=findSpan(n,k.h);
+    if(b===null){status('No room at U'+n+': the '+k.label+' needs '+k.h+' free U next to each other.');return;}
+    S.ghostU=b;S.phase='held';status('Preview: '+k.label+' goes into '+span(b,k.h)+'. Press ↵ or the orange button to place it.');renderAdd();}
+  function moveTo(id,n){var x=unitById(id),h=KIND[x.kind].h,b=findSpan(n,h,id);
+    if(b===null){status('No room for '+x.name+' there.');return;}
+    x.u=b;S.changes++;if(S.phase!=='held'&&S.phase!=='picked')S.phase='dirty';status('Moved '+x.name+' to '+span(b,h)+'.');renderAdd();}
+  function removeUnit(id){var x=unitById(id);if(!x)return;S.units=S.units.filter(function(u){return u.id!==id;});S.changes++;
+    if(S.phase!=='held'&&S.phase!=='picked')S.phase='dirty';if(S.addSel===id)S.addSel=(S.units[S.units.length-1]||{}).id;
+    status('Removed '+x.name+' from the plan. Hardware is untouched.');trail('You took '+x.name+' out of the plan.');renderAdd();}
+
+  var addScreen=$('#s1');
+  addScreen.addEventListener('click',function(e){
+    if(e.target.closest('#addPrimary')){if(primaryFn)primaryFn();return;}
+    if(e.target.closest('[data-cancel]')){putBack();return;}
+    if(e.target.closest('#bin')){if(S.held)putBack();else if(S.addSel)removeUnit(S.addSel);return;}
+    var sp=e.target.closest('[data-slotpick]');if(sp){if(!sp.disabled&&S.addSel&&unitById(S.addSel).u!==+sp.dataset.slotpick)moveTo(S.addSel,+sp.dataset.slotpick);return;}
+    var bs=e.target.closest('[data-baystep]');if(bs){var xb=unitById(S.addSel),mx=BAYS[xb.kind];xb.bays=Math.max(1,Math.min(mx,(xb.bays||mx)+(+bs.dataset.baystep)));xb.occ=(xb.occ||[]).filter(function(q){return q<=xb.bays;});status(xb.name+' now has '+xb.bays+' bays in the plan.');planChanged();return;}
+    var by=e.target.closest('[data-bay]');if(by){var xy=unitById(S.addSel),nb=+by.dataset.bay,oc=(xy.occ||[]).slice(),ix=oc.indexOf(nb);if(ix>=0)oc.splice(ix,1);else oc.push(nb);oc.sort(function(a,c){return a-c;});xy.occ=oc;status('Bay '+nb+' of '+xy.name+' is now '+(ix>=0?'empty':'a drive')+' in your plan.');planChanged();return;}
+    var c=e.target.closest('.hw');
+    if(c){var kd=c.dataset.kind;if(S.held===kd){putBack();return;}S.held=kd;S.phase='picked';status(KIND[kd].label+' picked up. Now tap a free slot.');renderAdd();return;}
+    var s=e.target.closest('.slot.t');
+    if(s){var n=+s.dataset.slot;if(S.held)holdAt(n);else if(S.addSel)moveTo(S.addSel,n);return;}
+    var u=e.target.closest('[data-unit]');
+    if(u&&e.target.closest('#addRack')){S.addSel=u.dataset.unit;renderAdd();}
+  });
+  addScreen.addEventListener('dragstart',function(e){
+    var c=e.target.closest&&e.target.closest('.hw');var u=e.target.closest&&e.target.closest('.unit');
+    if(c){S.held=c.dataset.kind;S.moving=null;}else if(u){S.moving=u.dataset.unit;}
+    try{e.dataTransfer.setData('text/plain','x');}catch(_){}
+  });
+  addScreen.addEventListener('dragover',function(e){var s=e.target.closest('.slot.t,#bin');if(s){e.preventDefault();s.classList.add('over');}});
+  addScreen.addEventListener('dragleave',function(e){var s=e.target.closest('.slot.t,#bin');if(s)s.classList.remove('over');});
+  addScreen.addEventListener('drop',function(e){var s=e.target.closest('.slot.t');var bin=e.target.closest('#bin');e.preventDefault();
+    if(bin){if(S.moving)removeUnit(S.moving);S.moving=null;return;}
+    if(s){var n=+s.dataset.slot;if(S.moving){moveTo(S.moving,n);S.moving=null;}else if(S.held)holdAt(n);}});
+  $('#hPlus').addEventListener('click',function(){if(S.H>=60){status('60 U is the tallest rack the planner draws.');return;}S.H++;status('The rack is now '+S.H+' U. U'+S.H+' is a new empty slot at the top.');renderAdd();});
+  $('#hMinus').addEventListener('click',function(){if(S.H<=4){status('4 U is the smallest rack.');return;}
+    var m=occ(S.units),gh=S.phase==='held'?S.ghostU+KIND[S.held].h-1:0;
+    if(m[S.H]||gh>=S.H){status('Cannot shrink: U'+S.H+' holds '+(m[S.H]?m[S.H].name:'the preview')+'.');return;}
+    S.H--;status('The rack is now '+S.H+' U.');renderAdd();});
+  $('#rmBtn').addEventListener('click',function(){if(S.addSel)removeUnit(S.addSel);});
+  $('#tbSave').addEventListener('click',save);
+  $('#e-name').addEventListener('input',function(e){var x=unitById(S.addSel);if(x){x.name=e.target.value||x.name;$('#edName').textContent=x.name;}});
+
+  $('#e-model').addEventListener('change',function(e){var x=unitById(S.addSel);if(x){x.model=+e.target.value;planChanged();}});
+  $$('[data-bays]').forEach(function(el){el.insertAdjacentHTML('beforeend',bayMarks(el.dataset.bays.split(',').map(Number)));});
+
+  /* ---------- global clicks ---------- */
+  var kitBtn=$('#kitBtn'),kitMenu=$('#kitMenu');
+  document.addEventListener('click',function(e){
+    var g=e.target.closest('[data-go]');
+    if(g&&!g.disabled){go(g.dataset.go);closePal();window.scrollTo(0,0);}
+    var d=e.target.closest('[data-drawer]');if(d)d.closest('.drawer').classList.toggle('collapsed');
+    var m=e.target.closest('[data-modal]');if(m){closePal();openModal(m.dataset.modal);}
+    if(e.target.closest('[data-close]')||e.target.id==='modalScrim')closeModal();
+    if(e.target.id==='palScrim')closePal();
+    var ts=e.target.closest('[data-toast]');if(ts){toast(ts.dataset.toast);closePal();}
+    var sw=e.target.closest('.switch');if(sw)sw.setAttribute('aria-checked',String(sw.getAttribute('aria-checked')!=='true'));
+    var pk=e.target.closest('.pick');if(pk){$$('.pick',pk.parentNode).forEach(function(p){p.setAttribute('aria-checked',String(p===pk));});if(pk.dataset.cdev)renderConn(pk.dataset.cdev);}
+    if(e.target.closest('#railSum')){var rl=$('.rail');rl.classList.toggle('open');$('#railSum').setAttribute('aria-expanded',String(rl.classList.contains('open')));}
+    var moreBtn=$('#moreBtn'),moreMenu=$('#moreMenu');
+    if(e.target.closest('#moreBtn')){moreMenu.hidden=!moreMenu.hidden;moreBtn.setAttribute('aria-expanded',String(!moreMenu.hidden));}
+    else if(!e.target.closest('#moreMenu')||e.target.closest('#moreMenu button')){moreMenu.hidden=true;moreBtn.setAttribute('aria-expanded','false');}
+    var ch=e.target.closest('.choice');if(ch&&!ch.disabled)$$('.choice',ch.parentNode).forEach(function(p){p.setAttribute('aria-checked',String(p===ch));});
+    var sg=e.target.closest('.seg button');if(sg&&!sg.dataset.view&&!sg.disabled&&!sg.closest('#s1'))$$('button',sg.parentNode).forEach(function(p){p.setAttribute('aria-pressed',String(p===sg));});
+    var dv=e.target.closest('[data-dev]');if(dv){if(cur!==0){go(0);}pickHome(dv.dataset.dev);}
+    var hu=e.target.closest('#homeRack [data-unit]');if(hu)pickHome(hu.dataset.unit);
+    if(e.target.closest('#kitBtn')){kitMenu.hidden=!kitMenu.hidden;kitBtn.setAttribute('aria-expanded',String(!kitMenu.hidden));}
+    else if(!e.target.closest('#kitMenu')||e.target.closest('#kitMenu button')){kitMenu.hidden=true;kitBtn.setAttribute('aria-expanded','false');}
+  });
+  $$('[data-view]').forEach(function(b){b.addEventListener('click',function(){var st=b.closest('.stage');
+    $$('[data-view]',st).forEach(function(x){x.setAttribute('aria-pressed',String(x===b));});
+    $('.view-rack',st).hidden=b.dataset.view!=='rack';$('.view-list',st).hidden=b.dataset.view!=='list';});});
+  $('#themeBtn').addEventListener('click',function(){var r=document.documentElement,c=r.getAttribute('data-theme');
+    var dark=c?c==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;r.setAttribute('data-theme',dark?'light':'dark');});
+
+  /* ---------- palette ---------- */
+  var pal=$('#palScrim'),palIn=$('#palInput');
+  function filter(q){q=q.toLowerCase();$$('#palList li').forEach(function(li){if(li.classList.contains('g')){li.hidden=!!q;return;}li.hidden=!!q&&li.textContent.toLowerCase().indexOf(q)<0;});}
+  function openPal(){pal.hidden=false;palIn.value='';filter('');palIn.focus();}
+  function closePal(){pal.hidden=true;}
+  palIn.addEventListener('input',function(){filter(palIn.value);});
+  palIn.addEventListener('keydown',function(e){if(e.key==='Enter'){var f=$$('#palList li:not([hidden]) button')[0];if(f)f.click();}if(e.key==='ArrowDown'){var f2=$$('#palList li:not([hidden]) button')[0];if(f2){e.preventDefault();f2.focus();}}});
+  $('#palList').addEventListener('keydown',function(e){var bs=$$('#palList li:not([hidden]) button'),i=bs.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'&&i<bs.length-1){e.preventDefault();bs[i+1].focus();}if(e.key==='ArrowUp'){e.preventDefault();if(i>0)bs[i-1].focus();else palIn.focus();}});
+  $('#cmdkBtn').addEventListener('click',openPal);
+
+  /* ---------- guarded dialogs ---------- */
+  var ms=$('#modalScrim'),parts={erase:'mErase1',recovery:'mRecovery',raid:'mRaid',alerts:'mAlerts'};
+  function openModal(k){['mErase1','mErase2','mRecovery','mRecovery2','mRaid','mAlerts'].forEach(function(id){$('#'+id).hidden=id!==parts[k];});
+    $('#ack').checked=false;$('#toConfirm').disabled=true;$('#sentNote').textContent='';ms.hidden=false;}
+  function closeModal(){ms.hidden=true;}
+  $('#ack').addEventListener('change',function(e){$('#toConfirm').disabled=!e.target.checked;});
+  $('#toConfirm').addEventListener('click',function(){$('#mErase1').hidden=true;$('#mErase2').hidden=false;});
+  $('#recPrev').addEventListener('click',function(){$('#mRecovery').hidden=true;$('#mRecovery2').hidden=false;});
+  $('#sendErase').addEventListener('click',function(){$('#sentNote').textContent='Mockup: nothing is sent from this page.';});
+
+  /* ---------- keys ---------- */
+  document.addEventListener('keydown',function(e){
+    var typing=/INPUT|SELECT|TEXTAREA/.test((e.target&&e.target.tagName)||'');
+    var k=e.key.toLowerCase();
+    if((e.ctrlKey||e.metaKey)&&k==='k'){e.preventDefault();if(pal.hidden)openPal();else closePal();return;}
+    if(e.key==='Escape'){if(!pal.hidden||!ms.hidden){closePal();closeModal();return;}if(cur===1&&S.held)putBack();return;}
+    if(!pal.hidden||!ms.hidden)return;
+    if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){var p=$('#s'+cur+' [data-primary]');if(p&&!p.disabled){e.preventDefault();p.click();}return;}
+    if(cur===1&&(e.ctrlKey||e.metaKey)&&k==='s'){e.preventDefault();if(S.phase==='dirty')save();return;}
+    if(typing)return;
+    if(cur===1&&e.key==='Enter'&&S.phase==='held'&&!e.target.closest('button')){e.preventDefault();place();return;}
+    if(cur===1&&(e.key==='ArrowUp'||e.key==='ArrowDown')&&S.addSel){var x=unitById(S.addSel);if(x){e.preventDefault();var t=x.u+(e.key==='ArrowUp'?1:-1);var m=occ(S.units,x.id),h=KIND[x.kind].h,okk=t>=1&&t+h-1<=S.H;for(var i=0;i<h&&okk;i++)if(m[t+i])okk=false;if(okk)moveTo(x.id,t);else status('No free slot '+(e.key==='ArrowUp'?'above':'below')+' '+x.name+'.');}return;}
+    if(cur===1&&e.key==='Delete'&&S.addSel){removeUnit(S.addSel);return;}
+    if(!e.ctrlKey&&!e.metaKey&&!e.altKey&&k==='e'){var d=$('#s'+cur+' .drawer');if(d)d.classList.toggle('collapsed');}
+  });
+  document.addEventListener('keydown',function(e){var u=e.target.closest&&e.target.closest('#homeRack [data-unit]');if(u&&(e.key==='Enter'||e.key===' ')){e.preventDefault();pickHome(u.dataset.unit);}});
+
+  /* ---------- connect form, re-drawn for the picked equipment ---------- */
+  var CONN={dl3:{kind:'iLO',addr:'192.0.2.27',saved:true,ilo:true,last:'today 08:35 · iLO 5 v1.37 · ROM U32 v1.46'},sw6:{kind:'switch'},pdu4:{kind:'PDU'},pdu5:{kind:'PDU'}};
+  function renderConn(id){var c=CONN[id],s='',
+      sv='<span class="chip saved xs"><svg class="ic"><use href="#i-pencil"/></svg>saved plan</span>',bl='<span class="chip blank xs">not known yet</span>';
+    s+='<div class="fld"><label for="c-addr">'+(c.ilo?'iLO address':'Management address')+' '+(c.saved?sv:bl)+'</label><input class="inp" id="c-addr"'+(c.saved?' value="'+c.addr+'"':' placeholder="not known yet"')+'><span class="hint">'+(c.ilo?'The address it answers on: the front display or the DHCP lease list.':'The address the '+c.kind+' answers on. Nothing is saved for it yet.')+'</span></div>';
+    s+='<div class="fld"><label for="c-user">Username '+(c.saved?sv:bl)+'</label><input class="inp" id="c-user" autocomplete="off" placeholder="'+(c.saved?'saved · type to replace':'not known yet')+'"><span class="hint">'+(c.ilo?'From the pull-out tag on the front of the server.':'From the label or the setup sheet that came with it.')+'</span></div>';
+    s+='<div class="fld"><label for="c-pass">Password <span class="hint">'+(c.saved?'saved on this kit · never shown':'not saved yet')+'</span></label><div class="pw"><input class="inp" id="c-pass" type="password" autocomplete="off" placeholder="'+(c.saved?'••••••••':'not saved yet')+'">'+(c.saved?'<button class="btn sm" style="height:38px" data-toast="Change opens an empty password field. The saved one is never shown.">Change</button>':'')+'</div><span class="hint">Stored locally for this kit.</span></div>';
+    s+=c.ilo?'<div class="toggle"><button class="switch" role="switch" aria-checked="false" aria-label="Verify TLS certificate"></button><div><b>Verify TLS certificate · off</b><p>Off because this iLO\'s certificate is self-signed. The connection is encrypted, but the server\'s identity is not checked, so a different machine at this address would not be noticed. Turn it on once a trusted certificate is installed.</p></div></div>'
+      :'<p class="hint" style="grid-column:1/-1;margin:0">The certificate setting appears once the '+c.kind+' answers and shows what kind of certificate it has.</p>';
+    $('#connForm').innerHTML=s;
+    $('#connCheck').innerHTML=c.saved
+      ?'<button class="btn" data-toast="Check connection: a read-only sign-in to '+c.addr+'. Nothing is written."><svg class="ic s"><use href="#i-plug"/></svg>Check connection</button><span class="hint">Read-only. Last answer:</span><span class="chip proof long">'+c.last+'</span>'
+      :'<button class="btn" disabled><svg class="ic s"><use href="#i-plug"/></svg>Check connection</button><span class="why"><svg class="ic s"><use href="#i-lock"/></svg>Needs a management address first.</span><span class="chip blank">never answered</span>';
+  }
+  renderConn('dl3');
+  renderHome();renderAdd();go(0);
+})();
+</script>

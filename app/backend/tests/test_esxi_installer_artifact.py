@@ -674,3 +674,53 @@ def _request(source_iso: Path, context: dict) -> dict:
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_kit_with_ntp_off_installs_without_time_sources_or_an_empty_firstboot(tmp_path):
+    context = _profile_context()
+    context["enabled_features"] = {**context["enabled_features"], "enable_ntp": False}
+    request = artifact.EsxiInstallerArtifactRequest.model_validate({**_request(_fake_iso(tmp_path), context), "ntp_servers": [], "dns_servers": ["192.0.2.53"]})
+    text = artifact._render_kickstart(request)
+    assert "ntp" not in text.lower() and "%firstboot" not in text
+    assert not [b for b in artifact._profile_binding_blockers(request, {**context, "active_profile": {**context["active_profile"], "global_settings": {**context["active_profile"]["global_settings"], "dns_servers": ["192.0.2.53"]}}}) if "ntp" in b]
+    # With NTP still on in the kit, an empty list does not match.
+    context["enabled_features"]["enable_ntp"] = True
+    assert any("ntp_servers" in b for b in artifact._profile_binding_blockers(request, context))
+
+
+def test_saved_esxi_vlan_overrides_the_kit_vlan_for_binding(tmp_path):
+    context = _profile_context()
+    request = artifact.EsxiInstallerArtifactRequest.model_validate({**_request(_fake_iso(tmp_path), context), "management_vlan_id": 0})
+    assert any("management_vlan_id" in b for b in artifact._profile_binding_blockers(request, context))
+    assert not any("management_vlan_id" in b for b in artifact._profile_binding_blockers(request, {**context, "esxi_management_vlan_id": 0}))
+
+
+def test_plain_el_torito_iso_without_system_area_is_a_definite_signature():
+    report = "Boot record  : El Torito\nxorriso : NOTE : No System Area was loaded\n"
+    signature = artifact._parse_system_area_signature(report)
+    assert signature.summary == ("none",) and signature.options == "none"
+    with pytest.raises(artifact.IsoBuilderError):
+        artifact._parse_system_area_signature("Boot record  : El Torito\n")
+
+
+def _entry(number, platform, load_size, path):
+    return artifact._ElToritoEntry(number=number, platform=platform, bootable="y", emulation="none", load_segment="0x0000",
+                                   partition_type="0x00", load_size=load_size, image_path=path, image_options=())
+
+
+def test_uefi_load_size_may_only_change_to_the_image_real_size(monkeypatch):
+    source = artifact._ElToritoSignature("/boot.cat", 1, (_entry(1, "BIOS", 4, "/isolinux.bin"), _entry(2, "UEFI", 1, "/efiboot.img")))
+    full = artifact._ElToritoSignature("/boot.cat", 1, (_entry(1, "BIOS", 4, "/isolinux.bin"), _entry(2, "UEFI", 2048, "/efiboot.img")))
+    monkeypatch.setattr(artifact, "_iso_file_size", lambda iso, path: 1024 * 1024)
+    assert artifact._accept_full_uefi_load_size(source, full, Path("x.iso")) == source
+    # Any other size, or a BIOS entry changing, still differs.
+    odd = artifact._ElToritoSignature("/boot.cat", 1, (_entry(1, "BIOS", 4, "/isolinux.bin"), _entry(2, "UEFI", 300, "/efiboot.img")))
+    assert artifact._accept_full_uefi_load_size(source, odd, Path("x.iso")) != source
+    bios = artifact._ElToritoSignature("/boot.cat", 1, (_entry(1, "BIOS", 8, "/isolinux.bin"), _entry(2, "UEFI", 1, "/efiboot.img")))
+    assert artifact._accept_full_uefi_load_size(source, bios, Path("x.iso")) != source
+
+
+def _fake_iso(tmp_path: Path) -> Path:
+    path = tmp_path / "source.iso"
+    path.write_bytes(b"iso")
+    return path

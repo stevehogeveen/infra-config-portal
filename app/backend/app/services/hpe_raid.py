@@ -25,6 +25,7 @@ from app.providers.probe_cache import get_probe_result
 from app.providers.redaction import redact_sensitive
 from app.services.env_utils import env_int as _env_int
 from app.services.firmware_compliance import firmware_gate_blockers
+from app.services.hardware_health import drive_condition
 from app.services.guarded_action_context import GuardedActionContext, guarded_confirmation, guarded_flag
 from app.services.json_file_store import read_json_object, write_json_object, write_text_value
 from app.services.ilo_write_target import (
@@ -2197,6 +2198,7 @@ def _local_storage_next_action(blockers: list[str], desired_count: int, current_
 def _drive_for_ui(drive: dict[str, Any]) -> dict[str, Any]:
     bay = _bay_id(drive)
     capacity = _capacity_bytes(drive)
+    condition = drive_condition({**drive, "CapacityBytes": capacity})
     selection_id, identity_kind = _physical_drive_inventory_identity(drive)
     return {
         **drive,
@@ -2210,7 +2212,9 @@ def _drive_for_ui(drive: dict[str, Any]) -> dict[str, Any]:
         "capacity_bytes": capacity,
         "capacity_label": _capacity_label(capacity),
         "media_type": drive.get("MediaType") or drive.get("InterfaceType") or drive.get("Protocol"),
-        "health": _health(drive),
+        "health": condition["health"],
+        "reported_health": condition["reported_health"],
+        "presence": condition["presence"],
     }
 
 

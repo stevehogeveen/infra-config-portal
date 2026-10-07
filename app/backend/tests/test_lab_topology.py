@@ -239,6 +239,91 @@ def test_compact_offset_rules_must_fit_subnet() -> None:
         _derive(subnet_cidr="10.10.5.0/29")
 
 
+@pytest.mark.parametrize("subnet", ["192.0.2.0/27", "192.0.2.0/29"])
+def test_custom_subnet_does_not_require_or_generate_preset_offsets(subnet: str) -> None:
+    profile = _derive(
+        profile_topology="custom",
+        subnet_cidr=subnet,
+        global_settings={"gateway": "192.0.2.1"},
+        address_plan={"ilo": "192.0.2.2", "ilo_initial": "198.51.100.17"},
+        features={"storage_protocol": "local", "netapp_enabled": False},
+    )
+    assert profile["address_plan"]["ilo"] == "192.0.2.2"
+    assert profile["address_plan"]["ilo_initial"] == "198.51.100.17"
+    assert profile["address_plan"]["esxi_management"] is None
+    assert profile["devices"]["ups"] is None
+    assert profile["gateway"] == "192.0.2.1"
+
+
+def test_custom_subnet_still_rejects_out_of_subnet_device_addresses() -> None:
+    with pytest.raises(LabTopologyError, match="outside active subnet"):
+        _derive(profile_topology="custom", subnet_cidr="192.0.2.0/27",
+                address_plan={"ilo": "192.0.2.201"})
+
+
+def test_profile_subnet_edit_retires_inherited_offset_template(monkeypatch) -> None:
+    from app.services import lab_profiles
+
+    profile = {"id": "fixture", "name": "Kit", "version": 1,
+               "subnet_cidr": "192.0.2.0/24", "profile_topology": "high_address_lab"}
+    store = {"profiles": [profile], "active_profile_id": "fixture"}
+    written = []
+    monkeypatch.setattr(lab_profiles, "_read_store", lambda: store)
+    monkeypatch.setattr(lab_profiles, "_write_store", written.append)
+    result = lab_profiles.update_lab_profile("fixture", {
+        "name": "Kit", "profile_topology": "high_address_lab",
+        "subnet_cidr": "192.0.2.0/27",
+        "global_settings": {"gateway": "192.0.2.1", "ntp_servers": ["198.51.100.10"]},
+        "address_plan": {"ilo": "192.0.2.2", "ilo_initial": "198.51.100.17"},
+        "features": {"storage_protocol": "local", "netapp_enabled": False},
+    })
+    assert result["profile_topology"] == "custom"
+    assert result["address_plan"]["ilo"] == "192.0.2.2"
+    assert result["global_settings"]["ntp_servers"] == ["198.51.100.10"]
+    assert len(written) == 1
+
+
+def test_subnet_edit_archives_unchanged_old_targets_without_clearing_form_values(monkeypatch) -> None:
+    from copy import deepcopy
+    from app.services import lab_profiles
+
+    profile = {"id": "fixture", "name": "Kit", "version": 1, **_derive(
+        subnet_cidr="192.0.2.0/24", features={"storage_protocol": "local", "netapp_enabled": False},
+        address_plan={"ilo_initial": "198.51.100.17"},
+    )}
+    store = {"profiles": [profile], "active_profile_id": "fixture"}
+    monkeypatch.setattr(lab_profiles, "_read_store", lambda: store)
+    monkeypatch.setattr(lab_profiles, "_write_store", lambda value: None)
+    payload = deepcopy(profile)
+    payload["subnet_cidr"] = "198.51.100.0/27"
+    payload["address_plan"]["subnet"] = payload["subnet_cidr"]
+    payload["gateway"] = "198.51.100.1"
+    payload["global_settings"].update(gateway="198.51.100.1", dns_servers=["198.51.100.2"],
+                                      ntp_servers=["198.51.100.3"], snmp_servers=["198.51.100.4"])
+    result = lab_profiles.update_lab_profile("fixture", payload)
+    assert result["address_plan"]["ilo"] is None
+    assert result["address_plan"]["esxi_management"] is None
+    assert result["devices"]["ilo"] is None
+    assert result["address_plan"]["ilo_initial"] == "198.51.100.17"
+    assert result["gateway"] == "198.51.100.1"
+    assert result["global_settings"]["dns_servers"] == ["198.51.100.2"]
+    assert result["global_settings"]["ntp_servers"] == ["198.51.100.3"]
+    assert result["global_settings"]["snmp_servers"] == ["198.51.100.4"]
+    assert profile["history"][-1]["address_plan"]["ilo"] == "192.0.2.201"
+    assert payload["address_plan"]["ilo"] == "192.0.2.201"
+
+
+def test_subnet_edit_does_not_hide_new_invalid_equipment_addresses() -> None:
+    from app.services import lab_profiles
+
+    profile = _derive(subnet_cidr="192.0.2.0/24")
+    payload = {"profile_topology": "custom", "subnet_cidr": "198.51.100.0/27",
+               "address_plan": {"ilo": "203.0.113.10"}}
+    cleaned = lab_profiles._retire_previous_network_addresses(profile, payload, payload["subnet_cidr"])
+    with pytest.raises(lab_profiles.LabProfileError, match="outside active subnet"):
+        lab_profiles._normalize_profile_components(cleaned)
+
+
 def test_local_lab_profile_files_remain_gitignored() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     gitignore = (repo_root / ".gitignore").read_text(encoding="utf-8")

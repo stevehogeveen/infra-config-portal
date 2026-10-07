@@ -1,0 +1,1329 @@
+<title>Lab Drawing Set</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&display=swap">
+<style>
+:root{
+  color-scheme: light;
+  --paper:#F5EFE0;        /* vellum */
+  --paper-2:#EDE4CF;      /* cream, binder and soft panels */
+  --paper-3:#E3D9C0;      /* worn cream, table heads, unselected tabs */
+  --ink:#1E2A5C;          /* indigo ink */
+  --ink-2:#4A5480;        /* thinned ink, labels and glosses */
+  --rule:#B9AE93;         /* hairline rules */
+  --hatch:#C6BBA0;        /* hatching for empty slots and locked steps */
+  --pencil:#5E5950;       /* graphite: saved plan, disabled */
+  --pencil-soft:#67625A;  /* graphite: blank marks (told apart by form, not lightness) */
+  --plan-fill:#DDD4BF;    /* graphite wash: plan-only occupancy */
+  --stamp:#1B7A48;        /* green: proven with a time, nothing else */
+  --refuse:#A4392B;       /* red: refused, destructive, alerts */
+  --wash:#DCE3F2;         /* pale indigo wash: selection, current step */
+  --primary-bg:#1E2A5C;
+  --primary-fg:#F5EFE0;
+  --primary-line:#1E2A5C;
+  --shadow:rgba(30,42,92,.14);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --paper:#171B2B;
+    --paper-2:#1F2438;
+    --paper-3:#272D45;
+    --ink:#E8E0CB;
+    --ink-2:#BDB6A4;
+    --rule:#56608A;
+    --hatch:#5A6490;
+    --pencil:#B5AFA2;
+    --pencil-soft:#948E82;
+    --plan-fill:#343B57;
+    --stamp:#62C78F;
+    --refuse:#EE8A76;
+    --wash:#3A4A80;
+    --primary-bg:#E8E0CB;
+    --primary-fg:#171B2B;
+    --primary-line:#E8E0CB;
+    --shadow:rgba(0,0,0,.45);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --paper:#171B2B;
+  --paper-2:#1F2438;
+  --paper-3:#272D45;
+  --ink:#E8E0CB;
+  --ink-2:#BDB6A4;
+  --rule:#56608A;
+  --hatch:#5A6490;
+  --pencil:#B5AFA2;
+  --pencil-soft:#948E82;
+  --plan-fill:#343B57;
+  --stamp:#62C78F;
+  --refuse:#EE8A76;
+  --wash:#3A4A80;
+  --primary-bg:#E8E0CB;
+  --primary-fg:#171B2B;
+  --primary-line:#E8E0CB;
+  --shadow:rgba(0,0,0,.45);
+}
+[hidden]{display:none!important}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+/* type scale: 11 labels and marks · 13 body and values · 15 serif prose · 17 h3 · 24 h2 · 30 h1 */
+body{margin:0;background:var(--paper);color:var(--ink);font-family:"IBM Plex Mono","SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;font-size:13px;line-height:1.45}
+table{font-size:inherit;color:inherit;border-collapse:collapse}
+button,input,select{font:inherit;color:inherit}
+h1,h2,h3,h4,.serif{font-family:"Fraunces","Iowan Old Style","Palatino Linotype","Book Antiqua",Georgia,serif;font-weight:600;letter-spacing:.005em;margin:0}
+h1{font-size:30px;line-height:1.1}
+h2{font-size:24px;line-height:1.15}
+h3{font-size:17px;line-height:1.2}
+h4{font-size:15px;line-height:1.2}
+p{margin:0}
+a{color:var(--ink)}
+.wrap{padding:24px 16px 48px;max-width:1500px;margin:0 auto}
+.panhint{display:none;font-size:11px;letter-spacing:.06em;color:var(--ink-2);margin:0 0 6px}
+@media (min-width:761px) and (max-width:1330px){.panhint{display:block}}
+.setscroll{overflow-x:auto;border:1px solid var(--rule);background:var(--paper-2);box-shadow:0 8px 30px var(--shadow)}
+.set{min-width:1280px;padding:18px}
+.caps{text-transform:uppercase;letter-spacing:.09em;font-size:11px}
+.dim{color:var(--ink-2)}
+.prose{font-family:"Fraunces","Iowan Old Style",Georgia,serif;font-size:15px;line-height:1.5}
+
+/* glossary: dotted term + one-line plain gloss on first use */
+.t{text-decoration:underline dotted;text-decoration-thickness:1px;text-underline-offset:3px}
+.gl{display:block;font-family:"Fraunces","Iowan Old Style",Georgia,serif;font-style:italic;font-weight:400;font-size:13px;line-height:1.3;color:var(--ink-2);text-transform:none;letter-spacing:0;margin-top:1px}
+.gl.il{display:inline}
+
+/* set header and sheet tabs */
+.sethead{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:4px 6px 12px}
+.sethead .brand{display:flex;flex-direction:column;gap:2px}
+.sethead .brand small{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.setstatus{text-align:right;display:flex;flex-direction:column;gap:2px;align-items:flex-end}
+.tabs{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;align-items:stretch;border-bottom:1.5px solid var(--ink)}
+.tab{appearance:none;border:1px solid var(--ink);border-bottom:none;background:var(--paper-3);color:var(--ink);padding:7px 10px 6px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:1px;position:relative;min-width:0}
+.tab .no{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.tab b{font-family:"Fraunces",Georgia,serif;font-weight:600;font-size:15px;line-height:1.2}
+.tab .st{font-size:11px;letter-spacing:0;color:var(--ink-2);align-self:flex-start;padding:0 4px;margin-left:-4px}
+.tab.done .st::before{content:"✓ "}
+.tab.current .st{background:var(--wash);color:var(--ink)}
+.tab.locked{cursor:not-allowed;color:var(--pencil);border-style:dashed;border-color:var(--pencil);background:repeating-linear-gradient(135deg,var(--paper-2) 0 6px,var(--hatch) 6px 7px)}
+.tab.locked .no,.tab.locked .st{color:var(--pencil)}
+.tab.locked .st,.tab.locked b{background:var(--paper-2);align-self:flex-start;padding:0 4px;margin-left:-4px}
+.tab[aria-selected="true"]{background:var(--paper)}
+.tab[aria-selected="true"]::after{content:"";position:absolute;left:-1px;right:-1px;top:-4px;height:4px;background:var(--ink)}
+.tab:focus-visible,.btn:focus-visible,.step:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+
+/* the sheet */
+.sheet{position:relative;margin-top:14px;border:1.5px solid var(--ink);outline:1px solid var(--ink);outline-offset:4px;background:var(--paper);padding:22px 22px 0}
+.sheethead{display:flex;justify-content:space-between;align-items:baseline;gap:20px;border-bottom:1px solid var(--rule);padding-bottom:10px;margin-bottom:18px}
+.sheethead .no{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.sheethead .lede{font-family:"Fraunces",Georgia,serif;font-style:italic;font-weight:400;font-size:15px;color:var(--ink-2);max-width:620px;text-align:right}
+
+/* key strip, then title block */
+.key{margin:26px -22px 0;border-top:1px solid var(--rule);padding:10px 22px;display:flex;flex-wrap:wrap;gap:8px 22px;align-items:center;font-size:11px;background:var(--paper-2)}
+.key > b{font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:500}
+.key > span{display:inline-flex;align-items:center;gap:8px;color:var(--ink-2)}
+.titleblock{margin:0 -22px;border-top:1.5px solid var(--ink);display:grid;grid-template-columns:2.2fr 1fr 1fr 1.2fr 1.3fr 1fr;font-size:11px}
+.titleblock > div{padding:8px 12px;border-right:1px solid var(--ink);min-height:58px;display:flex;flex-direction:column;gap:2px}
+.titleblock > div:last-child{border-right:none}
+.titleblock label{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.titleblock b{font-family:"Fraunces",Georgia,serif;font-size:15px;font-weight:600}
+.titleblock .v{font-size:13px}
+.titleblock .gl{font-size:13px}
+
+/* panels */
+.panel{border:1px solid var(--ink);padding:14px 16px;background:var(--paper)}
+.panel.soft{border-color:var(--rule);background:var(--paper-2)}
+.hd{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}
+.kv{display:grid;grid-template-columns:170px 1fr;gap:8px 14px;align-items:baseline}
+.kv dt{color:var(--ink-2);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.kv dd{margin:0}
+hr.rule{border:0;border-top:1px solid var(--rule);margin:12px 0}
+.mt{margin-top:12px}
+
+/* buttons */
+.btn{appearance:none;font-size:11px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--ink);color:var(--ink);background:var(--paper);padding:8px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;line-height:1.2;text-align:left}
+.btn.primary{background:var(--primary-bg);color:var(--primary-fg);border:1.5px solid var(--primary-line)}
+.btn.danger{border-color:var(--refuse);color:var(--refuse)}
+.btn.ghost{border-color:var(--rule)}
+.btn.small{padding:5px 8px;white-space:nowrap}
+.btn[disabled]{cursor:not-allowed;border:1px dashed var(--pencil);color:var(--pencil);background:transparent}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}
+.reason{font-family:"Fraunces",Georgia,serif;font-style:italic;font-size:13px;color:var(--ink-2);line-height:1.35}
+
+/* inputs */
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field > label,.field > .lab{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.in{font-size:13px;color:var(--ink);background:var(--paper);border:0;border-bottom:1px solid var(--ink);padding:5px 2px;width:100%;min-width:0;border-radius:0}
+select.in{border:1px solid var(--ink);padding:5px 8px}
+.in[disabled]{border-bottom-style:dashed;color:var(--pencil);border-color:var(--pencil);background:transparent}
+.in::placeholder{color:var(--pencil-soft);opacity:1}
+/* stored plan values sit in graphite until edited or stamped */
+.field.plan .in{color:var(--pencil);font-style:italic;border-bottom-color:var(--pencil)}
+.field.plan select.in{border-color:var(--pencil)}
+.field.plan > label::after{content:" ⁄ saved plan";color:var(--pencil);font-style:italic;text-transform:none;letter-spacing:0}
+.field.edited > label::after{content:" · edited, not saved";color:var(--ink);font-style:italic;text-transform:none;letter-spacing:0}
+.stepper{display:inline-flex;border:1px solid var(--ink)}
+.stepper button{appearance:none;font-size:15px;border:0;background:var(--paper);color:var(--ink);width:34px;cursor:pointer}
+.stepper input{width:56px;text-align:center;border:0;border-left:1px solid var(--ink);border-right:1px solid var(--ink);font-size:13px;background:var(--paper-2);color:var(--ink)}
+.toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px}
+.toggle .lbl{white-space:nowrap;font-weight:500}
+.toggle .sw{width:34px;height:18px;border:1px solid var(--ink);border-radius:9px;position:relative;background:var(--paper);flex:none}
+.toggle .sw::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--ink)}
+.toggle.on .sw{background:var(--ink)}
+.toggle.on .sw::after{left:18px;background:var(--paper)}
+
+/* provenance marks */
+/* group stamp: rotated, one per group, always with a time */
+.stamp{display:inline-block;font-size:13px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--stamp);background:var(--paper);border:2.5px solid var(--stamp);border-radius:3px;padding:4px 11px 3px;transform:rotate(-3deg);white-space:nowrap;box-shadow:inset 0 0 0 1px var(--paper),inset 0 0 0 2px var(--stamp);line-height:1.35}
+.stamp.refuse{color:var(--refuse);border-color:var(--refuse);box-shadow:inset 0 0 0 1px var(--paper),inset 0 0 0 2px var(--refuse);transform:rotate(3deg)}
+/* row tick: upright, compact, green, carries its time */
+.tick{display:inline-block;font-size:11px;font-weight:500;letter-spacing:.04em;color:var(--stamp);background:var(--paper);border:1px solid var(--stamp);border-radius:2px;padding:0 5px;white-space:nowrap;line-height:1.5}
+.tick::before{content:"✓ "}
+/* recorded events (not readbacks): ink, upright */
+.ev{display:inline-block;font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);background:var(--paper);border:1.5px solid var(--ink);border-radius:2px;padding:1px 6px;white-space:nowrap}
+/* recorded result (history, not a live check): ink, dashed, never green */
+.rec{display:inline-flex;flex-wrap:wrap;align-items:center;gap:2px 8px;font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);background:var(--paper);border:1.5px dashed var(--ink);border-radius:2px;padding:3px 8px;line-height:1.4}
+.rec::before{content:"✓";font-size:13px}
+.rec i{font-family:"Fraunces",Georgia,serif;font-style:italic;text-transform:none;letter-spacing:0;font-weight:400;font-size:13px}
+/* stale proof: graphite, dashed box, time left readable */
+.stale{display:inline-block;font-size:11px;letter-spacing:.04em;color:var(--pencil);border:1px dashed var(--pencil);border-radius:2px;padding:0 5px;white-space:nowrap;line-height:1.5}
+.stale s{text-decoration:none}
+/* pencil: saved plan values only */
+.pencil{color:var(--pencil);font-style:italic;display:inline-flex;align-items:center;gap:6px}
+.pencil::before{content:"";width:12px;height:2.5px;background:var(--pencil);transform:rotate(-40deg);flex:none;border-radius:1px}
+.pencil small{font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-style:normal}
+/* suggested: dashed box with its label */
+.suggest{display:inline-flex;align-items:center;gap:8px;color:var(--ink-2);border:1px dashed var(--ink-2);padding:1px 7px;font-style:italic}
+.suggest small{font-style:normal;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+/* blank: upright, a dash, nothing else */
+.blank{color:var(--pencil-soft);font-style:normal}
+.blank::before{content:"— "}
+.val{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+
+/* kit strip + order of work */
+.kitstrip{display:grid;grid-template-columns:1.1fr 2fr;gap:22px;margin-bottom:18px}
+.steps{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border:1px solid var(--ink)}
+.step{appearance:none;color:var(--ink);text-align:left;background:var(--paper);border:0;border-right:1px solid var(--ink);padding:8px 10px;display:flex;flex-direction:column;gap:3px;min-height:84px;cursor:pointer;min-width:0}
+.step:last-child{border-right:none}
+.step .n{font-family:"Fraunces",Georgia,serif;font-size:17px;font-weight:600;line-height:1}
+.step .tt{font-size:13px;line-height:1.25}
+.step .s{font-size:11px;letter-spacing:.04em;color:var(--ink-2)}
+.step.current{background:var(--wash)}
+.step.locked{background:repeating-linear-gradient(135deg,var(--paper) 0 6px,var(--hatch) 6px 7px);color:var(--pencil);cursor:not-allowed}
+.step.locked .s,.step.locked .tt{color:var(--pencil);background:var(--paper);align-self:flex-start;padding:0 3px;margin-left:-3px}
+.step.done .s::before{content:"✓ "}
+
+/* rack drawing */
+.drawing{border:1px solid var(--rule);background:var(--paper);padding:10px 12px 6px;position:relative}
+.drawing svg{display:block;width:100%;height:auto;margin:0 auto}
+#rack-home svg{max-width:460px}
+.drawing .cap{display:flex;flex-wrap:wrap;gap:4px 16px;justify-content:space-between;align-items:center;font-size:11px;letter-spacing:.06em;color:var(--ink-2);border-top:1px solid var(--rule);padding-top:6px;margin-top:4px}
+.viewtoggle{display:inline-flex;border:1px solid var(--ink)}
+.viewtoggle button{appearance:none;font-size:11px;letter-spacing:.08em;text-transform:uppercase;border:0;background:var(--paper);color:var(--ink);padding:5px 10px;cursor:pointer}
+.viewtoggle button + button{border-left:1px solid var(--ink)}
+.viewtoggle button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.unit{cursor:pointer}
+.tscroll{overflow-x:auto}
+table.sched{width:100%;font-size:13px}
+table.sched th{text-align:left;font-weight:500;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);border-bottom:1px solid var(--ink);padding:6px 8px;background:var(--paper-3)}
+table.sched td{border-bottom:1px solid var(--rule);padding:7px 8px;vertical-align:top}
+table.sched tr.sel td{background:var(--wash)}
+table.sched tr[data-u]{cursor:pointer}
+table.sched td.num{font-family:"Fraunces",Georgia,serif;font-weight:600;font-size:15px}
+
+/* readiness */
+.ready{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.ready > div{border:1px solid var(--rule);padding:8px 10px;display:flex;flex-direction:column;gap:6px;align-items:flex-start;min-height:84px}
+.ready > div.locked{background:repeating-linear-gradient(135deg,var(--paper) 0 6px,var(--hatch) 6px 7px)}
+.ready > div.locked .reason{background:var(--paper);padding:0 3px}
+
+/* disclosures */
+details.tech{border:1px solid var(--rule);padding:0}
+details.tech summary{cursor:pointer;padding:8px 12px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);list-style:none;display:flex;justify-content:space-between;gap:12px}
+details.tech summary::-webkit-details-marker{display:none}
+details.tech summary::after{content:"open";font-style:italic;text-transform:none;letter-spacing:0}
+details.tech[open] summary::after{content:"close"}
+details.tech .body{padding:8px 12px 12px;border-top:1px solid var(--rule)}
+details.tech .body dl{display:grid;grid-template-columns:190px 1fr;gap:6px 12px;margin:0}
+details.tech .body dt{color:var(--ink-2)}
+details.tech .body dd{margin:0}
+
+/* palette cards */
+.palette{display:grid;grid-template-columns:1fr;gap:8px}
+.card{border:1px solid var(--ink);background:var(--paper);padding:8px 10px;display:grid;grid-template-columns:48px 1fr auto;gap:10px;align-items:center;cursor:grab}
+.card svg{display:block;width:48px;height:auto}
+.card b{font-family:"Fraunces",Georgia,serif;font-weight:600;font-size:15px;display:block}
+.card small{color:var(--ink-2);font-size:11px;display:block;line-height:1.35}
+.card .u{font-family:"Fraunces",Georgia,serif;font-weight:600;font-size:15px}
+.card.armed{outline:2px solid var(--ink);outline-offset:2px;background:var(--wash)}
+.dropzone{border:1.5px dashed var(--refuse);color:var(--refuse);padding:14px;text-align:center;font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin-top:10px}
+.stepline{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:8px 0 10px;border-bottom:1px solid var(--rule);margin-bottom:6px}
+.stepline .lab{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.blocked{border-left:3px solid var(--refuse);padding:4px 10px;color:var(--refuse);font-size:13px;background:var(--paper)}
+
+/* bay grid */
+.bays{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin-top:6px}
+.bay{appearance:none;border:1px solid var(--ink);height:34px;display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;background:var(--paper);color:var(--ink)}
+.bay.f{background:var(--plan-fill);border:1.5px dashed var(--pencil);color:var(--pencil);font-style:italic;font-weight:500}
+.bay:not(.f){background:repeating-linear-gradient(135deg,var(--paper) 0 4px,var(--hatch) 4px 5px)}
+
+/* revision cloud */
+.cloud{position:relative;padding:16px}
+.cloud > svg.cloudline{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.cloud > svg.cloudline path{fill:none;stroke:var(--ink);stroke-width:1.4}
+.revtag{position:absolute;top:-12px;right:22px;background:var(--paper);border:1.5px solid var(--ink);padding:2px 8px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;display:inline-flex;align-items:center;gap:6px}
+.revtag .tri{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:11px solid var(--ink)}
+
+/* storage result */
+.result{border:1.5px solid var(--ink);padding:14px 16px;position:relative;background:var(--paper)}
+.stages{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
+.stages > div{border:1px solid var(--rule);padding:8px 10px;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.stages > div > span:first-child{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.required{border:1.5px solid var(--refuse);border-left-width:5px;background:var(--paper);padding:10px 12px;margin-top:14px}
+.required .rq{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--refuse);font-weight:500}
+.required p{font-family:"Fraunces",Georgia,serif;font-size:15px;margin:4px 0 8px}
+.nextup{border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:10px 0;margin:4px 0 12px}
+.mismatch{border:1px solid var(--rule);border-left:4px solid var(--rule);padding:10px 12px;background:var(--paper-2);margin:4px 0 12px}
+.mismatch p{font-size:14px;font-family:"Fraunces",Georgia,serif;margin-bottom:8px}
+.actrow{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;align-items:center;margin-top:10px}
+.actrow .lab{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.actrow .lab.red{color:var(--refuse)}
+
+/* reference band (examples, not current state) */
+.refband{position:relative;margin:0 -22px;border-top:1.5px solid var(--ink);padding:18px 22px 22px;background:var(--paper-2);overflow:hidden}
+.refband .refhd svg.wm{display:block;width:210px;height:60px;pointer-events:none;flex:none}
+.extag{font-size:11px;letter-spacing:.14em;text-transform:uppercase;border:1.5px dashed var(--ink);padding:1px 6px;margin-left:auto;white-space:nowrap}
+.refband .refhd{position:relative;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;margin-bottom:14px}
+.refgrid{position:relative;display:grid;grid-template-columns:1fr 1.15fr;gap:22px}
+.detail{border:1px dashed var(--ink);background:var(--paper);position:relative}
+.detail .dh{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px dashed var(--ink);background:var(--paper-3)}
+.bubble{width:34px;height:34px;border:1.5px solid var(--ink);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;line-height:1;font-weight:500;flex:none}
+.bubble b{font-size:13px;border-bottom:1px solid var(--ink);padding-bottom:1px;margin-bottom:1px;font-weight:500}
+.detail .db{padding:12px}
+.detail ol{margin:4px 0 0;padding-left:18px}
+.detail li{margin:2px 0}
+.modal{border:1.5px solid var(--ink);background:var(--paper);box-shadow:5px 5px 0 var(--rule);margin:4px 6px 6px 0}
+.modal .mt-bar{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid var(--ink);background:var(--paper-3)}
+.modal .mt-bar span:last-child{font-size:15px;color:var(--ink-2)}
+.modal .mb{padding:10px}
+.cmd{font-size:13px;border:1px solid var(--rule);background:var(--paper-2);padding:8px 10px;white-space:pre;overflow-x:auto;margin:6px 0 0}
+
+/* alerts */
+.alerts{border:1px solid var(--refuse);background:var(--paper);margin-top:12px}
+.alerts .ah{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:10px 12px}
+.alerts details summary{cursor:pointer;padding:7px 12px;border-top:1px solid var(--rule);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.alerts table{width:100%;font-size:13px}
+.alerts th{text-align:left;font-weight:500;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);padding:5px 12px;border-bottom:1px solid var(--rule);background:var(--paper-2)}
+.alerts td{padding:4px 12px;border-bottom:1px solid var(--rule)}
+
+/* layouts */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:22px}
+.rackcols{display:grid;grid-template-columns:230px 1.4fr 1fr;gap:22px}
+.homecols{display:grid;grid-template-columns:1.05fr 1fr;gap:22px}
+.connectcols{display:grid;grid-template-columns:1fr 1.4fr;gap:22px}
+.contgroup{margin-left:auto;flex-wrap:nowrap}
+.contgroup .reason{white-space:nowrap}
+.netgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px 18px}
+.dnslist{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.dnslist .slot{border:1px dashed var(--rule);padding:5px 8px;color:var(--pencil-soft);font-size:13px}
+.fwdev{display:grid;grid-template-columns:160px 1fr 1fr auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--rule)}
+.fwdev:last-of-type{border-bottom:none}
+.fwdev .name{font-family:"Fraunces",Georgia,serif;font-weight:600;font-size:15px}
+.gate{border:1px solid var(--ink);padding:12px 14px;background:var(--paper-2);margin-top:12px}
+.gate ol{margin:6px 0 0;padding-left:20px}
+.gate li{margin:6px 0}
+.gate li .btnrow{display:inline-flex;margin-left:8px;vertical-align:middle}
+
+/* designer's note */
+.note{margin-top:32px;border-top:1.5px solid var(--ink);padding-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:26px}
+.note h2{grid-column:1/-1}
+.note .sw{display:inline-block;width:14px;height:14px;border:1px solid var(--ink);vertical-align:-2px;margin-right:6px}
+.note table{width:100%;font-size:13px}
+.note th,.note td{text-align:left;border-bottom:1px solid var(--rule);padding:5px 6px;vertical-align:top}
+.note th{font-weight:500;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.note .map{grid-column:1/-1}
+.note p{margin-bottom:10px}
+
+@media (max-width:760px){
+  .set{min-width:0;padding:10px}
+  .sethead{flex-direction:column;align-items:flex-start}
+  .setstatus{text-align:left;align-items:flex-start}
+  .tabs{display:flex;overflow-x:auto;gap:4px;padding-top:6px}
+  .tab{flex:0 0 auto;max-width:170px}
+  .sheet{padding:14px 12px 0;outline:none}
+  .sheethead{flex-direction:column;gap:6px}
+  .sheethead .lede{text-align:left}
+  .kitstrip,.homecols,.rackcols,.connectcols,.two,.three,.netgrid,.refgrid,.note{grid-template-columns:1fr}
+  .connectcols,.refgrid{grid-template-columns:minmax(0,1fr)}
+  .connectcols > *,.refgrid > *,.result,.detail{min-width:0}
+  .contgroup{margin-left:0;flex-wrap:wrap}
+  .contgroup .reason{white-space:normal}
+  .steps{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .step{border-bottom:1px solid var(--ink)}
+  .ready{grid-template-columns:1fr 1fr}
+  .kv,details.tech .body dl{grid-template-columns:1fr}
+  .fwdev{grid-template-columns:1fr}
+  .dnslist{grid-template-columns:1fr 1fr}
+  .stages{grid-template-columns:1fr}
+  .key,.titleblock,.refband{margin-left:-12px;margin-right:-12px}
+  .titleblock{grid-template-columns:1fr 1fr}
+  .titleblock > div{border-bottom:1px solid var(--ink)}
+  h1{font-size:24px}
+  .hd{flex-wrap:wrap}
+}
+</style>
+
+<div class="wrap">
+<p class="panhint">→ This drawing set is 1280 px wide. On a narrower screen the frame scrolls sideways inside its own box: shift + mouse wheel, or swipe. The required alert review on A-4 sits in the left column.</p>
+<div class="setscroll"><div class="set">
+
+  <header class="sethead">
+    <div class="brand">
+      <small>Lab Builder · drawing set</small>
+      <h1>Kit Single Gen 10</h1>
+    </div>
+    <div class="setstatus">
+      <span class="dim">7 sheets, 2 locked · 25-09-2026</span>
+      <span class="gl">Each sheet has a "Sign this sheet" box: signing records that you reviewed it. It proves nothing about the hardware.</span>
+    </div>
+  </header>
+  <nav class="tabs" role="tablist" aria-label="Sheets, in order of work">
+    <button class="tab" role="tab" aria-selected="true" aria-controls="s1" id="t1"><span class="no">A-1</span><b>My Rack</b><span class="st">Overview</span></button>
+    <button class="tab done" role="tab" aria-selected="false" aria-controls="s2" id="t2" tabindex="-1"><span class="no">A-2 · step 1</span><b>Add equipment</b><span class="st">Done · Rev B unsaved</span></button>
+    <button class="tab done" role="tab" aria-selected="false" aria-controls="s3" id="t3" tabindex="-1"><span class="no">A-3 · step 2</span><b>Network settings</b><span class="st">Done</span></button>
+    <button class="tab current" role="tab" aria-selected="false" aria-controls="s4" id="t4" tabindex="-1"><span class="no">A-4 · step 3</span><b>Connect equipment</b><span class="st">Current step</span></button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="s5" id="t5" tabindex="-1"><span class="no">A-5 · step 4</span><b>Check firmware</b><span class="st">Next</span></button>
+    <button class="tab locked" role="tab" aria-selected="false" aria-disabled="true" id="t6" tabindex="-1"><span class="no">A-6 · step 5</span><b>Prepare ESXi</b><span class="st">Locked · firmware review</span></button>
+    <button class="tab locked" role="tab" aria-selected="false" aria-disabled="true" id="t7" tabindex="-1"><span class="no">A-7 · step 6</span><b>Install Windows</b><span class="st">Locked · needs ESXi</span></button>
+  </nav>
+
+  <!-- ============================ SHEET A-1 · MY RACK ============================ -->
+  <section class="sheet" id="s1" role="tabpanel" aria-labelledby="t1">
+    <div class="sheethead">
+      <div><span class="no">Sheet A-1 · Overview</span><h2>My Rack</h2></div>
+      <p class="lede">Every value here is stamped by today's hardware check, pencilled from your plan, marked as a recorded result, or left blank. The key at the foot of the sheet says which is which.</p>
+    </div>
+
+    <div class="kitstrip">
+      <div class="panel soft">
+        <div class="hd"><h3>Kit</h3><span class="caps dim"><span class="t">Rev A</span> · saved</span></div>
+        <div class="field"><label for="kitsel">Choose kit</label>
+          <select id="kitsel" class="in"><option>Kit Single Gen 10 · 8U, 4 pieces</option></select></div>
+        <div class="btnrow mt">
+          <button class="btn">Rename kit</button>
+          <button class="btn">Save as new kit</button>
+          <button class="btn">Open build reports</button>
+          <button class="btn">Open run history</button>
+        </div>
+        <div class="val mt"><span class="pencil">Rev B: unsaved change, on sheet A-2 (step 1)</span></div>
+        <span class="gl">Rev: a saved version of this kit. A is saved; B holds a change you have not saved yet.</span>
+      </div>
+      <div>
+        <div class="hd">
+          <div><h3>Order of work</h3><span class="gl">Each step opens when the one before it is done. Tap a step to open its sheet. "Done" on steps 1 and 2 means saved in your plan, not proven by hardware.</span></div>
+          <button class="btn primary" data-goto="4">Continue: Connect equipment →</button>
+        </div>
+        <div class="steps">
+          <button class="step done" data-goto="2"><span class="n">1</span><span class="tt">Add equipment</span><span class="s">Done · A-2</span><span class="pencil"><small>unsaved change</small></span></button>
+          <button class="step done" data-goto="3"><span class="n">2</span><span class="tt">Network settings</span><span class="s">Done · A-3</span></button>
+          <button class="step current" data-goto="4" aria-current="step"><span class="n">3</span><span class="tt">Connect equipment</span><span class="s">Current step · A-4</span></button>
+          <button class="step" data-goto="5"><span class="n">4</span><span class="tt">Check firmware</span><span class="s">Next · A-5</span></button>
+          <button class="step locked" disabled><span class="n">5</span><span class="tt">Prepare ESXi</span><span class="s">Locked: needs firmware review</span></button>
+          <button class="step locked" disabled><span class="n">6</span><span class="tt">Install Windows</span><span class="s">Locked: needs ESXi</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="homecols">
+      <div>
+        <div class="drawing">
+          <div class="hd" style="margin-bottom:4px">
+            <div><h3 id="homeview-title">Front of rack</h3><span class="gl" id="homeview-gloss">Drawn as you face it in the aisle. <span class="t">U</span>: one rack slot, 44.45 mm tall; U1 is at the bottom.</span></div>
+            <div class="viewtoggle" role="group" aria-label="How to show the rack"><button type="button" aria-pressed="true" data-view="rack">Rack</button><button type="button" aria-pressed="false" data-view="list">List</button></div>
+          </div>
+          <div id="view-rack"><div id="rack-home"></div></div>
+          <div id="view-list" hidden>
+            <div class="tscroll"><table class="sched" aria-label="List of equipment">
+              <thead><tr><th>Slot</th><th>Name</th><th>What it is</th><th>Answered</th><th>Next</th></tr></thead>
+              <tbody>
+                <tr data-u="4"><td class="num">U4</td><td>PDU 5</td><td><span class="pencil">PDU, rack mount <small>plan</small></span></td><td><span class="blank">never checked</span></td><td><span class="blank">nothing yet</span></td></tr>
+                <tr data-u="3"><td class="num">U3</td><td>Cisco switch 6</td><td><span class="pencil">Cisco switch · 24 + 4 SFP <small>plan</small></span></td><td><span class="blank">never checked</span></td><td><span class="blank">nothing yet</span></td></tr>
+                <tr data-u="2"><td class="num">U2</td><td>PDU 4</td><td><span class="pencil">PDU, rack mount <small>plan</small></span></td><td><span class="blank">never checked</span></td><td><span class="blank">nothing yet</span></td></tr>
+                <tr data-u="1" class="sel"><td class="num">U1</td><td>HPE DL360 3</td><td><span class="pencil">HPE DL360 Gen10 · 1U · 10 bays <small>plan</small></span></td><td><span class="tick">reached 25-09 08:35</span></td><td>Plan new RAID on A-4</td></tr>
+              </tbody>
+            </table></div>
+          </div>
+          <div class="cap"><span>Solid ink: answered a check · dashed graphite: plan only · hatching: empty slot</span><span>Tap a piece to read it at right</span></div>
+        </div>
+      </div>
+
+      <div>
+        <!-- details: the server (proven where stamped) -->
+        <div class="panel" id="det-server">
+          <div class="hd">
+            <div><span class="caps dim">Selected · U1</span><h2>HPE DL360 3</h2></div>
+            <span class="stamp">Reached 25-09 08:35</span>
+          </div>
+          <dl class="kv">
+            <dt>Model</dt><dd class="val"><span class="pencil">HPE DL360 Gen10, 1U <small>saved plan</small></span> <span class="blank">not read from the hardware yet</span></dd>
+            <dt><span class="t">iLO</span> address<span class="gl">iLO: the server's built-in remote-control chip</span></dt><dd class="val"><span class="pencil">192.0.2.27 <small>saved plan</small></span></dd>
+            <dt>iLO firmware</dt><dd class="val">iLO 5 v1.37 <span class="tick">25-09 08:35</span></dd>
+            <dt><span class="t">System ROM</span><span class="gl">the server's own start-up firmware</span></dt><dd class="val">U32 v1.46 <span class="tick">25-09 08:35</span></dd>
+            <dt>Drive bays<span class="gl">slots at the front that hold disks</span></dt><dd class="val"><span class="pencil">10 bays, 8 marked occupied <small>saved plan</small></span></dd>
+            <dt>Current drive count</dt><dd class="val"><span class="blank">not read yet · Refresh drive inventory on A-4</span></dd>
+            <dt>Last erase</dt><dd class="val"><span>The controller reported all 6 reviewed disks erased on 24-09 at 16:22.</span> <span class="rec">24-09 16:22 <i>recorded result, not a live check</i></span></dd>
+            <dt><span class="t">ESXi</span><span class="gl">software that lets this server run virtual machines</span></dt><dd><span class="blank">not installed · nothing recorded</span></dd>
+            <dt>Windows <span class="t">VM</span><span class="gl">a Windows computer that runs inside ESXi</span></dt><dd><span class="blank">not deployed · nothing recorded</span></dd>
+          </dl>
+          <p class="reason mt">Saved plan: 8 of 10 bays marked occupied. Recorded erase: 6 reviewed disks. These are different records, not two counts of today's drives; there is no current drive count yet. Next is planning the new RAID on A-4 (Continue, above); planning writes nothing.</p>
+          <hr class="rule">
+          <h4 style="margin-bottom:8px">Readiness</h4>
+          <div class="ready">
+            <div><h4>Connection</h4><span class="tick">25-09 08:35</span><span class="reason">answered a read-only check</span></div>
+            <div><h4>Firmware</h4><span class="blank">not compared</span><span class="reason">compare against the <span class="t">SPP</span> (HPE's firmware bundle) on A-5</span></div>
+            <div class="locked"><h4>ESXi</h4><span class="reason">locked: needs firmware review</span></div>
+            <div class="locked"><h4>Windows</h4><span class="reason">locked: needs ESXi</span></div>
+          </div>
+          <hr class="rule">
+          <details class="tech" open>
+            <summary>Technical details</summary>
+            <div class="body"><dl>
+              <dt>Check made</dt><dd>read-only check at 25-09 08:35 (the app's recorded check): reached, iLO 5 v1.37, System ROM U32 v1.46</dd>
+              <dt>Certificate check</dt><dd>Off because this iLO's certificate is <span class="t">self-signed</span>. The connection is encrypted, but the server's identity is not checked. Turn it on once a trusted certificate is installed.<span class="gl">self-signed: the iLO made its own certificate, so nobody vouches for it</span></dd>
+              <dt>Drive inventory</dt><dd><span class="blank">no current count · Refresh drive inventory on A-4</span></dd>
+              <dt>Recorded erase</dt><dd>Overwrite (device sanitize) on 6 reviewed disks · requested 24-09 14:34, power-on requested 14:35, verified 16:22 · recorded result, not a live check · no arrays created, ESXi not installed</dd>
+              <dt>Hardware alerts</dt><dd>10 recorded before the erase · current state unknown · a current check is required before firmware approval</dd>
+              <dt>Writes made</dt><dd>none from this sheet · planning writes nothing</dd>
+            </dl></div>
+          </details>
+          <div class="btnrow mt">
+            <button class="btn">Report an issue with this server</button>
+          </div>
+        </div>
+
+        <!-- details: a piece that has never answered (filled by script on selection) -->
+        <div class="panel" id="det-plan" hidden>
+          <div class="hd">
+            <div><span class="caps dim" id="dp-slot">Selected · U3</span><h2 id="dp-name">Cisco switch 6</h2></div>
+            <span class="blank">never answered</span>
+          </div>
+          <dl class="kv">
+            <dt>What the plan says</dt><dd><span class="pencil"><span id="dp-type">Cisco switch · 24 + 4 SFP</span> <small>saved plan</small></span></dd>
+            <dt>Slot</dt><dd><span class="pencil"><span id="dp-u">U3</span> <small>saved plan</small></span></dd>
+            <dt>Model</dt><dd><span class="blank">unknown until it answers a check</span></dd>
+            <dt>Ports, bays, drives</dt><dd><span class="blank">unknown until it answers a check</span></dd>
+          </dl>
+          <p class="reason mt">Nothing is filled in from the name or from the plan. The piece keeps its place in the build while everything about it stays unknown.</p>
+          <hr class="rule">
+          <h4 style="margin-bottom:8px">Readiness</h4>
+          <div class="ready">
+            <div><h4>Connection</h4><span class="blank">not checked</span></div>
+            <div><h4>Firmware</h4><span class="blank">no reading</span><span class="reason" id="dp-fw">switch firmware reading is not supported yet</span></div>
+            <div class="locked"><h4>ESXi</h4><span class="reason">servers only</span></div>
+            <div class="locked"><h4>Windows</h4><span class="reason">servers only</span></div>
+          </div>
+          <div class="btnrow mt"><button class="btn">Report an issue with this equipment</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="key">
+      <b>Key</b>
+      <span><span class="tick">25-09 08:35</span> today's check proved it, at that time</span>
+      <span><span class="stamp" style="font-size:11px;padding:1px 6px">Reached 25-09 08:35</span> one stamp for a whole group</span>
+      <span><span class="rec">24-09 <i>recorded</i></span> a recorded result from before today, not a live check</span>
+      <span><span class="pencil">value</span> saved plan, not checked</span>
+      <span><span class="suggest">value <small>suggested</small></span> the app proposes it</span>
+      <span><span class="blank">nothing</span> nobody knows yet</span>
+    </div>
+    <div class="titleblock">
+      <div><label>Kit</label><b>Kit Single Gen 10</b><span class="v">8U rack · 4 pieces of equipment</span></div>
+      <div><label>Sheet</label><b>A-1</b><span class="v">of 7</span></div>
+      <div><label>Revision</label><b>A</b><span class="v">saved</span></div>
+      <div><label>Drawn by</label><span class="v">Lab Builder</span><span class="gl">made from your plan and hardware checks</span></div>
+      <div><label>Checked by</label><span class="v pencil">not signed</span><button class="btn ghost small" style="align-self:flex-start;margin-top:2px">Sign this sheet</button><span class="gl">records that you reviewed it; proves nothing about hardware</span></div>
+      <div><label>Date</label><span class="v">25-09-2026</span></div>
+    </div>
+  </section>
+
+  <!-- ============================ SHEET A-2 · ADD EQUIPMENT ============================ -->
+  <section class="sheet" id="s2" role="tabpanel" aria-labelledby="t2" hidden>
+    <div class="sheethead">
+      <div><span class="no">Sheet A-2 · Step 1 · Rack layout</span><h2>Add equipment</h2></div>
+      <p class="lede">Drag a card onto a slot, or tap a card and then tap a slot. The drawing names the slots before anything moves.</p>
+    </div>
+
+    <div class="rackcols">
+      <div>
+        <div class="hd"><h3>Hardware</h3><span class="caps dim">Tap or drag</span></div>
+        <div class="palette">
+          <div class="card" draggable="true"><svg viewBox="0 0 48 16" aria-hidden="true"><rect x=".5" y=".5" width="47" height="15" style="fill:var(--paper);stroke:var(--ink)"/><g style="fill:none;stroke:var(--ink);stroke-width:.8"><rect x="4" y="3" width="3" height="10"/><rect x="9" y="3" width="3" height="10"/><rect x="14" y="3" width="3" height="10"/><rect x="19" y="3" width="3" height="10"/><rect x="24" y="3" width="3" height="10"/></g></svg><div><b>HPE DL360</b><small>server · up to 10 drive bays</small></div><span class="u">1U</span></div>
+          <div class="card armed" draggable="true"><svg viewBox="0 0 48 28" aria-hidden="true"><rect x=".5" y=".5" width="47" height="27" style="fill:var(--paper);stroke:var(--ink)"/><g style="fill:none;stroke:var(--ink);stroke-width:.8"><rect x="4" y="3" width="3" height="10"/><rect x="9" y="3" width="3" height="10"/><rect x="14" y="3" width="3" height="10"/><rect x="19" y="3" width="3" height="10"/><rect x="4" y="15" width="3" height="10"/><rect x="9" y="15" width="3" height="10"/><rect x="14" y="15" width="3" height="10"/><rect x="19" y="15" width="3" height="10"/></g></svg><div><b>HPE DL380</b><small>server · up to 24 drive bays · placing now</small></div><span class="u">2U</span></div>
+          <div class="card" draggable="true"><svg viewBox="0 0 48 16" aria-hidden="true"><rect x=".5" y=".5" width="47" height="15" style="fill:var(--paper);stroke:var(--ink)"/><g style="fill:none;stroke:var(--ink);stroke-width:.7"><rect x="3" y="3" width="3" height="3"/><rect x="7" y="3" width="3" height="3"/><rect x="11" y="3" width="3" height="3"/><rect x="15" y="3" width="3" height="3"/><rect x="19" y="3" width="3" height="3"/><rect x="23" y="3" width="3" height="3"/><rect x="3" y="9" width="3" height="3"/><rect x="7" y="9" width="3" height="3"/><rect x="11" y="9" width="3" height="3"/><rect x="15" y="9" width="3" height="3"/><rect x="19" y="9" width="3" height="3"/><rect x="23" y="9" width="3" height="3"/></g><g style="fill:var(--ink)"><rect x="31" y="5" width="3" height="5"/><rect x="35" y="5" width="3" height="5"/><rect x="39" y="5" width="3" height="5"/><rect x="43" y="5" width="3" height="5"/></g></svg><div><b>Cisco switch</b><small>24 or 48 ports + 4 <span class="t">SFP</span> (fibre ports)</small></div><span class="u">1U</span></div>
+          <div class="card" draggable="true"><svg viewBox="0 0 48 28" aria-hidden="true"><rect x=".5" y=".5" width="47" height="27" style="fill:var(--paper);stroke:var(--ink)"/><rect x="4" y="4" width="14" height="8" style="fill:var(--wash);stroke:var(--ink);stroke-width:.8"/><g style="fill:none;stroke:var(--ink);stroke-width:.8"><circle cx="8" cy="20" r="2.5"/><circle cx="15" cy="20" r="2.5"/><circle cx="22" cy="20" r="2.5"/><circle cx="29" cy="20" r="2.5"/><circle cx="36" cy="20" r="2.5"/></g><circle cx="41" cy="8" r="2.5" style="fill:var(--ink)"/></svg><div><b>UPS</b><small>battery backup that keeps power on</small></div><span class="u">2U</span></div>
+          <div class="card" draggable="true"><svg viewBox="0 0 48 16" aria-hidden="true"><rect x=".5" y=".5" width="47" height="15" style="fill:var(--paper);stroke:var(--ink)"/><rect x="4" y="4" width="10" height="7" style="fill:var(--wash);stroke:var(--ink);stroke-width:.8"/><g style="fill:none;stroke:var(--ink);stroke-width:.8"><circle cx="21" cy="8" r="2.3"/><circle cx="28" cy="8" r="2.3"/><circle cx="35" cy="8" r="2.3"/></g><circle cx="42" cy="8" r="2" style="fill:var(--ink)"/></svg><div><b>Eaton 5P 1550</b><small>a UPS (battery backup), 1U</small></div><span class="u">1U</span></div>
+          <div class="card" draggable="true"><svg viewBox="0 0 48 16" aria-hidden="true"><rect x=".5" y=".5" width="47" height="15" style="fill:var(--paper);stroke:var(--ink)"/><g style="fill:none;stroke:var(--ink);stroke-width:.8"><circle cx="7" cy="8" r="2.5"/><circle cx="14" cy="8" r="2.5"/><circle cx="21" cy="8" r="2.5"/><circle cx="28" cy="8" r="2.5"/><circle cx="35" cy="8" r="2.5"/><circle cx="42" cy="8" r="2.5"/></g></svg><div><b><span class="t">PDU</span></b><small>power strip for the rack · rack mount 1U, or side mount 0U (on the rack's side, uses no slot)</small></div><span class="u">1U</span></div>
+          <div class="card" draggable="true"><svg viewBox="0 0 48 28" aria-hidden="true"><rect x=".5" y=".5" width="47" height="27" style="fill:var(--paper);stroke:var(--ink)"/><g style="fill:none;stroke:var(--ink);stroke-width:.7"><rect x="3" y="3" width="6" height="4"/><rect x="10" y="3" width="6" height="4"/><rect x="17" y="3" width="6" height="4"/><rect x="24" y="3" width="6" height="4"/><rect x="31" y="3" width="6" height="4"/><rect x="38" y="3" width="6" height="4"/><rect x="3" y="9" width="6" height="4"/><rect x="10" y="9" width="6" height="4"/><rect x="17" y="9" width="6" height="4"/><rect x="24" y="9" width="6" height="4"/><rect x="31" y="9" width="6" height="4"/><rect x="38" y="9" width="6" height="4"/><rect x="3" y="15" width="6" height="4"/><rect x="10" y="15" width="6" height="4"/><rect x="17" y="15" width="6" height="4"/><rect x="24" y="15" width="6" height="4"/><rect x="31" y="15" width="6" height="4"/><rect x="38" y="15" width="6" height="4"/><rect x="3" y="21" width="6" height="4"/><rect x="10" y="21" width="6" height="4"/><rect x="17" y="21" width="6" height="4"/><rect x="24" y="21" width="6" height="4"/><rect x="31" y="21" width="6" height="4"/><rect x="38" y="21" width="6" height="4"/></g></svg><div><b>NetApp storage</b><small>disk shelf · 24 drive bays</small></div><span class="u">2U</span></div>
+        </div>
+        <div class="dropzone">Drag here to remove from rack</div>
+      </div>
+
+      <div>
+        <div class="drawing">
+          <div><h3>Front of rack</h3><span class="gl">Drawn as you face it in the aisle. U: one rack slot, 44.45 mm tall.</span></div>
+          <div class="stepline">
+            <span class="lab" id="rackh-lab">Rack height</span>
+            <div class="stepper"><button type="button" data-step="-1" aria-label="Lower rack by one slot">−</button><input id="rackh" type="number" min="4" max="60" value="8" aria-labelledby="rackh-lab"><button type="button" data-step="1" aria-label="Raise rack by one slot">+</button></div>
+            <span>slots <span class="dim">(4 to 60)</span></span>
+            <span class="reason" style="flex-basis:100%">Lowest possible here is 4, because PDU 5 sits in U4.</span>
+            <div class="blocked" id="fitmsg" role="status" hidden style="flex-basis:100%"></div>
+          </div>
+          <div id="rack-edit"></div>
+          <div class="cap"><span>Hatching: empty slot · dashed outline: where the card lands</span><span>Solid ink: answered a check · dashed graphite: plan only</span></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="cloud">
+          <svg class="cloudline" aria-hidden="true"></svg>
+          <span class="revtag"><span class="tri"></span>Rev B · unsaved</span>
+          <span class="caps dim">Placing now · the only unsaved change</span>
+          <h3 style="margin:2px 0 4px">HPE DL380 → U5–U6</h3>
+          <p class="reason">Fills two empty slots. Nothing else moves.</p>
+          <div class="two mt" style="gap:12px">
+            <div class="field"><span class="lab">Name</span><span class="suggest">HPE DL380 7 <small>suggested</small></span></div>
+            <div class="field"><span class="lab">Bottom slot</span><span class="suggest">U5 <small>suggested</small></span><span class="gl">lowest free space that fits 2U</span></div>
+            <div class="field"><span class="lab">Drive bays</span><span class="blank">unknown until it answers</span></div>
+            <div class="field"><span class="lab">Model</span><span class="blank">unknown until it answers</span></div>
+          </div>
+          <div class="btnrow mt">
+            <button class="btn primary" id="placebtn">Place at U5–U6</button>
+            <button class="btn">Cancel placing</button>
+            <span class="reason" id="placereason" hidden></span>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:22px">
+          <div class="hd"><div><span class="caps dim">Selected in rack · U1 · Rev A, no changes</span><h3 style="margin:0">HPE DL360 3</h3></div><button class="btn ghost small">Move to another slot</button></div>
+          <div class="two" style="gap:12px">
+            <div class="field plan"><label for="eqname">Name</label><input id="eqname" class="in" value="HPE DL360 3"></div>
+            <div class="field plan"><label for="eqmodel">Model</label><select id="eqmodel" class="in"><option>HPE DL360 Gen10</option><option>HPE DL380 Gen10</option></select><span class="gl">what you planned; the hardware's own model is shown below once it is read</span></div>
+            <div class="field plan"><label for="eqslot">Bottom slot</label><select id="eqslot" class="in">
+              <option selected>U1 · current</option>
+              <option disabled>U2 · taken by PDU 4</option>
+              <option disabled>U3 · taken by Cisco switch 6</option>
+              <option disabled>U4 · taken by PDU 5</option>
+              <option disabled>U5 · held by the unsaved DL380</option>
+              <option disabled>U6 · held by the unsaved DL380</option>
+              <option>U7</option><option>U8</option></select>
+              <span class="reason">U2–U4 are taken (PDU 4, Cisco switch 6, PDU 5); U5–U6 are held by the DL380 you are placing.</span></div>
+            <div class="field plan"><label for="eqh">Height</label><select id="eqh" class="in"><option>1U</option><option disabled>2U · U2 above is taken</option></select><span class="reason">2U is blocked: U2 above is taken by PDU 4.</span></div>
+            <div class="field plan"><label for="eqbays">Drive bays</label><input id="eqbays" class="in" type="number" min="0" max="10" value="10"></div>
+            <div class="field"><span class="lab">Reported by hardware</span><span class="blank">model, bays and drives not read yet</span><span class="gl">Refresh drive inventory on A-4 reads them</span></div>
+          </div>
+          <div class="field mt"><span class="lab">Bays · tap to mark occupied or empty</span>
+            <div class="bays" role="group" aria-label="Drive bays, saved plan">
+              <button class="bay f" aria-pressed="true">1</button><button class="bay f" aria-pressed="true">2</button><button class="bay f" aria-pressed="true">3</button><button class="bay f" aria-pressed="true">4</button><button class="bay" aria-pressed="false">5</button>
+              <button class="bay f" aria-pressed="true">6</button><button class="bay f" aria-pressed="true">7</button><button class="bay f" aria-pressed="true">8</button><button class="bay f" aria-pressed="true">9</button><button class="bay" aria-pressed="false">10</button>
+            </div>
+            <span class="pencil" style="margin-top:6px">8 occupied · 2 empty <small>saved plan</small></span>
+            <span class="reason">This grid is your plan. The recorded erase covered 6 reviewed disks, which is not a count of today's drives. For a current count, Refresh drive inventory on A-4.</span>
+          </div>
+          <hr class="rule">
+          <div class="btnrow">
+            <button class="btn danger">Remove HPE DL360 3 from rack</button>
+            <span class="reason">keeps its saved connection details</span>
+          </div>
+        </div>
+
+        <div class="panel soft" style="margin-top:22px">
+          <div class="hd"><h3>Layout</h3><span class="caps dim">Planning writes nothing to hardware</span></div>
+          <div class="btnrow">
+            <button class="btn">Save layout</button>
+            <button class="btn">Save a copy</button>
+            <button class="btn">Load plan</button>
+          </div>
+          <hr class="rule">
+          <div class="btnrow">
+            <button class="btn" data-goto="3">Continue to A-3 · Network settings</button>
+            <span class="reason">moves on only · Rev B stays unsaved until you save the layout</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="key">
+      <b>Key</b>
+      <span><span class="pencil">value</span> saved plan</span>
+      <span><span class="suggest">value <small>suggested</small></span> the app proposes it</span>
+      <span><span class="blank">nothing</span> nobody knows yet</span>
+      <span><b style="font-weight:500">Cloud</b>: the wavy outline goes around changes that are not saved</span>
+    </div>
+    <div class="titleblock">
+      <div><label>Kit</label><b>Kit Single Gen 10</b><span class="v">8U rack · 4 pieces, 1 being placed</span></div>
+      <div><label>Sheet</label><b>A-2</b><span class="v">of 7 · step 1</span></div>
+      <div><label>Revision</label><b>B</b><span class="v pencil">unsaved, clouded</span></div>
+      <div><label>Drawn by</label><span class="v">Lab Builder</span><span class="gl">from your plan</span></div>
+      <div><label>Checked by</label><span class="v pencil">not signed</span><button class="btn ghost small" style="align-self:flex-start;margin-top:2px">Sign this sheet</button><span class="gl">records that you reviewed it; proves nothing about hardware</span></div>
+      <div><label>Date</label><span class="v">25-09-2026</span></div>
+    </div>
+  </section>
+
+  <!-- ============================ SHEET A-3 · NETWORK SETTINGS ============================ -->
+  <section class="sheet" id="s3" role="tabpanel" aria-labelledby="t3" hidden>
+    <div class="sheethead">
+      <div><span class="no">Sheet A-3 · Step 2 · Management network</span><h2>Network settings</h2></div>
+      <p class="lede">Everything here is a saved plan, used by later steps. No device has confirmed it yet, so it stays in graphite until you edit it.</p>
+    </div>
+
+    <div class="panel soft" style="margin-bottom:22px">
+      <div class="btnrow">
+        <button class="btn primary" id="netsave">Save network settings</button>
+        <button class="btn">Reset to last saved</button>
+        <button class="btn">Use as default for new kits</button>
+        <span class="dim">Saving writes to the plan only</span>
+        <span class="btnrow contgroup">
+          <button class="btn ghost" data-goto="4" id="netcont">Continue to A-4 · Connect equipment</button>
+          <span class="reason" id="netcont-r">moves on only; it does not save</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="hd"><h3>Management network</h3><span class="caps dim">Used by Connect, ESXi and Windows</span></div>
+      <div class="netgrid">
+        <div class="field plan"><label for="subnet">Subnet</label><input id="subnet" class="in" value="192.0.2.0/27"><span class="gl">the range of addresses this lab uses; /27 means 32 addresses</span></div>
+        <div class="field plan"><label for="gw">Gateway</label><input id="gw" class="in" value="192.0.2.1"><span class="gl">the router that traffic leaves the lab through</span></div>
+        <div class="field plan"><label for="vlan"><span class="t">VLAN</span></label><input id="vlan" class="in" value="100"><span class="gl">a numbered virtual network on the switch</span></div>
+        <div class="field plan"><label for="mtu"><span class="t">MTU</span></label><input id="mtu" class="in" value="1500"><span class="gl">the largest packet size; 1500 is the usual value</span></div>
+        <div class="field plan"><label for="vmstore">VM storage</label><select id="vmstore" class="in"><option>Local datastore</option><option disabled>vSAN · needs 3 hosts, you have 1</option></select><span class="gl">where virtual machine disks live; a <span class="t">datastore</span> is disk space set aside for them</span><span class="reason">vSAN needs 3 hosts; this kit has 1</span></div>
+      </div>
+    </div>
+
+    <div class="three" style="margin-top:22px">
+      <div class="panel">
+        <div class="hd"><div><h3>DNS</h3><span class="gl">turns names into addresses</span></div><span class="toggle on" role="switch" aria-checked="true" tabindex="0" aria-label="DNS"><span class="sw"></span><span class="lbl">On</span></span></div>
+        <div class="field"><span class="lab">Servers · up to 8</span>
+          <div class="dnslist">
+            <div class="field plan"><input class="in" value="198.51.100.10" aria-label="DNS server 1"></div>
+            <div class="field plan"><input class="in" value="198.51.100.11" aria-label="DNS server 2"></div>
+            <div class="field plan"><input class="in" value="198.51.100.12" aria-label="DNS server 3"></div>
+            <div class="slot">+ add 4th</div><div class="slot">5th</div><div class="slot">6th</div><div class="slot">7th</div><div class="slot">8th</div>
+          </div>
+          <span class="pencil" style="margin-top:4px"><small>3 servers · saved plan</small></span>
+        </div>
+        <div class="field mt"><label for="dom">Domain</label><input id="dom" class="in" value=""><span class="blank">not set</span></div>
+      </div>
+      <div class="panel">
+        <div class="hd"><div><h3><span class="t">NTP</span></h3><span class="gl">keeps every clock in the lab in step</span></div><span class="toggle" role="switch" aria-checked="false" tabindex="0" aria-label="NTP" data-group="ntp"><span class="sw"></span><span class="lbl">Off</span></span></div>
+        <div class="field"><label for="ntp1">Servers</label><input id="ntp1" class="in" disabled data-group="ntp"></div>
+        <div class="field mt"><label for="tz">Timezone</label><input id="tz" class="in" disabled data-group="ntp"></div>
+        <p class="reason mt" data-offnote="ntp">these open when NTP is turned on</p>
+      </div>
+      <div class="panel">
+        <div class="hd"><div><h3><span class="t">SNMP</span></h3><span class="gl">lets monitoring tools read device health</span></div><span class="toggle on" role="switch" aria-checked="true" tabindex="0" aria-label="SNMP"><span class="sw"></span><span class="lbl">On</span></span></div>
+        <div class="field plan"><label for="snmpv">Version</label><select id="snmpv" class="in"><option>v3</option><option>v2c</option></select><span class="gl">v3 signs in securely; v2c is older and uses a shared word</span></div>
+        <div class="field plan mt"><label for="mgr1">Managers</label><input id="mgr1" class="in" value="198.51.100.20"><span class="gl">the monitoring servers allowed to ask</span></div>
+        <button class="btn ghost small" style="margin-top:10px">Add manager</button>
+      </div>
+    </div>
+
+    <div class="key">
+      <b>Key</b>
+      <span><span class="pencil">value</span> saved plan, graphite until edited</span>
+      <span><span class="blank">nothing</span> nobody knows yet</span>
+      <span>Ink text in a field: edited, not saved</span>
+    </div>
+    <div class="titleblock">
+      <div><label>Kit</label><b>Kit Single Gen 10</b><span class="v">192.0.2.0/27 · VLAN 100</span></div>
+      <div><label>Sheet</label><b>A-3</b><span class="v">of 7 · step 2</span></div>
+      <div><label>Revision</label><b>A</b><span class="v">saved</span></div>
+      <div><label>Drawn by</label><span class="v">Lab Builder</span><span class="gl">from your plan</span></div>
+      <div><label>Checked by</label><span class="v pencil">not signed</span><button class="btn ghost small" style="align-self:flex-start;margin-top:2px">Sign this sheet</button><span class="gl">records that you reviewed it; proves nothing about hardware</span></div>
+      <div><label>Date</label><span class="v">25-09-2026</span></div>
+    </div>
+  </section>
+
+  <!-- ============================ SHEET A-4 · CONNECT EQUIPMENT ============================ -->
+  <section class="sheet" id="s4" role="tabpanel" aria-labelledby="t4" hidden>
+    <div class="sheethead">
+      <div><span class="no">Sheet A-4 · Step 3 · Connection, drives and RAID</span><h2>Connect equipment</h2></div>
+      <p class="lede">The server answered this morning, and the last erase has a recorded result. Next: plan the new RAID. Planning writes nothing.</p>
+    </div>
+
+    <div class="connectcols">
+      <div>
+        <div class="required" style="margin:0 0 22px" role="group" aria-labelledby="alerts-h">
+          <span class="rq">Required before firmware approval</span>
+          <p id="alerts-h"><b>10 hardware alerts</b> were recorded before the erase. Their current state is unknown; a current check is required before you approve firmware.</p>
+          <div class="btnrow">
+            <button class="btn">Review the 10 alerts</button>
+            <span class="reason">reads them fresh · changes nothing · noting an alert does not clear it</span>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="hd"><h3>Connection</h3><span class="stamp">Reached 25-09 08:35</span></div>
+          <div class="field"><label for="pick">Equipment</label>
+            <select id="pick" class="in"><option>HPE DL360 3 · U1</option><option>Cisco switch 6 · U3</option><option>PDU 5 · U4</option><option>PDU 4 · U2</option></select></div>
+          <div class="two" style="gap:14px;margin-top:12px">
+            <div class="field plan"><label for="ilo">Current iLO address</label><input id="ilo" class="in" value="192.0.2.27"><span class="gl"><span class="t">iLO</span>: the server's built-in remote-control chip. Read the address off its front display or the DHCP list.</span></div>
+            <div class="field plan"><label for="user">Username</label><input id="user" class="in" value="ilo-operator"><span class="gl">from the pull-out tag on the server</span></div>
+            <div class="field"><span class="lab">Password</span><span class="val"><span class="pencil"><small>saved · not shown</small></span><button class="btn ghost small">Change password</button></span></div>
+            <div class="field"><span class="lab">Certificate</span><span class="toggle" role="switch" aria-checked="false" tabindex="0" aria-label="Verify TLS certificate"><span class="sw"></span><span><span class="lbl">Off</span> · Verify <span class="t">TLS certificate</span></span></span><span class="gl">TLS certificate: the iLO's ID card for secure connections. Off because this iLO's certificate is self-signed. The connection is encrypted, but the server's identity is not checked. Turn this on once a trusted certificate is installed.</span></div>
+          </div>
+          <div class="btnrow mt">
+            <button class="btn">Check connection again</button>
+            <span class="reason">read-only · sends no change</span>
+          </div>
+          <hr class="rule">
+          <dl class="kv">
+            <dt>Answered as</dt><dd class="val">iLO 5 v1.37 <span class="tick">25-09 08:35</span></dd>
+            <dt>System ROM<span class="gl">the server's start-up firmware</span></dt><dd class="val">U32 v1.46 <span class="tick">25-09 08:35</span></dd>
+            <dt>Model, bays, drives</dt><dd class="val"><span class="blank">not read yet · Refresh drive inventory reads them</span></dd>
+          </dl>
+        </div>
+
+      </div>
+
+      <div>
+        <div class="hd"><div><h3>Drives &amp; <span class="t">RAID</span> · HPE DL360 3</h3><span class="gl">RAID: several disks combined so they act as one</span></div></div>
+        <div class="result">
+          <div class="hd" style="margin-bottom:4px;align-items:flex-start">
+            <div><span class="caps dim">Recorded storage result</span><h3 style="margin:0">Disk erasure verified · 6 reviewed disks</h3></div>
+            <span class="rec">6 reviewed disks · 24-09 16:22 <i>recorded result, not a live check</i></span>
+          </div>
+          <p class="reason">Method: Overwrite (<span class="t">device sanitize</span>). The storage controller reported erase completion for each of the 6 reviewed disks after erase activity was observed. Recorded result, not a live check. No arrays were created and ESXi was not installed.<span class="gl">device sanitize: the drive's own built-in erase, started through the storage controller</span></p>
+          <div class="stages">
+            <div><span>Requested</span><span class="ev">Requested 24-09 14:34</span></div>
+            <div><span>Power-on requested</span><span class="ev">Requested 24-09 14:35</span></div>
+            <div><span>Verified</span><span class="ev">Recorded 24-09 16:22</span></div>
+          </div>
+
+          <div class="nextup">
+            <div class="btnrow">
+              <button class="btn primary">Plan new RAID</button>
+              <span class="reason">Next step. Planning writes nothing; you review the plan before any array is created, and creating it still needs the firmware review.</span>
+            </div>
+          </div>
+
+          <div class="mismatch">
+            <p>Saved plan: 8 of 10 bays marked occupied. Recorded erase: 6 reviewed disks. No current drive count yet.</p>
+            <div class="btnrow">
+              <button class="btn">Refresh drive inventory</button>
+              <span class="reason">gets a current drive count · changes nothing</span>
+            </div>
+          </div>
+
+          <div class="tscroll"><table class="sched" aria-label="Recorded erase scope, per disk">
+            <thead><tr><th>Controller location<span class="gl">as the storage controller names it (port : box : bay); not a front bay number</span></th><th>Model</th><th>Size</th><th>Type</th><th>Recorded result</th></tr></thead>
+            <tbody>
+              <tr><td>1I:1:1</td><td>EG000300JWEBF</td><td>300 GB</td><td>HDD</td><td>reported erase complete (recorded)</td></tr>
+              <tr><td>1I:1:2</td><td>EG000300JWEBF</td><td>300 GB</td><td>HDD</td><td>reported erase complete (recorded)</td></tr>
+              <tr><td>2I:1:5</td><td>EG001200JWJNQ</td><td>1200 GB</td><td>HDD</td><td>reported erase complete (recorded)</td></tr>
+              <tr><td>2I:1:6</td><td>EG001200JWJNQ</td><td>1200 GB</td><td>HDD</td><td>reported erase complete (recorded)</td></tr>
+              <tr><td>2I:1:7</td><td>EG001200JWJNQ</td><td>1200 GB</td><td>HDD</td><td>reported erase complete (recorded)</td></tr>
+              <tr><td>2I:1:8</td><td>EG001200JWJNQ</td><td>1200 GB</td><td>HDD</td><td>reported erase complete (recorded)</td></tr>
+            </tbody>
+          </table></div>
+
+          <p class="prose mt"><b class="serif">Two of these drives will belong to ESXi.</b> The RAID plan keeps exactly two as a <span class="t">RAID 1 boot pair</span>: two disks that mirror each other so the server still starts if one fails. They never count as storage space. Every other disk gets one job: local datastore, or unassigned.</p>
+
+          <hr class="rule">
+          <div class="actrow">
+            <span class="lab">Look only ·<br>changes nothing</span>
+            <div class="btnrow"><button class="btn ghost">Erasure report</button><button class="btn ghost">Diagnostics</button></div>
+            <span class="lab red">Destructive · preview, then<br>separate confirmations</span>
+            <div class="btnrow"><button class="btn danger">Erase disks again…</button><button class="btn danger">Advanced recovery…</button></div>
+          </div>
+        </div>
+        <div class="btnrow mt">
+          <button class="btn ghost" data-goto="5">Continue to A-5 · Check firmware</button>
+          <span class="reason">the comparison there is read-only; firmware approval stays blocked until the 10 alerts are reviewed</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="key">
+      <b>Key</b>
+      <span><span class="tick">08:35</span> today's check proved it (25-09)</span>
+      <span><span class="ev">Requested 14:34</span> the app recorded an event, not a readback</span>
+      <span><span class="rec">24-09 <i>recorded</i></span> recorded result, not a live check</span>
+      <span><span class="pencil">value</span> saved plan</span>
+      <span><span class="blank">nothing</span> nobody knows yet</span>
+    </div>
+    <div class="titleblock">
+      <div><label>Kit</label><b>Kit Single Gen 10</b><span class="v">HPE DL360 3 · 192.0.2.27</span></div>
+      <div><label>Sheet</label><b>A-4</b><span class="v">of 7 · step 3</span></div>
+      <div><label>Revision</label><b>A</b><span class="v">saved</span></div>
+      <div><label>Drawn by</label><span class="v">Lab Builder</span><span class="gl">from the recorded erase result (24-09) and the read-only check on 25-09 08:35</span></div>
+      <div><label>Checked by</label><span class="v pencil">not signed</span><button class="btn ghost small" style="align-self:flex-start;margin-top:2px">Sign this sheet</button><span class="gl">records that you reviewed it; proves nothing about hardware</span></div>
+      <div><label>Date</label><span class="v">25-09-2026</span></div>
+    </div>
+
+    <div class="refband">
+      <div class="refhd"><svg class="wm" viewBox="0 0 520 150" aria-hidden="true"><defs><pattern id="wmhatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--ink-2);stroke-width:2.5"/></pattern></defs><text x="10" y="118" style="font-family:Fraunces,Georgia,serif;font-weight:600;font-size:104px;letter-spacing:6px;fill:url(#wmhatch);stroke:var(--ink-2);stroke-width:1.5">EXAMPLE</text></svg><div><h3>Reference details: examples, not the current state</h3><span class="reason">Drawn so you know what these look like. Nothing here has happened to HPE DL360 3.</span></div></div>
+      <div class="refgrid">
+        <div class="detail">
+          <div class="dh"><span class="bubble"><b>1</b>A-4</span><div><h4>Detail 1 · if first contact is refused</h4><span class="reason">alternate state, shown for review, not the current result</span></div><span class="extag">Example</span></div>
+          <div class="db">
+            <div class="val" style="margin-bottom:10px"><span class="stamp refuse">Refused · certificate not trusted</span></div>
+            <dl class="kv">
+              <dt>What was tried</dt><dd class="prose" style="font-size:14px">a read-only request to 192.0.2.27 with certificate checking on</dd>
+              <dt>What it means</dt><dd class="prose" style="font-size:14px">The iLO answered, but showed a certificate this app does not trust, for example one it made itself (self-signed). No sign-in was tried.</dd>
+              <dt>Check, in order</dt><dd class="prose" style="font-size:14px"><ol>
+                <li>Confirm 192.0.2.27 is the iLO you meant: its front display, or the DHCP list.</li>
+                <li>Install a trusted certificate on the iLO. Or, as your own explicit choice, turn "Verify TLS certificate" off for this lab iLO: the connection stays encrypted, but the server's identity will not be checked. The app never changes this setting by itself.</li>
+                <li>Check connection again.</li></ol></dd>
+              <dt>Not shown</dt><dd><span class="blank">model, bay count, drives: it has not answered an inventory request</span></dd>
+            </dl>
+            <p class="reason mt">Saved address, username and password stay editable.</p>
+          </div>
+        </div>
+
+        <div class="detail">
+          <div class="dh"><span class="bubble"><b>2</b>A-4</span><div><h4>Detail 2 · the dialog "Erase disks again…" opens</h4><span class="reason">closed until you press that button</span></div><span class="extag">Example</span></div>
+          <div class="db">
+            <div class="modal" aria-hidden="true">
+              <div class="mt-bar"><b class="serif">Erase disks again · HPE DL360 3</b><span>×</span></div>
+              <div class="mb">
+                <span class="caps dim">Step 1 · Preview · shown from the app's preview</span>
+                <p class="reason" style="margin-top:4px">One grouped, conditional PATCH to this server's SmartStorageConfig settings, for the 6 reviewed disks:</p>
+                <pre class="cmd">{"DataGuard":"Disabled",
+ "LogicalDrives":[],
+ "Actions":[{"Action":"PhysicalDriveErase",
+   "ErasePattern":"SanitizeRestrictedOverwrite",
+   "PhysicalDriveList":["1I:1:1","1I:1:2","2I:1:5",
+                        "2I:1:6","2I:1:7","2I:1:8"]}]}</pre>
+                <p class="reason" style="margin-top:6px">Nothing is sent from this step.</p>
+                <hr class="rule">
+                <span class="caps dim">Step 2 · Confirm the staged erase</span>
+                <p style="margin:6px 0 4px">Type <b>HPE DL360 3</b> exactly to enable the button.</p>
+                <input class="in" disabled value="" aria-label="Server name, example only">
+                <div class="btnrow" style="margin-top:10px">
+                  <button class="btn danger" disabled tabindex="-1">Send the erase settings</button>
+                  <span class="reason">name not typed yet</span>
+                  <button class="btn" tabindex="-1">Cancel</button>
+                </div>
+                <hr class="rule">
+                <span class="caps dim">Step 3 · Confirm power-on, separately</span>
+                <div class="btnrow" style="margin-top:6px">
+                  <button class="btn danger" disabled tabindex="-1">Power on HPE DL360 3</button>
+                  <span class="reason">opens only after step 2; its own confirmation</span>
+                </div>
+                <hr class="rule">
+                <span class="caps dim">Step 4 · When it counts as done</span>
+                <p class="reason" style="margin-top:4px">Only when each of the 6 disks shows erase activity and then reports completion. Progress percentage may not be reported. Last time, power-on to verified took about 1 h 47 min.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ SHEET A-5 · CHECK FIRMWARE ============================ -->
+  <section class="sheet" id="s5" role="tabpanel" aria-labelledby="t5" hidden>
+    <div class="sheethead">
+      <div><span class="no">Sheet A-5 · Step 4 · Firmware against the service pack</span><h2>Check firmware</h2></div>
+      <p class="lede">Compare each device against the chosen service pack before anything is approved. Approving is not proof.</p>
+    </div>
+
+    <div class="two">
+      <div class="panel">
+        <div class="hd"><div><h3>Service pack</h3><span class="gl"><span class="t">SPP</span>: HPE's firmware bundle, tested as a set</span></div></div>
+        <dl class="kv">
+          <dt>Selected package<span class="gl">the bundle's file name</span></dt><dd class="val"><span class="pencil">P95170_001_gen10spp-2026.05.00.00 <small>saved plan</small></span></dd>
+          <dt>Compared</dt><dd><span class="blank">no device compared yet</span></dd>
+        </dl>
+        <div class="btnrow mt">
+          <button class="btn">Change package</button>
+          <button class="btn">Get HPE SPP link</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="hd"><h3>Saved readings</h3><span class="caps dim">With where each came from</span></div>
+        <div class="tscroll"><table class="sched">
+          <thead><tr><th>Device</th><th>Reading</th><th>Source</th></tr></thead>
+          <tbody>
+            <tr><td>HPE DL360 3 · iLO</td><td>iLO 5 v1.37</td><td><span class="tick">25-09 08:35</span></td></tr>
+            <tr><td>HPE DL360 3 · System ROM</td><td>U32 v1.46</td><td><span class="tick">25-09 08:35</span></td></tr>
+            <tr><td>Cisco switch 6</td><td><span class="blank">no reading</span></td><td><span class="reason">switch firmware reading is not supported yet</span></td></tr>
+            <tr><td>PDU 5, PDU 4</td><td><span class="blank">no reading</span></td><td><span class="reason">PDUs in this kit have no firmware check</span></td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:22px">
+      <div class="hd"><h3>Per device</h3><span class="caps dim">Read-only comparison, then review</span></div>
+      <div class="fwdev">
+        <span class="name">HPE DL360 3</span>
+        <span class="val">iLO 5 v1.37 · ROM U32 v1.46 <span class="tick">25-09 08:35</span></span>
+        <span class="blank">not compared against P95170_001 yet</span>
+        <span class="btnrow"><button class="btn primary">Check against SPP</button><span class="reason">read-only · can run now</span><button class="btn" disabled>Review upgrades</button><span class="reason">nothing compared yet</span></span>
+      </div>
+      <div class="fwdev">
+        <span class="name">Cisco switch 6</span>
+        <span class="blank">no firmware reading</span>
+        <span class="reason">switch firmware reading is not supported yet</span>
+        <span class="btnrow"><button class="btn" disabled>Check against SPP</button></span>
+      </div>
+      <div class="fwdev">
+        <span class="name">PDU 5 · PDU 4</span>
+        <span class="blank">no firmware reading</span>
+        <span class="reason">PDUs in this kit have no firmware check</span>
+        <span class="btnrow"><button class="btn" disabled>Check against SPP</button></span>
+      </div>
+
+      <div class="gate">
+        <div class="btnrow">
+          <button class="btn" disabled>Continue to A-6 · Prepare ESXi</button>
+          <span class="reason">blocked until all three are done. Only approval needs them; the comparison is read-only and can run now.</span>
+        </div>
+        <ol>
+          <li><b>Required before approval:</b> review the 10 hardware alerts recorded before the erase; their current state is unknown. <span class="btnrow"><button class="btn small">Review the 10 alerts</button></span></li>
+          <li>Compare HPE DL360 3 against the SPP. <span class="reason">(Check against SPP, above)</span></li>
+          <li>Review the upgrades that comparison finds.</li>
+        </ol>
+        <p class="reason mt">RAID can be planned now, on A-4. Creating the array, then ESXi, then Windows all wait for the firmware review.</p>
+      </div>
+    </div>
+
+    <div class="key">
+      <b>Key</b>
+      <span><span class="tick">25-09 08:35</span> today's check proved it</span>
+      <span><span class="pencil">value</span> saved plan</span>
+      <span><span class="blank">nothing</span> nobody knows yet</span>
+      <span><span class="reason">italic serif</span> the reason something is blocked</span>
+    </div>
+    <div class="titleblock">
+      <div><label>Kit</label><b>Kit Single Gen 10</b><span class="v">SPP P95170_001 · 2026.05</span></div>
+      <div><label>Sheet</label><b>A-5</b><span class="v">of 7 · step 4</span></div>
+      <div><label>Revision</label><b>A</b><span class="v">saved</span></div>
+      <div><label>Drawn by</label><span class="v">Lab Builder</span><span class="gl">from checks on 25-09</span></div>
+      <div><label>Checked by</label><span class="v pencil">not signed</span><button class="btn ghost small" style="align-self:flex-start;margin-top:2px">Sign this sheet</button><span class="gl">records that you reviewed it; proves nothing about hardware</span></div>
+      <div><label>Date</label><span class="v">25-09-2026</span></div>
+    </div>
+  </section>
+
+</div></div>
+
+<!-- ============================ DESIGNER'S NOTE ============================ -->
+<section class="note">
+  <h2>Designer's note · Blueprint</h2>
+  <div>
+    <p class="prose">Audience: professional operators and the engineers who sign off a build, plus the technician who racks the kit. The drawing set is the frame; every drawing word and every IT word is glossed on first use, so nobody has to already read drawings or know what an iLO is.</p>
+    <p><b>Metaphor.</b> A drawing set, numbered in the order of work: A-1 My Rack, A-2 Add equipment, A-3 Network settings, A-4 Connect equipment, A-5 Check firmware, then A-6 Prepare ESXi and A-7 Install Windows as hatched, locked tabs that state their reason. Each tab carries its status (✓ done, meaning saved in the plan; wash for the current step; hatch for locked), and every Continue goes to the next tab on the right and only moves, never saves. Each sheet has one primary action. Each sheet ends in a key strip and a title block: kit, sheet, revision, drawn by, checked by, date. The Checked-by box has a "Sign this sheet" control; signing records review only and proves nothing about hardware. Unsaved edits sit inside a revision cloud with a delta tag. The rack is drawn front-on, with U ticks and the overall dimension on the left, a front marker above it, and a leader line from the drop preview to its callout. Things that have answered a check are drawn in solid ink; plan-only equipment is drawn in dashed graphite. Examples of other states (a refused first contact, the erase dialog) sit in a separate band marked EXAMPLE, below the live sheet.</p>
+    <p><b>Evidence.</b> Green means only today's proof for this exact server, always with its time: reached 25-09 08:35, iLO 5 v1.37, System ROM U32 v1.46. There is one rotated rubber stamp per group ("REACHED 25-09 08:35") and an upright green tick on each row. The model, bay count and drive count are not in that proof, so they show as saved plan or blank until Refresh drive inventory reads them. The erase of 24-09 is a recorded result, not a live check: it is drawn as an ink, dashed "recorded" mark that always carries its date and the words "recorded result, not a live check", and never in green. Recorded events (requested, power-on requested) are ink marks. Saved-plan values are pencil: graphite, italic, a slash mark, and stored inputs stay graphite until edited. Suggested values sit in a dashed box labelled "suggested". Blank values are upright, with a dash and no slash. Reasons are set in italic serif. Switches, sign-off boxes and decoration never use green.</p>
+    <p><b>Plan versus record.</b> The saved plan marks 8 of 10 bays occupied; the recorded erase covered 6 reviewed disks at controller locations 1I:1:1 … 2I:1:8. They are shown side by side as two different records, never as two counts of today's drives, and controller locations are never mapped to front bay numbers. There is no current drive count until Refresh drive inventory runs.</p>
+    <p><b>Corrected 2026-09-25 after evidence review: erase wording, plan vs recorded disk count, commands, proof colour, alerts.</b></p>
+    <p><b>Type.</b> Fraunces for titles, equipment names, glosses and explanations; IBM Plex Mono for values, labels, buttons and stamps. Scale: 11 / 13 / 15 / 17 / 24, with 30 for the kit title. Fallbacks: Iowan Old Style / Palatino / Georgia, and Consolas / Menlo.</p>
+  </div>
+  <div>
+    <p><b>Palette · ink on vellum (light).</b></p>
+    <table>
+      <tr><th>Token</th><th>Hex</th><th>Used for</th></tr>
+      <tr><td><span class="sw" style="background:#F5EFE0"></span>vellum</td><td>#F5EFE0</td><td>sheet paper, page</td></tr>
+      <tr><td><span class="sw" style="background:#EDE4CF"></span>cream</td><td>#EDE4CF</td><td>set binder, soft panels, key strip</td></tr>
+      <tr><td><span class="sw" style="background:#E3D9C0"></span>worn cream</td><td>#E3D9C0</td><td>table heads, unselected tabs</td></tr>
+      <tr><td><span class="sw" style="background:#1E2A5C"></span>indigo ink</td><td>#1E2A5C</td><td>lines, text, primary buttons</td></tr>
+      <tr><td><span class="sw" style="background:#4A5480"></span>thinned ink</td><td>#4A5480</td><td>labels, glosses, reasons</td></tr>
+      <tr><td><span class="sw" style="background:#B9AE93"></span>hairline</td><td>#B9AE93</td><td>rules, secondary button borders</td></tr>
+      <tr><td><span class="sw" style="background:#C6BBA0"></span>hatch</td><td>#C6BBA0</td><td>empty slots, locked steps</td></tr>
+      <tr><td><span class="sw" style="background:#5E5950"></span>graphite</td><td>#5E5950</td><td>pencil: saved plan, disabled (5.0:1 on cream)</td></tr>
+      <tr><td><span class="sw" style="background:#67625A"></span>blank graphite</td><td>#67625A</td><td>blank marks, set apart by form</td></tr>
+      <tr><td><span class="sw" style="background:#DDD4BF"></span>graphite wash</td><td>#DDD4BF</td><td>plan-only occupied bays</td></tr>
+      <tr><td><span class="sw" style="background:#1B7A48"></span>stamp green</td><td>#1B7A48</td><td>today's proof with its time, nothing else</td></tr>
+      <tr><td><span class="sw" style="background:#A4392B"></span>stamp red</td><td>#A4392B</td><td>refused contact, destructive actions, alerts</td></tr>
+      <tr><td><span class="sw" style="background:#DCE3F2"></span>wash</td><td>#DCE3F2</td><td>selection, current step</td></tr>
+      <tr><td><span class="sw" style="background:#F5EFE0;border-style:dashed"></span>recorded</td><td>ink, dashed</td><td>recorded results from before today, never green</td></tr>
+    </table>
+    <p style="margin-top:10px"><b>Dark theme · cyanotype.</b> Night vellum #171B2B, cream ink #E8E0CB, hairline #56608A, hatch #5A6490, graphite #B5AFA2 (clears 4.5:1 on the plan wash #343B57), wash #3A4A80, stamp green #62C78F, stamp red #EE8A76. The primary button inverts to a solid cream block #E8E0CB with a night-vellum label, so it stands clear of the cream-outlined secondary buttons.</p>
+  </div>
+  <div class="map">
+    <table>
+      <thead><tr><th>Functionality</th><th>Where it lives</th></tr></thead>
+      <tbody>
+        <tr><td>Kit: choose, rename, save as new kit, build reports, run history</td><td>A-1 · Kit panel (select and four buttons); unsaved Rev B named in text (no extra jump button)</td></tr>
+        <tr><td>My Rack: elevation view and list view</td><td>A-1 · Rack / List switch swaps the front-of-rack drawing for the list of equipment</td></tr>
+        <tr><td>Select a piece; details with provenance</td><td>A-1 · tap a unit in the drawing or a row in the list; the server shows green ticks only for today's 08:35 proof, pencil for plan model and bays, a recorded mark for the erase, and blanks for the drive count; a never-answered piece shows plan values and blanks only</td></tr>
+        <tr><td>Readiness for Connection / Firmware / ESXi / Windows</td><td>A-1 · Readiness row, locked cells hatched with their reason</td></tr>
+        <tr><td>Technical details behind a disclosure; report an issue</td><td>A-1 · "Technical details" disclosure (drawn open: check made, certificate, drive inventory, recorded erase, alerts) and "Report an issue"</td></tr>
+        <tr><td>Order of work; next action</td><td>Tabs A-1 to A-7 in work order, with status ("Current step" on A-4); A-1 step strip, each step opens its sheet; "Continue: Connect equipment" in the strip header is the sheet's one primary</td></tr>
+        <tr><td>Rack height control 4 to 60 U</td><td>A-2 · stepper on its own row; below the lowest used slot, or when the drop no longer fits, a blocked reason appears and Place is disabled</td></tr>
+        <tr><td>Hardware palette (DL360, DL380, Cisco 24/48 + 4 SFP, UPS, Eaton 5P 1550, PDU rack/side, NetApp 2U 24)</td><td>A-2 · seven drawn cards</td></tr>
+        <tr><td>Drag card onto slot or tap card then slot; drop preview naming slots and what moves</td><td>A-2 · armed DL380 card, dashed ghost at U5–U6, leader to callout "Drop here: U5–U6 · nothing moves"; clouded panel with Place / Cancel</td></tr>
+        <tr><td>Remove-from-rack zone; move equipment</td><td>A-2 · red dashed zone under the palette; "Move to another slot" on the selected piece</td></tr>
+        <tr><td>Edit name, model, bottom slot, height, drive-bay count, per-bay grid; remove equipment</td><td>A-2 · "Selected in rack" editor: model is a saved-plan field; taken slots stay listed, disabled, with their reason; blocked 2U height has a visible reason; hardware-reported values blank until read; ten-bay plan grid; "Remove from rack"</td></tr>
+        <tr><td>Save layout, save a copy, load plan, continue</td><td>A-2 · Layout panel; Continue only moves on and says Rev B stays unsaved</td></tr>
+        <tr><td>Suggested provenance</td><td>A-2 · the DL380 being placed: name "HPE DL380 7" and bottom slot "U5", each in a dashed box labelled suggested</td></tr>
+        <tr><td>Network: subnet, gateway, VLAN, MTU, VM storage; DNS on/off, up to 8 servers, domain; NTP on/off, servers, timezone; SNMP on/off, version, managers; reset; save defaults; continue</td><td>A-3 · Management network grid; DNS / NTP / SNMP panels (switches work, NTP fields open when on); save bar at the top of the sheet: Save network settings (primary), Reset to last saved, Use as default for new kits; then, right-aligned and kept together, Continue with its reason beside it (only moves; disabled with its reason while edits are unsaved); on a phone the table of recorded disks on A-4 scrolls inside its own box</td></tr>
+        <tr><td>Connect: pick equipment, iLO address, username, password (saved, changeable), verify TLS toggle, check connection</td><td>A-4 · Connection panel; certificate toggle reads "Off" first and explains that the connection is encrypted but the server's identity is not checked</td></tr>
+        <tr><td>Drives &amp; RAID: refresh inventory, recorded erase result, per-disk results, plan new RAID</td><td>A-4 · recorded erase result (ink "recorded" mark, not green) with its three stages; "Plan new RAID" as the one primary, straight after the stages; saved plan vs recorded erase scope with "Refresh drive inventory" as a secondary; six-row recorded-scope table headed "Controller location"</td></tr>
+        <tr><td>Hardware alerts</td><td>A-4 · top of the left column, beside the result: "Required before firmware approval" item with the count only and "Review the 10 alerts"; repeated as item 1 of the A-5 approval gate</td></tr>
+        <tr><td>Erasure report / erase again / diagnostics / advanced recovery, each a guarded dialog</td><td>A-4 · two rows: "Look only · changes nothing" (Erasure report, Diagnostics) and "Destructive · preview, then separate confirmations" (Erase disks again…, Advanced recovery…, in red); Detail 2 in the EXAMPLE band draws the closed dialog: the grouped conditional PATCH body shown from the app's preview, typed confirmation, a separate power-on confirmation, and the completion rule</td></tr>
+        <tr><td>First-contact failure state</td><td>A-4 · EXAMPLE band, Detail 1: "Refused · certificate not trusted" with what was tried, what it means, what to check in order (trusted certificate first; turning checking off only as the operator's explicit choice), and nothing inferred</td></tr>
+        <tr><td>Firmware: selected SPP, change package, get HPE SPP link, per-device check, review upgrades, saved readings, continue blocked with reason</td><td>A-5 · Service pack, Saved readings, Per device ("Check against SPP" primary, read-only, can run now), blocked Continue with the three approval requirements and an inline "Review the 10 alerts"</td></tr>
+        <tr><td>Prepare ESXi and Install Windows as locked steps with reason</td><td>Tabs A-6 and A-7 (hatched, locked, with reason); A-1 steps 5 and 6</td></tr>
+        <tr><td>Recorded result versus live check</td><td>A-1 "Last erase" row and A-4 result card: ink dashed "recorded" mark with date and "recorded result, not a live check"; defined in the A-1 and A-4 keys</td></tr>
+        <tr><td>Sign-off</td><td>Every title block: "Sign this sheet" in the Checked-by box; records review only</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+</div>
+
+<script>
+(function(){
+  try { document.documentElement.setAttribute('lang','en'); } catch(e) {}
+
+  // ---- sheet switching
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab[role="tab"]'));
+  function usable(t){ return t.getAttribute('aria-disabled') !== 'true'; }
+  function show(tab, focus){
+    if (!tab || !usable(tab)) return;
+    tabs.forEach(function(t){
+      var on = t === tab;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.setAttribute('tabindex', on ? '0' : '-1');
+      var id = t.getAttribute('aria-controls');
+      var panel = id && document.getElementById(id);
+      if (panel) { if (on) panel.removeAttribute('hidden'); else panel.setAttribute('hidden',''); }
+    });
+    if (focus) tab.focus();
+    drawClouds();
+  }
+  tabs.forEach(function(t){
+    t.addEventListener('click', function(){ show(t); });
+    t.addEventListener('keydown', function(e){
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      var open = tabs.filter(usable), i = open.indexOf(t);
+      i = (i + (e.key === 'ArrowRight' ? 1 : -1) + open.length) % open.length;
+      show(open[i], true); e.preventDefault();
+    });
+  });
+  document.addEventListener('click', function(e){
+    var g = e.target.closest ? e.target.closest('[data-goto]') : null;
+    if (!g || g.disabled) return;
+    show(document.getElementById('t' + g.getAttribute('data-goto')));
+    var nav = document.querySelector('.tabs');
+    if (nav && nav.getBoundingClientRect().top < 0) nav.scrollIntoView({block:'start'});
+  });
+
+  // ---- rack data (U1 is the only piece that has answered)
+  var kit = [
+    {u:4,h:1,name:'PDU 5',kind:'pdu',plan:'PDU, rack mount',fw:'PDUs in this kit have no firmware check'},
+    {u:3,h:1,name:'Cisco switch 6',kind:'switch',plan:'Cisco switch · 24 + 4 SFP',fw:'switch firmware reading is not supported yet'},
+    {u:2,h:1,name:'PDU 4',kind:'pdu',plan:'PDU, rack mount',fw:'PDUs in this kit have no firmware check'},
+    {u:1,h:1,name:'HPE DL360 3',kind:'server',answered:true,bays:10,occ:[1,2,3,4,6,7,8,9]}
+  ];
+  var MONO = 'font-family:IBM Plex Mono,Consolas,monospace;';
+  var SERIF = 'font-family:Fraunces,Georgia,serif;';
+
+  function rackSVG(opts){
+    var U = 36, units = opts.units, top = 86, left = 112, w = 280, bottom = top + units*U;
+    var width = opts.callout ? 600 : 420;
+    var s = [];
+    s.push('<svg viewBox="0 0 '+width+' '+(bottom+44)+'" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Front of rack, '+units+' slots">');
+    s.push('<defs><pattern id="'+opts.id+'-hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" style="stroke:var(--hatch);stroke-width:1"/></pattern></defs>');
+    // rails
+    s.push('<rect x="'+left+'" y="'+top+'" width="'+w+'" height="'+(units*U)+'" style="fill:none;stroke:var(--ink);stroke-width:1.5"/>');
+    s.push('<rect x="'+(left-10)+'" y="'+(top-6)+'" width="'+(w+20)+'" height="'+(units*U+12)+'" style="fill:none;stroke:var(--ink);stroke-width:1"/>');
+    // slots and U index (left)
+    for (var i=1;i<=units;i++){
+      var y = top + (units-i)*U;
+      var occupied = kit.some(function(d){ return i>=d.u && i<d.u+d.h; });
+      if (!occupied) s.push('<rect x="'+(left+1)+'" y="'+(y+1)+'" width="'+(w-2)+'" height="'+(U-2)+'" fill="url(#'+opts.id+'-hatch)"/>');
+      s.push('<line x1="'+left+'" y1="'+y+'" x2="'+(left+w)+'" y2="'+y+'" style="stroke:var(--rule);stroke-width:.8"/>');
+      s.push('<line x1="'+(left-40)+'" y1="'+y+'" x2="'+(left-14)+'" y2="'+y+'" style="stroke:var(--ink);stroke-width:.8"/>');
+      s.push('<text x="'+(left-46)+'" y="'+(y+U/2+4)+'" text-anchor="end" style="fill:var(--ink-2);'+MONO+'font-size:12px">U'+i+'</text>');
+    }
+    s.push('<line x1="'+(left-27)+'" y1="'+top+'" x2="'+(left-27)+'" y2="'+bottom+'" style="stroke:var(--ink);stroke-width:.8"/>');
+    // overall dimension, far left, clear of the index
+    var dx = 34;
+    s.push('<line x1="'+(dx-8)+'" y1="'+top+'" x2="'+(left-14)+'" y2="'+top+'" style="stroke:var(--ink);stroke-width:.8"/>');
+    s.push('<line x1="'+(dx-8)+'" y1="'+bottom+'" x2="'+(left-14)+'" y2="'+bottom+'" style="stroke:var(--ink);stroke-width:.8"/>');
+    s.push('<line x1="'+dx+'" y1="'+top+'" x2="'+dx+'" y2="'+bottom+'" style="stroke:var(--ink);stroke-width:.8"/>');
+    s.push('<path d="M'+(dx-4)+' '+(top+8)+' L'+dx+' '+top+' L'+(dx+4)+' '+(top+8)+' M'+(dx-4)+' '+(bottom-8)+' L'+dx+' '+bottom+' L'+(dx+4)+' '+(bottom-8)+'" style="fill:none;stroke:var(--ink);stroke-width:.8"/>');
+    s.push('<text transform="translate('+(dx-10)+' '+((top+bottom)/2)+') rotate(-90)" text-anchor="middle" style="fill:var(--ink);'+MONO+'font-size:12px;letter-spacing:.06em">'+units+' U · '+(units*44.45).toFixed(1)+' mm</text>');
+    // devices
+    kit.forEach(function(d){
+      var y = top + (units - d.u - d.h + 1)*U, h = d.h*U, x = left+6, dw = w-12;
+      var sel = opts.sel === d.u;
+      var line = d.answered ? 'stroke:var(--ink);stroke-width:'+(sel?1.8:1.2) : 'stroke:var(--pencil);stroke-width:'+(sel?1.6:1.1)+';stroke-dasharray:5 3';
+      var detail = d.answered ? 'var(--ink)' : 'var(--pencil)';
+      s.push('<g class="unit" data-u="'+d.u+'" tabindex="0" role="button" aria-label="'+d.name+', U'+d.u+(d.answered?', answered a check':', plan only')+'">');
+      s.push('<rect x="'+x+'" y="'+(y+4)+'" width="'+dw+'" height="'+(h-8)+'" style="fill:'+(sel?'var(--wash)':'var(--paper)')+';'+line+'"/>');
+      s.push('<rect x="'+left+'" y="'+(y+8)+'" width="6" height="'+(h-16)+'" style="fill:'+detail+'"/><rect x="'+(left+w-6)+'" y="'+(y+8)+'" width="6" height="'+(h-16)+'" style="fill:'+detail+'"/>');
+      if (d.kind==='server'){
+        for (var b=1;b<=d.bays;b++){
+          var bx = x+10+(b-1)*16, planned = d.occ.indexOf(b)>=0;
+          s.push('<rect x="'+bx+'" y="'+(y+10)+'" width="12" height="'+(h-20)+'" style="fill:'+(planned?'var(--plan-fill)':'var(--paper)')+';stroke:'+(planned?'var(--pencil)':'var(--ink)')+';stroke-width:.8'+(planned?';stroke-dasharray:2 1.5':'')+'"/>');
+        }
+      } else if (d.kind==='switch'){
+        for (var p=0;p<24;p++){ var px = x+10+(p%12)*9, py = y+9+Math.floor(p/12)*9; s.push('<rect x="'+px+'" y="'+py+'" width="7" height="6" style="fill:none;stroke:var(--pencil);stroke-width:.7"/>'); }
+        for (var q=0;q<4;q++){ s.push('<rect x="'+(x+124+q*10)+'" y="'+(y+12)+'" width="7" height="8" style="fill:var(--pencil)"/>'); }
+      } else {
+        for (var o=0;o<7;o++){ s.push('<circle cx="'+(x+16+o*14)+'" cy="'+(y+h/2)+'" r="3.5" style="fill:none;stroke:var(--pencil);stroke-width:.8"/>'); }
+      }
+      s.push('<text x="'+(x+dw-8)+'" y="'+(y+h/2+4)+'" text-anchor="end" style="fill:'+(d.answered?'var(--ink)':'var(--pencil)')+';'+SERIF+'font-weight:600;font-size:12px'+(d.answered?'':';font-style:italic')+'">'+d.name+'</text>');
+      s.push('</g>');
+    });
+    // ghost drop preview + leader and callout
+    if (opts.ghost){
+      var g = opts.ghost, gy = top + (units - g.u - g.h + 1)*U, gh = g.h*U, gx2 = left+w-6, gc = gy+gh/2;
+      s.push('<rect x="'+(left+6)+'" y="'+(gy+4)+'" width="'+(w-12)+'" height="'+(gh-8)+'" style="fill:var(--wash);fill-opacity:.6;stroke:var(--ink);stroke-width:1.4;stroke-dasharray:6 4"/>');
+      s.push('<text x="'+(left+w/2)+'" y="'+(gc+4)+'" text-anchor="middle" style="fill:var(--ink);'+SERIF+'font-style:italic;font-size:13px">'+g.name+' · U'+g.u+'–U'+(g.u+g.h-1)+'</text>');
+      if (opts.callout){
+        var bx0 = left+w+36, bw = 150, bh = 62, by = Math.max(4, gc-bh/2);
+        s.push('<circle cx="'+gx2+'" cy="'+gc+'" r="3" style="fill:var(--ink)"/>');
+        s.push('<polyline points="'+gx2+','+gc+' '+(bx0-12)+','+gc+' '+bx0+','+(by+bh/2)+'" style="fill:none;stroke:var(--ink);stroke-width:1"/>');
+        s.push('<rect x="'+(bx0+3)+'" y="'+(by+3)+'" width="'+bw+'" height="'+bh+'" style="fill:var(--ink)"/>');
+        s.push('<rect x="'+bx0+'" y="'+by+'" width="'+bw+'" height="'+bh+'" style="fill:var(--paper);stroke:var(--ink);stroke-width:1"/>');
+        s.push('<text x="'+(bx0+10)+'" y="'+(by+20)+'" style="fill:var(--ink);'+SERIF+'font-weight:600;font-size:14px">Drop here: U'+g.u+'–U'+(g.u+g.h-1)+'</text>');
+        s.push('<text x="'+(bx0+10)+'" y="'+(by+37)+'" style="fill:var(--ink);'+MONO+'font-size:12px">fills 2 empty slots</text>');
+        s.push('<text x="'+(bx0+10)+'" y="'+(by+53)+'" style="fill:var(--ink);'+MONO+'font-size:12px">nothing moves</text>');
+      }
+    }
+    // front marker, above the rack and clear of every line
+    var cx = left+w-140, cy = 36;
+    s.push('<circle cx="'+cx+'" cy="'+cy+'" r="13" style="fill:none;stroke:var(--ink);stroke-width:1"/>');
+    s.push('<path d="M'+cx+' '+(cy-10)+' L'+(cx+5)+' '+(cy+6)+' L'+cx+' '+(cy+2)+' L'+(cx-5)+' '+(cy+6)+' Z" style="fill:var(--ink)"/>');
+    s.push('<text x="'+(cx+20)+'" y="'+(cy+4)+'" style="fill:var(--ink);'+MONO+'font-size:12px;letter-spacing:.12em">FRONT OF RACK</text>');
+    s.push('<text x="'+(left-10)+'" y="'+(bottom+30)+'" style="fill:var(--ink-2);'+MONO+'font-size:11px;letter-spacing:.08em">U1 AT THE BOTTOM · 1 U = 44.45 mm</text>');
+    s.push('</svg>');
+    return s.join('');
+  }
+
+  // ---- A-1: drawing, selection, rack/list switch
+  var home = document.getElementById('rack-home');
+  var selU = 1;
+  function drawHome(){ if (home) home.innerHTML = rackSVG({id:'home', units:8, sel:selU}); }
+  function select(u){
+    selU = u; drawHome();
+    Array.prototype.forEach.call(document.querySelectorAll('#view-list tr[data-u]'), function(r){ r.classList.toggle('sel', Number(r.getAttribute('data-u')) === u); });
+    var d = kit.filter(function(k){ return k.u === u; })[0]; if (!d) return;
+    var srv = document.getElementById('det-server'), pl = document.getElementById('det-plan');
+    if (d.answered){ srv.hidden = false; pl.hidden = true; return; }
+    srv.hidden = true; pl.hidden = false;
+    document.getElementById('dp-slot').textContent = 'Selected · U' + d.u;
+    document.getElementById('dp-name').textContent = d.name;
+    document.getElementById('dp-type').textContent = d.plan;
+    document.getElementById('dp-u').textContent = 'U' + d.u;
+    document.getElementById('dp-fw').textContent = d.fw;
+  }
+  drawHome();
+  function pickFrom(e){
+    var el = e.target.closest ? e.target.closest('[data-u]') : null;
+    if (el) select(Number(el.getAttribute('data-u')));
+  }
+  if (home) {
+    home.addEventListener('click', pickFrom);
+    home.addEventListener('keydown', function(e){ if (e.key === 'Enter' || e.key === ' ') { pickFrom(e); e.preventDefault(); } });
+  }
+  var list = document.getElementById('view-list');
+  if (list) list.addEventListener('click', pickFrom);
+  Array.prototype.forEach.call(document.querySelectorAll('.viewtoggle button'), function(b){
+    b.addEventListener('click', function(){
+      var v = b.getAttribute('data-view');
+      Array.prototype.forEach.call(b.parentNode.children, function(x){ x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      document.getElementById('view-rack').hidden = v !== 'rack';
+      document.getElementById('view-list').hidden = v !== 'list';
+      document.getElementById('homeview-title').textContent = v === 'rack' ? 'Front of rack' : 'List of equipment';
+      document.getElementById('homeview-gloss').innerHTML = v === 'rack'
+        ? 'Drawn as you face it in the aisle. <span class="t">U</span>: one rack slot, 44.45 mm tall; U1 is at the bottom.'
+        : 'The same equipment as the drawing, top slot first.';
+    });
+  });
+
+  // ---- A-2: rack height, drop preview fit
+  var edit = document.getElementById('rack-edit');
+  var fitmsg = document.getElementById('fitmsg');
+  var placeBtn = document.getElementById('placebtn');
+  var placeReason = document.getElementById('placereason');
+  var GHOST = {u:5,h:2,name:'HPE DL380'};
+  var MIN_U = 4; // PDU 5 sits in U4
+  function drawEdit(units){
+    var fits = GHOST.u + GHOST.h - 1 <= units;
+    if (edit) edit.innerHTML = rackSVG({id:'edit', units:units, sel:1, ghost: fits ? GHOST : null, callout:true});
+    if (fitmsg){
+      fitmsg.hidden = fits;
+      fitmsg.textContent = fits ? '' : 'U5–U6 no longer exist at ' + units + ' U. Raise the rack to 6 U or more, or cancel placing the DL380.';
+    }
+    if (placeBtn) placeBtn.disabled = !fits;
+    if (placeReason){ placeReason.hidden = fits; placeReason.textContent = fits ? '' : 'the rack is ' + units + ' U; U5–U6 are gone'; }
+  }
+  var rh = document.getElementById('rackh');
+  function setUnits(v){ v = Math.max(MIN_U, Math.min(60, Math.round(v) || 8)); rh.value = v; drawEdit(v); drawClouds(); }
+  Array.prototype.forEach.call(document.querySelectorAll('.stepper button'), function(b){
+    b.addEventListener('click', function(){ setUnits(Number(rh.value || 8) + Number(b.getAttribute('data-step'))); });
+  });
+  if (rh) rh.addEventListener('change', function(){ setUnits(Number(rh.value)); });
+  drawEdit(8);
+
+  // ---- bay grid toggles (plan only)
+  Array.prototype.forEach.call(document.querySelectorAll('.bay'), function(b){
+    b.addEventListener('click', function(){ var on = b.classList.toggle('f'); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+  });
+
+  // ---- stored plan values turn to ink once edited
+  document.addEventListener('input', function(e){
+    var f = e.target.closest ? e.target.closest('.field.plan') : null;
+    if (f){ f.classList.remove('plan'); if (f.querySelector('label')) f.classList.add('edited'); }
+    netDirty(e.target.closest && e.target.closest('#s3'));
+  });
+  // ---- A-3: Continue only navigates; blocked with its reason while edits are unsaved
+  var netCont = document.getElementById('netcont'), netR = document.getElementById('netcont-r'), netSave = document.getElementById('netsave');
+  function netDirty(dirty){
+    if (!netCont || dirty === null || dirty === undefined) return;
+    netCont.disabled = !!dirty;
+    netR.textContent = dirty ? 'save or reset your changes first' : 'moves on only; it does not save';
+  }
+  if (netSave) netSave.addEventListener('click', function(){ netDirty(false); });
+
+  // ---- switches
+  Array.prototype.forEach.call(document.querySelectorAll('.toggle[role="switch"]'), function(t){
+    function flip(){
+      var on = t.getAttribute('aria-checked') !== 'true';
+      t.setAttribute('aria-checked', on ? 'true' : 'false');
+      t.classList.toggle('on', on);
+      var l = t.querySelector('.lbl'); if (l) l.textContent = on ? 'On' : 'Off';
+      var grp = t.getAttribute('data-group');
+      if (grp){
+        Array.prototype.forEach.call(document.querySelectorAll('input[data-group="'+grp+'"]'), function(i){ i.disabled = !on; });
+        var n = document.querySelector('[data-offnote="'+grp+'"]'); if (n) n.hidden = on;
+      }
+    }
+    t.addEventListener('click', flip);
+    t.addEventListener('keydown', function(e){ if (e.key === ' ' || e.key === 'Enter'){ flip(); e.preventDefault(); } });
+  });
+
+  // ---- revision cloud: scalloped outline sized to the element
+  function cloudPath(w, h, r){
+    var p = [], n, i, x, y, step = r*1.6;
+    p.push('M'+r+' 0');
+    n = Math.max(2, Math.round((w-2*r)/step)); var sx = (w-2*r)/n;
+    for (i=0;i<n;i++){ x = r + (i+1)*sx; p.push('A'+(sx/2)+' '+(r*0.75)+' 0 0 1 '+x+' 0'); }
+    n = Math.max(2, Math.round((h-2*r)/step)); var sy = (h-2*r)/n;
+    for (i=0;i<n;i++){ y = r + (i+1)*sy; p.push('A'+(r*0.75)+' '+(sy/2)+' 0 0 1 '+w+' '+y); }
+    n = Math.max(2, Math.round((w-2*r)/step));
+    for (i=0;i<n;i++){ x = w - r - (i+1)*sx; p.push('A'+(sx/2)+' '+(r*0.75)+' 0 0 1 '+x+' '+h); }
+    n = Math.max(2, Math.round((h-2*r)/step));
+    for (i=0;i<n;i++){ y = h - r - (i+1)*sy; p.push('A'+(r*0.75)+' '+(sy/2)+' 0 0 1 0 '+y); }
+    p.push('A'+r+' '+r+' 0 0 1 '+r+' 0');
+    return p.join(' ');
+  }
+  function drawClouds(){
+    Array.prototype.forEach.call(document.querySelectorAll('.cloud'), function(el){
+      var svg = el.querySelector('svg.cloudline'); if (!svg) return;
+      var w = el.offsetWidth, h = el.offsetHeight; if (!w || !h) return;
+      svg.setAttribute('viewBox','0 0 '+w+' '+h);
+      svg.innerHTML = '<path d="'+cloudPath(w, h, 9)+'"/>';
+    });
+  }
+  drawClouds();
+  window.addEventListener('resize', drawClouds);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawClouds);
+})();
+</script>

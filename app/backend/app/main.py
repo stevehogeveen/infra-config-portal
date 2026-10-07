@@ -8,17 +8,50 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
+from app.api.automation import router as automation_router
+from app.api.rack_plans import router as rack_plans_router
+from app.api.disk_preparation import router as disk_preparation_router
+from app.api.firmware_review import router as firmware_review_router
+from app.api.firmware_execution import router as firmware_execution_router
+from app.api.drive_return_to_service import router as drive_return_to_service_router
+from app.api.raid_rebuild import router as raid_rebuild_router
+from app.api.esxi_install import router as esxi_install_router
+from app.api.parts_update import router as parts_update_router
+from app.api.windows_deploy import router as windows_deploy_router
+from app.api.runtime_write_scope import router as runtime_write_scope_router
+from app.api.spp_update import router as spp_update_router
+from app.services.runtime_write_scope import WriteScopeActivityMiddleware
 from app.core.config import settings
 from app.core.database import init_database
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     init_database()
-    yield
+    worker = None
+    provider = getattr(application.state, "spp_backend", None)
+    if provider is None and settings.provider_mode == "local-lab-readwrite":
+        from app.core.database import SessionLocal
+        from app.providers.hpe_spp_boot import OfflineTransport
+        from app.services.spp_offline_boot import OfflineBackend
+
+        provider = OfflineBackend(SessionLocal, OfflineTransport())
+        application.state.spp_backend = provider
+    if provider is not None:
+        from app.core.database import SessionLocal
+        from app.services.spp_update_runtime import Worker
+
+        worker = Worker(SessionLocal, provider)
+        worker.start()
+    try:
+        yield
+    finally:
+        if worker is not None:
+            worker.stop()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app.add_middleware(WriteScopeActivityMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,3 +101,15 @@ def _host_ipv4_addresses() -> list[str]:
 
 
 app.include_router(router)
+app.include_router(automation_router)
+app.include_router(rack_plans_router)
+app.include_router(disk_preparation_router)
+app.include_router(firmware_review_router)
+app.include_router(firmware_execution_router)
+app.include_router(drive_return_to_service_router)
+app.include_router(raid_rebuild_router)
+app.include_router(esxi_install_router)
+app.include_router(parts_update_router)
+app.include_router(windows_deploy_router)
+app.include_router(runtime_write_scope_router)
+app.include_router(spp_update_router)

@@ -1,0 +1,11 @@
+import React from "react";
+import {createRoot} from "react-dom/client";
+import {MemoryRouter} from "react-router-dom";
+import {GuidedEsxiPage} from "../../src/operatorPages";
+import {SetupReview} from "../../src/components/SetupJourney";
+import type {LabProfileList} from "../../src/types";
+import "../../src/styles.css";
+import "../../src/workbenchTheme.css";
+import "../../src/workflow.css";
+const context = (window as unknown as {esxiFixture:LabProfileList}).esxiFixture;
+createRoot(document.getElementById("root")!).render(<MemoryRouter><SetupReview step={4}><GuidedEsxiPage labProfileState={context}/></SetupReview></MemoryRouter>);

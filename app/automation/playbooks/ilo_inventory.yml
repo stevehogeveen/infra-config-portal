@@ -1,0 +1,21 @@
+---
+- name: Read device system inventory
+  hosts: controller
+  gather_facts: false
+  tasks:
+    - name: Read system identity through Redfish
+      community.general.redfish_info:
+        category: Systems
+        command: GetSystemInventory
+        baseuri: "{{ inventory_host }}"
+        username: "{{ inventory_username }}"
+        password: "{{ inventory_password }}"
+        validate_certs: "{{ inventory_verify_tls }}"
+        timeout: 15
+      register: system_inventory
+      no_log: true
+
+    - name: Export system inventory
+      ansible.builtin.set_stats:
+        data:
+          system: "{{ system_inventory.redfish_facts.system }}"

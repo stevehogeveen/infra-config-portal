@@ -4617,3 +4617,31 @@ def _valid_bootstrap_payload() -> dict[str, object]:
         "local_admin_username_reference": "local-env:CISCO_TEST_USERNAME",
         "operator_notes": "Preview only. No secrets.",
     }
+
+
+def _fake_storage(monkeypatch, smart):
+    from app.providers import ilo_redfish
+    monkeypatch.setattr(ilo_redfish, "_get_json", lambda *a, **k: {"Storage": {"@odata.id": "/redfish/v1/Systems/1/Storage/"},
+                                                                  "SmartStorage": {"@odata.id": "/redfish/v1/Systems/1/SmartStorage/"}})
+    def discover(client, base_url, path, requests):
+        empty = {"controllers": [], "physical_drives": [], "logical_drives": [], "warnings": []}
+        if path.rstrip("/").endswith("/Storage"):
+            return {**empty, "warnings": [f"Storage path returned HTTP 400: {path}"]}
+        return smart if path.rstrip("/").endswith("/SmartStorage") else empty
+    monkeypatch.setattr(ilo_redfish, "_discover_storage_path", discover)
+    return ilo_redfish._storage_discovery(None, "", [{"@odata.id": "/redfish/v1/Systems/1/"}], [])
+
+
+def test_unsupported_standard_storage_is_a_note_when_smartstorage_is_complete(monkeypatch):
+    # iLO 5 3.19 + P408i-a 1.66 (no PLDM for RDE): /Storage/ answers HTTP 400; SmartStorage is complete.
+    smart = {"controllers": [{"Model": "P408i-a"}], "physical_drives": [{"Location": "1I:1:1"}], "logical_drives": [], "warnings": []}
+    result = _fake_storage(monkeypatch, smart)
+    assert result["warnings"] == []
+    assert result["notes"] == ["Storage path returned HTTP 400: /redfish/v1/Systems/1/Storage/"]
+    assert result["status"] == "available"
+
+
+def test_unsupported_standard_storage_stays_a_warning_when_nothing_else_is_complete(monkeypatch):
+    smart = {"controllers": [{"Model": "P408i-a"}], "physical_drives": [], "logical_drives": [], "warnings": []}
+    result = _fake_storage(monkeypatch, smart)
+    assert result["warnings"] == ["Storage path returned HTTP 400: /redfish/v1/Systems/1/Storage/"]

@@ -1,5 +1,16 @@
 # AGENTS.md
 
+## Completion Rule
+
+Carry requested work through implementation, integration, relevant tests and a
+usable result ready for the operator to test. Do not stop at an intermediate
+milestone while another authorized step is available. Report completion only
+when the requested workflow actually works, not merely when fixtures pass.
+If a genuine external dependency or exact hardware approval prevents completion,
+finish independent work and state the precise remaining blocker. This rule does
+not grant approval for hardware actions, erase existing data or override ownership
+coordination with another agent.
+
 ## Safety Rules
 
 Never add real credentials, secrets, tokens, passwords, private keys, customer data, or production-only hostnames.

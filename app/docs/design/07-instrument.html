@@ -1,0 +1,1426 @@
+<title>Lab Builder Instrument</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    color-scheme:light;
+    --surface:#E7E5DF; --panel:#F5F4F0; --recess:#DCD9D1; --well:#CFCCC3;
+    --ink:#1E1F22; --graphite:#2A2C30; --graphite-2:#4A4D53; --muted:#5E6167; --faint:#5A5D62; --deco:#A3A09A;
+    --hairline:#B4B1A9; --hairline-2:#D3D0C8;
+    --signal:#D9341C; --signal-top:#CC3820; --signal-bot:#B32C16; --signal-deep:#8E1F0C; --signal-text:#A8230F; --signal-ink:#FFFFFF; --signal-wash:#F7E3DE;
+    --proof:#1A6B3E; --proof-wash:#DCEEE2;
+    --caution:#7A5A00; --caution-wash:#F2E7C9;
+    --lcd:#C2CBB6; --lcd-ink:#181D19; --lcd-ghost:rgba(24,29,25,.11); --lcd-bezel:#2A2C30;
+    --knob-hi:#FCFBF9; --knob-lo:#D9D6CE; --knob-edge:#8C8981;
+    --draw:#2A2C30; --draw-faint:#8E8B84; --plate:#E4E1D9; --plate-2:#D8DBD4;
+    --scrim:rgba(30,31,34,.45);
+    --shadow:0 1px 0 rgba(255,255,255,.75) inset, 0 1px 1px rgba(30,31,34,.16);
+    --lift:0 1px 2px rgba(30,31,34,.08), 0 24px 48px -32px rgba(30,31,34,.5);
+    --sans:"Archivo","Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
+    --mono:"IBM Plex Mono","Cascadia Mono",Consolas,ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      color-scheme:dark;
+      --surface:#151618; --panel:#1F2023; --recess:#131416; --well:#0E0F10;
+      --ink:#E9E7E1; --graphite:#D6D3CB; --graphite-2:#B3B0A8; --muted:#A3A19B; --faint:#8C8E93; --deco:#55575C;
+      --hairline:#43454A; --hairline-2:#2E3034;
+      --signal:#F0533C; --signal-top:#F46650; --signal-bot:#E8472F; --signal-deep:#7E1F10; --signal-text:#FF8A75; --signal-ink:#1A0906; --signal-wash:#3A1E19;
+      --proof:#5CCB8C; --proof-wash:#173A27;
+      --caution:#E2B65A; --caution-wash:#3A2E12;
+      --lcd:#1E2A22; --lcd-ink:#CFEFD6; --lcd-ghost:rgba(207,239,214,.09); --lcd-bezel:#0A0C0B;
+      --knob-hi:#3B3D42; --knob-lo:#26282C; --knob-edge:#7A7D84;
+      --draw:#D6D3CB; --draw-faint:#6E7075; --plate:#2B2D31; --plate-2:#262A2C;
+      --scrim:rgba(0,0,0,.62);
+      --shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 1px 1px rgba(0,0,0,.5);
+      --lift:0 1px 2px rgba(0,0,0,.5), 0 24px 48px -32px rgba(0,0,0,.9);
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme:dark;
+    --surface:#151618; --panel:#1F2023; --recess:#131416; --well:#0E0F10;
+    --ink:#E9E7E1; --graphite:#D6D3CB; --graphite-2:#B3B0A8; --muted:#A3A19B; --faint:#8C8E93; --deco:#55575C;
+    --hairline:#43454A; --hairline-2:#2E3034;
+    --signal:#F0533C; --signal-top:#F46650; --signal-bot:#E8472F; --signal-deep:#7E1F10; --signal-text:#FF8A75; --signal-ink:#1A0906; --signal-wash:#3A1E19;
+    --proof:#5CCB8C; --proof-wash:#173A27;
+    --caution:#E2B65A; --caution-wash:#3A2E12;
+    --lcd:#1E2A22; --lcd-ink:#CFEFD6; --lcd-ghost:rgba(207,239,214,.09); --lcd-bezel:#0A0C0B;
+    --knob-hi:#3B3D42; --knob-lo:#26282C; --knob-edge:#7A7D84;
+    --draw:#D6D3CB; --draw-faint:#6E7075; --plate:#2B2D31; --plate-2:#262A2C;
+    --scrim:rgba(0,0,0,.62);
+    --shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 1px 1px rgba(0,0,0,.5);
+    --lift:0 1px 2px rgba(0,0,0,.5), 0 24px 48px -32px rgba(0,0,0,.9);
+  }
+
+  *{box-sizing:border-box;margin:0}
+  [hidden]{display:none!important}
+  body{background:var(--surface);color:var(--ink);font:14px/1.5 var(--sans);padding:0 16px 64px;-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit}
+  h1,h2,h3{font-weight:600;letter-spacing:-.01em;line-height:1.2}
+  .mono,.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .page{max-width:1440px;margin:0 auto}
+  .gl{font:400 12px/16px var(--sans);color:var(--muted);letter-spacing:0;text-transform:none}
+
+  /* ------- design page chrome (outside the instrument) ------- */
+  .intro{padding:32px 0 16px;display:grid;grid-template-columns:1fr auto;gap:16px;align-items:end}
+  .intro .eyebrow{font:500 11px/16px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .intro h1{font-size:28px;margin-top:4px}
+  .intro p{color:var(--muted);max-width:640px;margin-top:8px}
+  .themebtn{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;border:1px solid var(--knob-edge);background:linear-gradient(var(--knob-hi),var(--knob-lo));box-shadow:var(--shadow);border-radius:2px;font:500 12px/1 var(--mono);cursor:pointer}
+  .tabs{display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--hairline);background:var(--panel);margin-bottom:16px;border-radius:2px;overflow:hidden}
+  .tabs button{flex:1 1 auto;min-width:140px;height:40px;background:none;border:0;border-right:1px solid var(--hairline-2);padding:0 16px;text-align:left;font:500 13px/1 var(--sans);cursor:pointer;display:flex;align-items:center;gap:10px;color:var(--muted)}
+  .tabs button:last-child{border-right:0}
+  .tabs button .i{font:600 11px/1 var(--mono);color:var(--muted);letter-spacing:.06em;border:1px solid var(--hairline);padding:3px 5px;border-radius:2px}
+  .tabs button[aria-selected="true"]{color:var(--ink);box-shadow:inset 0 -3px 0 var(--graphite)}
+  .tabs button[aria-selected="true"] .i{color:var(--panel);background:var(--graphite);border-color:var(--graphite)}
+  .frame{overflow-x:auto;padding-bottom:8px}
+
+  /* ------- the instrument ------- */
+  .app{min-width:1280px;max-width:1440px;margin:0 auto;background:var(--panel);border:1px solid var(--hairline);box-shadow:var(--lift);border-radius:3px}
+
+  /* readout strip */
+  .readout{display:grid;grid-template-columns:220px 1fr 1fr 1fr 1.45fr;background:var(--surface);border-bottom:1px solid var(--hairline)}
+  .brand{padding:16px 24px;display:grid;align-content:space-between;gap:8px}
+  .brand .word{font:700 15px/1 var(--sans);letter-spacing:.02em;display:flex;align-items:center;gap:8px}
+  .brand .word::before{content:"";width:10px;height:10px;background:var(--graphite);border-radius:1px}
+  .brand .model{font:500 10px/16px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .lcd{padding:12px 20px 10px;border:0;border-left:1px solid var(--hairline);display:grid;gap:4px;align-content:start;background:none;text-align:left;font:inherit;color:inherit;min-width:0}
+  button.lcd{cursor:pointer}
+  button.lcd:hover .glass{border-color:var(--graphite-2)}
+  .lcd .k{font:500 10px/16px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;gap:8px}
+  .lcd .k .u{color:var(--muted);letter-spacing:.02em;text-transform:none;font-family:var(--sans);font-size:11px}
+  .lcd .k .go{letter-spacing:.06em;color:var(--ink);font-weight:600}
+  .lcd .glass{height:44px;background:var(--lcd);border:2px solid var(--lcd-bezel);box-shadow:inset 0 2px 5px rgba(0,0,0,.35),0 1px 0 rgba(255,255,255,.25);padding:0 12px;display:flex;align-items:center;justify-content:space-between;gap:12px;overflow:hidden}
+  .seg{position:relative;font:600 19px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--lcd-ink);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .seg::before{content:attr(data-ghost);position:absolute;left:0;top:0;color:var(--lcd-ghost);pointer-events:none}
+  .seg.small{font-size:13px;letter-spacing:.08em}
+  .lcd .sub{display:block;font:400 11px/16px var(--sans);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lcd .sub b{font-weight:600;color:var(--ink)}
+  .pip{width:8px;height:8px;border-radius:50%;background:var(--lcd-ink);box-shadow:0 0 0 2px var(--lcd-ghost);flex:none}
+  .led{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--signal);box-shadow:0 0 0 2px var(--signal-wash);margin-right:6px;vertical-align:1px}
+
+  /* step rail */
+  .rail{display:grid;grid-template-columns:repeat(6,1fr);border-bottom:1px solid var(--hairline)}
+  .step{background:none;border:0;border-left:1px solid var(--hairline-2);padding:12px 16px 14px;text-align:left;display:grid;gap:2px;cursor:pointer;position:relative;align-content:start}
+  .step:first-child{border-left:0}
+  .step .n{font:500 11px/16px var(--mono);letter-spacing:.1em;color:var(--muted);display:flex;align-items:center;gap:8px}
+  .step .n i{width:8px;height:8px;border:1px solid var(--graphite-2);display:inline-block;flex:none}
+  .step.done .n i{background:var(--graphite);border-color:var(--graphite)}
+  .step[aria-current="step"] .n i{background:var(--signal);border-color:var(--signal)}
+  .step .t{font:600 14px/20px var(--sans)}
+  .step .s{font:400 12px/16px var(--sans);color:var(--muted)}
+  .step[aria-current="step"]{box-shadow:inset 0 -3px 0 var(--signal)}
+  .step.viewing{background:var(--surface)}
+  .step.viewing::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:var(--graphite)}
+  .step .vw{display:none;font:600 10px/16px var(--mono);letter-spacing:.12em;color:var(--ink);margin-left:auto}
+  .step.viewing .vw{display:inline}
+  .step:disabled{cursor:not-allowed}
+  .step:disabled .t{color:var(--muted)}
+
+  /* screens */
+  .screen{padding:24px 32px 32px}
+  .shead{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;padding-bottom:16px;border-bottom:1px solid var(--hairline);margin-bottom:16px}
+  .shead h2{font-size:24px}
+  .shead .lede{color:var(--muted);margin-top:4px;max-width:720px}
+  .shead .acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+  .nextkey{display:grid;gap:4px;justify-items:end;text-align:right}
+  .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:24px}
+  .toolbar .sep{flex:1}
+  .toolbar .inl{display:flex;align-items:center;gap:8px}
+  .toolbar select{min-width:220px}
+  .cols{display:grid;gap:24px;align-items:start}
+  .stack{display:grid;gap:16px;align-content:start}
+  .mod{border:1px solid var(--hairline);background:var(--panel);border-radius:2px}
+  .mod-h{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 16px;min-height:40px;border-bottom:1px solid var(--hairline-2);font:600 10px/16px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .mod-h .r{display:flex;gap:8px;align-items:center;font:inherit;text-transform:none;letter-spacing:0}
+  .mod-b{padding:16px}
+  .mod-b + .mod-b{border-top:1px solid var(--hairline-2)}
+  .mod.recess{background:var(--recess)}
+  .tblwrap{overflow-x:auto}
+
+  /* controls */
+  .btn{height:32px;padding:0 14px;border:1px solid var(--knob-edge);background:linear-gradient(var(--knob-hi),var(--knob-lo));box-shadow:var(--shadow);font:500 13px/1 var(--sans);color:var(--ink);border-radius:2px;display:inline-flex;align-items:center;gap:8px;cursor:pointer;white-space:nowrap}
+  .btn.sm{height:28px;padding:0 10px;font-size:12px}
+  .btn.lg{height:40px;padding:0 18px;font-size:14px;font-weight:600}
+  .btn.primary{background:linear-gradient(var(--signal-top),var(--signal-bot));color:var(--signal-ink);border-color:var(--signal-deep)}
+  .btn.quiet{background:none;box-shadow:none;border-color:var(--knob-edge)}
+  .btn.text{background:none;box-shadow:none;border-color:transparent;text-decoration:underline;text-underline-offset:3px;padding:0 6px}
+  .btn:disabled{cursor:not-allowed;background:var(--recess);box-shadow:none;color:var(--muted);border-color:var(--hairline)}
+  .why{font:12px/16px var(--sans);color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+  .why::before,.lk::before{content:"";flex:none;display:inline-block;width:9px;height:11px;background:linear-gradient(currentColor,currentColor) 0 100%/9px 6px no-repeat,radial-gradient(circle at 4.5px 5px,transparent 2.1px,currentColor 2.3px,currentColor 3.6px,transparent 3.8px) 0 0/9px 6px no-repeat}
+  .lk::before{margin-right:6px;vertical-align:-1px}
+  .why.block{color:var(--signal-text)}
+  .why.block::before{width:7px;height:7px;background:var(--signal)}
+  .whylist{display:grid;gap:2px}
+  .act{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .act.end{justify-content:flex-end}
+  .segc{display:inline-flex;border:1px solid var(--knob-edge);border-radius:2px;overflow:hidden;box-shadow:var(--shadow)}
+  .segc button{height:28px;padding:0 12px;background:linear-gradient(var(--knob-hi),var(--knob-lo));border:0;border-right:1px solid var(--knob-edge);font:500 12px/1 var(--sans);cursor:pointer}
+  .segc button:last-child{border-right:0}
+  .segc button[aria-pressed="true"]{background:var(--graphite);color:var(--panel)}
+  .segc button:disabled{background:var(--recess);color:var(--muted);cursor:not-allowed}
+  .nw{white-space:nowrap}
+  .acts.col{display:grid;gap:10px;justify-items:end}
+  .acts.col .act{justify-content:flex-end}
+  .tog{width:44px;height:24px;border:1px solid var(--knob-edge);border-radius:12px;background:var(--well);position:relative;flex:none;box-shadow:inset 0 1px 3px rgba(0,0,0,.3);cursor:pointer;padding:0}
+  .tog::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:linear-gradient(var(--knob-hi),var(--knob-lo));box-shadow:0 1px 2px rgba(0,0,0,.35);transition:left .15s}
+  .tog[aria-checked="true"]{background:var(--graphite);border-color:var(--graphite)}
+  .tog[aria-checked="true"]::after{left:22px}
+  .togrow{display:flex;align-items:center;gap:12px}
+  .togrow .lab{font-weight:600}
+  .togrow .st{font:600 11px/16px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink);min-width:28px}
+  .stepper{display:inline-flex;align-items:center;border:1px solid var(--knob-edge);border-radius:2px;overflow:hidden;box-shadow:var(--shadow)}
+  .stepper button{width:32px;height:32px;border:0;background:repeating-linear-gradient(90deg,var(--knob-lo) 0 2px,var(--knob-hi) 2px 4px);font:600 16px/1 var(--mono);cursor:pointer}
+  .stepper button:disabled{background:var(--recess);color:var(--faint);cursor:not-allowed}
+  .stepper .val{width:96px;height:32px;background:var(--lcd);color:var(--lcd-ink);border-left:1px solid var(--knob-edge);border-right:1px solid var(--knob-edge);box-shadow:inset 0 2px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;gap:6px;font:600 16px/1 var(--mono);letter-spacing:.08em}
+  .stepper .val small{font-size:10px;letter-spacing:.14em;opacity:.7}
+  .field{display:grid;gap:4px;align-content:start}
+  .field label,.lbl{font:500 10px/16px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .field input,.field select,.inp{height:32px;width:100%;border:1px solid var(--hairline);background:var(--recess);box-shadow:inset 0 1px 2px rgba(0,0,0,.1);padding:0 10px;font:13px/30px var(--mono);color:var(--ink);border-radius:2px;font-variant-numeric:tabular-nums}
+  .field input::placeholder{color:var(--faint)}
+  .field input:disabled,.field select:disabled{color:var(--muted);background:var(--surface)}
+  .field .hint{font:12px/16px var(--sans);color:var(--muted)}
+  .ro{min-height:32px;border:1px solid var(--hairline-2);border-left:3px solid var(--graphite-2);background:var(--surface);padding:6px 10px;font:500 13px/20px var(--mono);border-radius:2px}
+  .fgrid{display:grid;gap:16px}
+  .f2{grid-template-columns:1fr 1fr}
+  .f3{grid-template-columns:1fr 1fr 1fr}
+  .withbtn{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}
+
+  /* provenance */
+  .prov{display:inline-flex;align-items:center;gap:6px;font:500 10px/18px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:0 6px;border:1px solid currentColor;border-radius:2px;white-space:nowrap;vertical-align:middle}
+  .prov.proven{color:var(--proof);background:var(--proof-wash)}
+  .prov.proven::before{content:"";width:6px;height:6px;background:var(--proof);border-radius:50%}
+  .prov.saved{color:var(--graphite-2)}
+  .prov.suggested{border-style:dashed;color:var(--muted)}
+  .prov.suggested::before{content:"~";font-weight:600}
+  .prov.blank{border-style:dotted;color:var(--muted)}
+  .prov.rec{color:var(--graphite-2);background:var(--recess)}
+  .prov.rec::before{content:"";width:5px;height:5px;border:1.5px solid currentColor;border-radius:1px}
+  .provkey{display:grid;grid-template-columns:1fr;gap:6px 16px;font:12px/16px var(--sans);color:var(--muted)}
+  .provkey.row{display:flex;flex-wrap:wrap;gap:6px 18px}
+  .provkey span{display:flex;gap:8px;align-items:center}
+  .kv{display:grid;grid-template-columns:132px 1fr auto;gap:4px 16px;align-items:center;padding:8px 0;border-bottom:1px solid var(--hairline-2)}
+  .kv:last-child{border-bottom:0}
+  .kv .k{font:12px/16px var(--sans);color:var(--muted)}
+  .kv .v{font:500 13px/20px var(--mono);font-variant-numeric:tabular-nums}
+  .kv .v.blank{color:var(--muted);font-style:italic}
+  .kv .v small{font:12px/16px var(--sans);color:var(--muted);display:block;font-style:normal}
+  .ready{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .ready .cell{border:1px solid var(--hairline);padding:10px 12px;display:grid;gap:6px;border-radius:2px;background:var(--surface);align-content:start}
+  .ready .cell .k{font:500 10px/16px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .ready .cell .v{font:600 13px/18px var(--sans)}
+  .ready .cell .s{font:12px/16px var(--sans);color:var(--muted)}
+  details.tech{border:1px solid var(--hairline-2);border-radius:2px;background:var(--surface)}
+  details.tech summary{cursor:pointer;padding:8px 12px;font:600 12px/16px var(--sans);list-style:none;display:flex;justify-content:space-between}
+  details.tech summary::-webkit-details-marker{display:none}
+  details.tech summary::after{content:"open +";font:500 10px/16px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  details.tech[open] summary::after{content:"close −"}
+  details.tech .mod-b{border-top:1px solid var(--hairline-2);padding:4px 12px}
+  details.tech .kv{grid-template-columns:112px 1fr}
+  details.tech .kv .prov{grid-column:2;justify-self:start}
+
+  /* notices */
+  .tri{display:inline-block;width:14px;height:12px;background:var(--caution);clip-path:polygon(50% 0,100% 100%,0 100%);flex:none}
+  .notice{border:1px solid var(--caution);background:var(--caution-wash);padding:10px 12px;display:grid;grid-template-columns:auto 1fr;gap:6px 10px;border-radius:2px;align-items:start;font:13px/18px var(--sans)}
+  .notice .tri{margin-top:3px}
+  .notice b{font-weight:600}
+  .notice .act{grid-column:2}
+
+  /* tables */
+  .tbl{width:100%;border-collapse:collapse;font-size:13px}
+  .tbl th{text-align:left;font:600 10px/16px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:8px;border-bottom:1px solid var(--hairline);white-space:nowrap}
+  .tbl td{padding:7px 8px;border-bottom:1px solid var(--hairline-2);vertical-align:middle}
+  .tbl tr:last-child td{border-bottom:0}
+  .tbl td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .tbl tr.sel td{background:var(--recess)}
+  .tbl tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--graphite)}
+  .tbl .dim{font:12px/16px var(--sans);color:var(--muted)}
+  .ok{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+  .ok::before{content:"✓";font:700 12px/1 var(--mono)}
+  .sev{display:inline-flex;align-items:center;gap:6px;font:500 12px/16px var(--sans)}
+  .sev.c{color:var(--caution)}
+  .sev.i::before{content:"";width:9px;height:9px;border:1.5px solid currentColor;border-radius:50%}
+  .foot{font:12px/16px var(--sans);color:var(--muted);margin-top:8px}
+
+  /* rack drawing */
+  .drawing{background:var(--surface);border:1px solid var(--hairline);padding:16px 16px 8px;border-radius:2px;position:relative}
+  .drawing .cap{display:flex;justify-content:space-between;gap:12px;font:500 10px/16px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+  .drawing svg{display:block;width:100%;height:auto;font-family:var(--mono)}
+  .legend{display:flex;gap:6px 16px;flex-wrap:wrap;font:11px/16px var(--sans);color:var(--muted);margin-top:8px}
+  .legend i{display:inline-block;width:10px;height:10px;vertical-align:-1px;margin-right:6px;border:1px solid var(--draw)}
+  .legend i.f{background:var(--draw)}
+  .legend i.d{border-style:dashed}
+  .legend i.s{border:2px solid var(--graphite)}
+  .legend i.c{border:2px solid var(--caution);background:repeating-linear-gradient(45deg,var(--caution) 0 1.5px,var(--caution-wash) 1.5px 4px)}
+  .legend i.pl{border-style:dashed;background:var(--plate)}
+  .legend i.pv{border:1.5px dashed var(--graphite);background:var(--panel)}
+
+  /* palette cards */
+  .palette{display:grid;gap:8px}
+  .card{border:1px solid var(--hairline);background:var(--panel);padding:10px 12px;display:grid;grid-template-columns:56px 1fr auto;gap:12px;align-items:center;cursor:grab;border-radius:2px;box-shadow:var(--shadow);text-align:left;font:inherit;width:100%}
+  .card .glyph{height:28px;border:1px solid var(--draw);background:var(--plate);display:flex;align-items:center;justify-content:flex-end;gap:2px;padding:0 4px;border-radius:1px}
+  .card .glyph.h2{height:40px}
+  .card .glyph i{width:5px;height:12px;background:var(--draw);display:block}
+  .card .glyph i.o{width:6px;height:6px;border-radius:50%;background:none;border:1px solid var(--draw)}
+  .card .glyph i.p{width:4px;height:4px}
+  .card .glyph i.b{width:7px;height:18px;border:1px solid var(--draw);background:none}
+  .card .t{font:600 13px/18px var(--sans)}
+  .card .s{font:12px/16px var(--sans);color:var(--muted)}
+  .card .u{font:600 12px/1 var(--mono);color:var(--muted);border:1px solid var(--hairline);padding:6px 6px;border-radius:2px}
+  .card[aria-pressed="true"]{border-color:var(--graphite);box-shadow:0 0 0 1px var(--graphite)}
+  .card[aria-pressed="true"] .u{background:var(--graphite);color:var(--panel);border-color:var(--graphite)}
+  .dropzone{border:1px dashed var(--graphite-2);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;font:13px/18px var(--sans);color:var(--muted);border-radius:2px;background:var(--surface)}
+  .dropzone b{color:var(--ink)}
+  .preview{border:1.5px dashed var(--graphite);background:var(--panel);padding:10px 16px;display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;border-radius:2px}
+  .preview .pt{font-weight:600}
+  .preview .ps{font:12px/16px var(--sans);color:var(--muted)}
+  .lcdmini{background:var(--lcd);color:var(--lcd-ink);border:2px solid var(--lcd-bezel);padding:4px 10px;font:600 14px/1 var(--mono);letter-spacing:.1em;box-shadow:inset 0 2px 4px rgba(0,0,0,.3);white-space:nowrap}
+  .bays{display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
+  .bay{height:36px;border:1px solid var(--graphite-2);font:500 11px/1 var(--mono);display:flex;align-items:flex-end;justify-content:center;padding-bottom:3px;background:none;cursor:pointer;border-radius:1px;position:relative}
+  .bay.occ{background:var(--graphite);color:var(--panel);border-color:var(--graphite)}
+  .bay.empty{border-style:dashed;color:var(--muted)}
+  .btn:focus-visible,.bay:focus-visible,.card:focus-visible,.step:focus-visible,.tog:focus-visible,.pick:focus-visible,.segc button:focus-visible,.tabs button:focus-visible,.themebtn:focus-visible,button.lcd:focus-visible,details.tech summary:focus-visible{outline:2px solid var(--graphite);outline-offset:2px}
+
+  /* storage result */
+  .result{display:grid;grid-template-columns:1fr auto;gap:16px 24px;align-items:start}
+  .result h3{font-size:18px;display:flex;align-items:center;gap:10px}
+  .result h3 .okc{width:20px;height:20px;border-radius:50%;background:none;border:1.5px solid var(--graphite-2);color:var(--graphite-2);display:inline-flex;align-items:center;justify-content:center;font:700 12px/1 var(--mono)}
+  .result .side{display:grid;gap:8px;justify-items:end;text-align:right}
+  .stages{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:12px;border:1px solid var(--hairline-2);border-radius:2px}
+  .stage{padding:8px 12px;border-left:1px solid var(--hairline-2);display:grid;gap:2px}
+  .stage:first-child{border-left:0}
+  .stage .k{font:500 10px/16px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);display:flex;gap:6px;align-items:center}
+  .stage .k::before{content:"";width:8px;height:8px;border:1.5px solid var(--graphite);display:inline-block}
+  .stage.done .k::before{content:"✓";width:12px;height:12px;border:0;background:var(--graphite);color:var(--panel);font:700 9px/12px var(--mono);text-align:center}
+  .req{margin-top:12px;border:1px solid var(--caution);background:var(--caution-wash);padding:8px 12px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;border-radius:2px;font:13px/18px var(--sans)}
+  .req b{font-weight:600}
+  .req .s{font:12px/16px var(--sans);color:var(--muted);display:block}
+  .stage .v{font:600 15px/20px var(--mono);font-variant-numeric:tabular-nums}
+  .stage .s{font:12px/16px var(--sans);color:var(--muted)}
+  .alert{border:1px solid var(--caution);background:var(--caution-wash);padding:10px 12px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;border-radius:2px}
+  .alert .n{font:600 20px/1 var(--mono);color:var(--caution);font-variant-numeric:tabular-nums}
+  .alert .t{font:600 13px/18px var(--sans)}
+  .alert .s{font:12px/16px var(--sans);color:var(--muted)}
+  .groups{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grp{border:1px solid var(--hairline-2);border-radius:2px;padding:12px;display:grid;gap:10px;align-content:start}
+  .grp.danger{border-color:var(--caution);background:var(--caution-wash)}
+  .grp .gh{font:600 10px/16px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:8px}
+  .grp.danger .gh{color:var(--caution)}
+  .grp .row{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center}
+  .grp .row span{font:12px/16px var(--sans);color:var(--muted)}
+  .grp .btn{justify-content:flex-start;min-width:176px}
+  .fail{border:1px solid var(--signal);background:var(--signal-wash);border-radius:2px}
+  .fail .fh{padding:12px 16px;border-bottom:1px solid var(--signal);display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .fail .fh h3{font-size:16px;display:flex;align-items:center;gap:10px}
+  .fail .fh h3 i{width:18px;height:18px;background:var(--signal);color:var(--signal-ink);display:inline-flex;align-items:center;justify-content:center;font:700 12px/1 var(--mono);border-radius:2px;font-style:normal}
+  .fail .fb{padding:12px 16px;display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:16px}
+  .fail .fb h4{font:500 10px/16px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+  .fail ol{padding-left:18px;display:grid;gap:6px}
+  .cmd{font:12px/18px var(--mono);background:var(--recess);border:1px solid var(--hairline);padding:8px 10px;border-radius:2px;white-space:pre-wrap;overflow-wrap:anywhere}
+  .fail .cmd{background:var(--panel)}
+  .dialog{border:1px solid var(--graphite);background:var(--panel);box-shadow:var(--lift);border-radius:2px}
+  .dialog .dh{padding:10px 16px;border-bottom:1px solid var(--hairline);display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .dialog .dh h3{font-size:15px}
+  .dialog .dsum{padding:10px 16px;border-bottom:1px solid var(--hairline-2);font:13px/18px var(--sans);display:flex;gap:10px;align-items:flex-start}
+  .dialog .dsum .tri{margin-top:3px}
+  .dialog .dstage{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;padding:12px 16px;border-bottom:1px solid var(--hairline-2);align-items:start}
+  .dialog .dstage .n{width:22px;height:22px;border:1px solid var(--graphite);display:flex;align-items:center;justify-content:center;font:600 11px/1 var(--mono)}
+  .dialog .dstage.on .n{background:var(--graphite);color:var(--panel)}
+  .dialog .dstage.done .n{background:var(--recess)}
+  .dialog .dstage.todo{color:var(--muted)}
+  .dialog .dstage h4{font:600 13px/22px var(--sans)}
+  .dialog .dstage .hint{font:12px/16px var(--sans);color:var(--muted);margin-top:4px}
+  .dialog .kv{padding:6px 0}
+  .pill{display:inline-block;font:500 10px/16px var(--mono);letter-spacing:.1em;text-transform:uppercase;padding:0 6px;border:1px solid var(--hairline);border-radius:2px;color:var(--muted);white-space:nowrap}
+  .pill.danger{border-color:var(--caution);color:var(--caution);background:var(--caution-wash)}
+  .list{display:grid;gap:8px}
+  .pick{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:center;padding:10px 12px;border:1px solid var(--hairline);background:var(--panel);text-align:left;cursor:pointer;border-radius:2px;font:inherit;width:100%}
+  .pick .slot{font:600 12px/1 var(--mono);color:var(--muted);border:1px solid var(--hairline);padding:5px 6px;border-radius:2px;grid-row:span 2;align-self:start}
+  .pick .t{font:600 13px/18px var(--sans);display:flex;justify-content:space-between;gap:8px;align-items:center}
+  .pick .s{font:12px/16px var(--sans);color:var(--muted)}
+  .pick[aria-pressed="true"]{border-color:var(--graphite);box-shadow:inset 3px 0 0 var(--graphite),0 0 0 1px var(--graphite)}
+  .pick[aria-pressed="true"] .slot{background:var(--graphite);color:var(--panel);border-color:var(--graphite)}
+  .pick:disabled{cursor:not-allowed;background:var(--surface)}
+  .pick:disabled .t{color:var(--muted)}
+  .dns{display:grid;grid-template-columns:repeat(4,1fr);gap:12px 8px}
+  .sechead{display:flex;align-items:baseline;gap:8px}
+  .sechead .gl{text-transform:none;letter-spacing:0;font-family:var(--sans);font-weight:400}
+
+  /* modal */
+  .scrim{position:fixed;inset:0;background:var(--scrim);display:grid;place-items:center;padding:16px;z-index:20}
+  .modal{width:100%;max-width:680px;max-height:calc(100vh - 32px);overflow:auto}
+  .modal .specnote{display:none}
+
+  /* designer's note */
+  .note{margin:40px auto 0;max-width:1440px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  .note h2{font-size:20px;margin-bottom:8px}
+  .note h3{font:500 10px/16px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:16px 0 6px}
+  .note p{color:var(--ink)}
+  .note .full{grid-column:1 / -1}
+  .specs{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  .specnote{font:11px/16px var(--mono);letter-spacing:.06em;color:var(--muted);margin-bottom:6px;text-transform:uppercase}
+  .failcat{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:12px;border:1px solid var(--hairline);background:var(--recess);padding:12px;border-radius:2px}
+  .failcat span{color:var(--muted)}
+  .swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+  .sw{display:grid;grid-template-columns:28px 1fr;gap:8px;align-items:center;font:11px/14px var(--mono)}
+  .sw i{height:28px;border:1px solid var(--hairline);border-radius:2px;display:block}
+  .sw span{color:var(--muted)}
+  .sw b{display:block;font-weight:600;color:var(--ink)}
+  .mapwrap{overflow-x:auto;border:1px solid var(--hairline);background:var(--panel);border-radius:2px}
+  .map{width:100%;border-collapse:collapse;font-size:13px}
+  .map th{text-align:left;font:600 10px/16px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:8px 12px;border-bottom:1px solid var(--hairline)}
+  .map td{padding:6px 12px;border-bottom:1px solid var(--hairline-2);vertical-align:top}
+  .map td:first-child{font-weight:600;width:34%}
+
+  /* below 1280 the fixed console scrolls in its own frame; next keys and blockers move left so they stay in view */
+  @media (max-width:1279px){
+    .shead{flex-direction:column;align-items:stretch}
+    .shead .acts{justify-content:flex-start}
+    .acts.col,.nextkey{justify-items:start;text-align:left}
+    .acts.col .act{justify-content:flex-start}
+    .result{grid-template-columns:1fr}
+    .result .side{justify-items:start;text-align:left}
+    .readout{grid-template-columns:220px 1fr 1fr 1fr}
+    .readout > .lcd:last-child{grid-column:2 / span 2;border-top:1px solid var(--hairline)}
+  }
+  /* narrow widths: the console restacks instead of scrolling sideways */
+  @media (max-width:900px){
+    .readout > .lcd:last-child{grid-column:auto}
+    .intro{grid-template-columns:1fr}
+    .app{min-width:0}
+    .readout{grid-template-columns:1fr 1fr}
+    .brand{grid-column:1 / -1}
+    .lcd{border-left:0;border-top:1px solid var(--hairline)}
+    .rail{grid-template-columns:1fr 1fr}
+    .step{border-top:1px solid var(--hairline-2)}
+    .screen{padding:16px}
+    .shead{flex-direction:column;align-items:stretch}
+    .shead .acts{justify-content:flex-start}
+    .nextkey{justify-items:start;text-align:left}
+    .cols{grid-template-columns:1fr!important}
+    .f3,.dns,.ready,.groups,.specs,.failcat{grid-template-columns:1fr 1fr}
+    .fail .fb{grid-template-columns:1fr}
+    .result{grid-template-columns:1fr}
+    .result .side{justify-items:start;text-align:left}
+    .note{grid-template-columns:1fr}
+  }
+  @media (max-width:560px){
+    .readout,.rail,.f2,.f3,.dns,.ready,.groups,.specs,.failcat,.provkey,.stages{grid-template-columns:1fr}
+    .stage{border-left:0;border-top:1px solid var(--hairline-2)}
+    .preview{grid-template-columns:1fr}
+    .kv{grid-template-columns:1fr auto}
+    .kv .k{grid-column:1 / -1}
+    .bays{grid-template-columns:repeat(5,1fr)}
+    .tabs button{min-width:50%}
+  }
+</style>
+
+<div class="page">
+  <header class="intro">
+    <div>
+      <div class="eyebrow">Design direction 04 of 06 · Professional cohort · revision 2</div>
+      <h1>Instrument</h1>
+      <p>Lab Builder as a bench instrument: an exact 8 px grid, hairline rules, knurled and segmented controls, tabular readouts. Graphite marks what you selected; one signal red marks only the next key and what blocks you; green is only proof, always with its time.</p>
+    </div>
+    <button class="themebtn" id="theme" type="button" aria-label="Switch colour theme"><span id="themeLabel">THEME · AUTO</span></button>
+  </header>
+
+  <div class="tabs" role="tablist" aria-label="Screens in this review">
+    <button role="tab" aria-selected="true" aria-controls="s-rack" data-target="s-rack"><span class="i">A</span>My Rack</button>
+    <button role="tab" aria-selected="false" aria-controls="s-add" data-target="s-add"><span class="i">B</span>Add equipment</button>
+    <button role="tab" aria-selected="false" aria-controls="s-network" data-target="s-network"><span class="i">C</span>Network settings</button>
+    <button role="tab" aria-selected="false" aria-controls="s-connect" data-target="s-connect"><span class="i">D</span>Connect equipment</button>
+    <button role="tab" aria-selected="false" aria-controls="s-firmware" data-target="s-firmware"><span class="i">E</span>Check firmware</button>
+    <button role="tab" aria-selected="false" aria-controls="s-fail" data-target="s-fail"><span class="i">F</span>Connect · check failed</button>
+  </div>
+
+  <div class="frame">
+  <div class="app">
+
+    <!-- readout strip -->
+    <div class="readout" aria-label="Status readout">
+      <div class="brand">
+        <div class="word">LAB BUILDER</div>
+        <div class="model">Rack build console</div>
+      </div>
+      <div class="lcd">
+        <div class="k"><span>Kit</span><span class="u">8 U rack · U = one rack slot</span></div>
+        <div class="glass"><span class="seg small">KIT SINGLE GEN 10</span><span class="pip" title="Kit loaded"></span></div>
+        <span class="sub">Saved plan · 4 pieces of equipment</span>
+      </div>
+      <div class="lcd" aria-label="Current step: 3 of 6, Connect equipment">
+        <div class="k"><span>Step 3 of 6</span><span class="u">current step</span></div>
+        <div class="glass"><span class="seg">03/06</span><span class="seg small">CONNECT</span></div>
+        <span class="sub" id="roStepSub">Drives &amp; RAID · erase recorded 24/09</span>
+      </div>
+      <div class="lcd">
+        <div class="k"><span>Last answer</span><span class="u">read-only</span></div>
+        <div class="glass"><span class="seg" id="roLastT">08:35</span><span class="seg small" id="roLastD">TODAY</span></div>
+        <span class="sub" id="roLastSub"><b>HPE DL360 3</b> reached at 192.0.2.27</span>
+      </div>
+      <button class="lcd" type="button" id="roBlk" data-go="s-connect" data-anchor="alerts" aria-label="2 blockers. Review the 10 alerts before firmware approval; firmware review before ESXi. Go to the first blocker">
+        <span class="k"><span><span class="led" aria-hidden="true"></span>Blockers</span><span class="u"><b style="color:var(--ink)">first one →</b></span></span>
+        <span class="glass"><span class="seg" id="roBlkN">02</span><span class="seg small" id="roBlkSeg">ALERTS · FIRMWARE</span></span>
+        <span class="sub" id="roBlkSub" style="white-space:normal">Alerts: before firmware approval · firmware: before ESXi</span>
+      </button>
+    </div>
+
+    <!-- step rail -->
+    <nav class="rail" aria-label="Build steps">
+      <button class="step done" type="button" data-go="s-add"><span class="n"><i></i>01<span class="vw">VIEWING</span></span><span class="t">Add equipment</span><span class="s">Done · 4 items placed</span></button>
+      <button class="step done" type="button" data-go="s-network"><span class="n"><i></i>02<span class="vw">VIEWING</span></span><span class="t">Network settings</span><span class="s">Done · defaults saved</span></button>
+      <button class="step" type="button" aria-current="step" data-go="s-connect"><span class="n"><i></i>03 · CURRENT<span class="vw">VIEWING</span></span><span class="t">Connect equipment</span><span class="s" id="railSub3">Erase recorded 24/09 · plan RAID next</span></button>
+      <button class="step" type="button" data-go="s-firmware"><span class="n"><i></i>04<span class="vw">VIEWING</span></span><span class="t">Check firmware</span><span class="s">Not compared yet</span></button>
+      <button class="step" type="button" disabled><span class="n"><i></i>05</span><span class="t">Prepare ESXi</span><span class="s lk">Locked · needs firmware review</span></button>
+      <button class="step" type="button" disabled><span class="n"><i></i>06</span><span class="t">Install Windows</span><span class="s lk">Locked · needs ESXi</span></button>
+    </nav>
+
+    <!-- ============ MY RACK ============ -->
+    <section id="s-rack" class="screen" aria-labelledby="h-rack">
+      <div class="shead">
+        <div>
+          <h2 id="h-rack">My Rack</h2>
+          <p class="lede">Front view of Kit Single Gen 10. Select a piece of equipment to read its details; every value says where it came from. A U is one rack slot, 44.45 mm tall, counted from U1 at the bottom.</p>
+        </div>
+        <div class="nextkey">
+          <span class="lbl">Your next step</span>
+          <button class="btn primary lg" type="button" data-go="s-connect" data-anchor="result">Go to Drives &amp; RAID · HPE DL360 3</button>
+          <span class="gl">There you plan RAID (how the disks are grouped). Planning writes nothing to the server.</span>
+        </div>
+      </div>
+
+      <div class="toolbar" role="toolbar" aria-label="Kit">
+        <div class="inl field"><label for="kitsel">Kit</label><select id="kitsel" class="inp"><option>Kit Single Gen 10</option></select></div>
+        <button class="btn" type="button">Rename kit…</button>
+        <button class="btn" type="button">Save as new kit…</button>
+        <span class="sep"></span>
+        <button class="btn quiet" type="button">Build reports</button>
+        <button class="btn quiet" type="button">Run history</button>
+      </div>
+
+      <div class="cols" style="grid-template-columns:1fr 440px">
+        <div class="stack">
+          <div class="mod">
+            <div class="mod-h">
+              <span>Rack · Kit Single Gen 10 · 8 U</span>
+              <div class="r">
+                <div class="segc" role="group" aria-label="Rack view">
+                  <button type="button" aria-pressed="true" data-view="elev">Front view</button>
+                  <button type="button" aria-pressed="false" data-view="list">List</button>
+                </div>
+                <button class="btn sm" type="button" data-go="s-add">Edit in rack</button>
+              </div>
+            </div>
+            <div class="mod-b" id="view-elev">
+              <div class="drawing">
+                <div class="cap"><span>Front view · 1 U = 44.45 mm</span><span>U1 is the bottom slot</span></div>
+                <div data-rack="home"></div>
+                <div class="legend">
+                  <span><i class="f"></i>Disk bay in use in the saved plan</span>
+                  <span><i class="d"></i>Bay empty in the saved plan</span>
+                  <span><i class="pl"></i>Dashed unit: saved plan, never answered</span>
+                  <span><i class="s"></i>Selected</span>
+                </div>
+                <p class="foot">Disk bays are drawn from the saved plan, not from a drive read. No drive inventory was read today.</p>
+              </div>
+            </div>
+            <div class="mod-b" id="view-list" hidden>
+              <div class="tblwrap"><table class="tbl">
+                <thead><tr><th>Slot</th><th>Name</th><th>Model</th><th>Height</th><th>Provenance</th><th>Readiness</th></tr></thead>
+                <tbody>
+                  <tr><td class="num">U4</td><td>PDU 5</td><td>PDU (power strip), rack mount</td><td class="num">1 U</td><td><span class="prov saved">Saved plan</span></td><td><span class="lk">The app does not connect to PDUs</span></td></tr>
+                  <tr><td class="num">U3</td><td>Cisco switch 6</td><td>Catalyst 9300 · 24 ports + 4 fibre (SFP)</td><td class="num">1 U</td><td><span class="prov saved">Saved plan</span></td><td><span class="lk">Switch reading not supported yet</span></td></tr>
+                  <tr><td class="num">U2</td><td>PDU 4</td><td>PDU (power strip), rack mount</td><td class="num">1 U</td><td><span class="prov saved">Saved plan</span></td><td><span class="lk">The app does not connect to PDUs</span></td></tr>
+                  <tr class="sel"><td class="num">U1</td><td>HPE DL360 3</td><td>HPE DL360 Gen10 · plan: 8 of 10 bays</td><td class="num">1 U</td><td><span class="prov saved">Saved plan</span> <span class="prov proven">Reached 08:35</span></td><td>Reached · firmware not compared</td></tr>
+                </tbody>
+              </table></div>
+            </div>
+          </div>
+
+          <div class="mod">
+            <div class="mod-h"><span>Readiness · HPE DL360 3</span><span class="r gl">what is done and what waits</span></div>
+            <div class="mod-b ready">
+              <div class="cell"><span class="k">Connection</span><span class="v">Reached</span><span class="s"><span class="prov proven">Proven 08:35</span></span></div>
+              <div class="cell"><span class="k">Firmware</span><span class="v">Not compared</span><span class="s">Step 4 · compare with the HPE firmware bundle (SPP)</span></div>
+              <div class="cell"><span class="k">ESXi</span><span class="v">Not installed</span><span class="s">As recorded 24/09. ESXi is the VMware system that runs the VMs.<br><span class="lk">Locked · needs firmware review</span></span></div>
+              <div class="cell"><span class="k">Windows</span><span class="v">Not deployed</span><span class="s">A Windows VM (virtual machine) on ESXi.<br><span class="lk">Locked · needs ESXi</span></span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mod">
+          <div class="mod-h"><span>Selected · U1</span><span class="r"><span class="pill">Server</span></span></div>
+          <div class="mod-b">
+            <h3 style="font-size:20px">HPE DL360 3</h3>
+            <div class="gl" style="margin-top:2px">1 U · bottom slot U1 · reached today at 08:35</div>
+            <div class="provkey" style="margin-top:12px" aria-label="What the chips mean">
+              <span><span class="prov proven">Proven</span>the server told us today, at this time</span>
+              <span><span class="prov rec">Recorded</span>a past result, not a live check</span>
+              <span><span class="prov saved">Saved</span>you entered it</span>
+              <span><span class="prov suggested">Suggested</span>the app proposes it</span>
+              <span><span class="prov blank">Blank</span>not known yet</span>
+            </div>
+          </div>
+          <div class="mod-b" style="padding-top:0;padding-bottom:0">
+            <div class="kv"><span class="k">Connection</span><span class="v">Reached<small>iLO and ROM versions read</small></span><span class="prov proven">Proven 08:35</span></div>
+            <div class="kv"><span class="k">Model</span><span class="v">HPE DL360 Gen10</span><span class="prov saved">Saved plan</span></div>
+            <div class="kv"><span class="k">iLO address</span><span class="v">192.0.2.27<small>iLO = the server's built-in management port</small></span><span class="prov saved">Saved</span></div>
+            <div class="kv"><span class="k">Drive bays</span><span class="v">10<small>the DL360 takes up to 10</small></span><span class="prov saved">Saved plan</span></div>
+            <div class="kv"><span class="k">Bays in plan</span><span class="v">8<small class="nw">bays 1–4 and 6–9</small></span><span class="prov saved">Saved plan</span></div>
+            <div class="kv"><span class="k">Drives today</span><span class="v blank">Not read today<small>No current drive count yet</small></span><span class="prov blank">Blank</span></div>
+            <div class="kv"><span class="k">Erase record</span><span class="v">6 reviewed disks<small>Controller reported erase completion · recorded result, not a live check</small></span><span class="prov rec">Recorded 24/09 16:22</span></div>
+            <div class="kv" style="grid-template-columns:1fr">
+              <div class="notice">
+                <span class="tri" aria-hidden="true"></span>
+                <div><b>Saved plan and erase record differ.</b> The saved plan has <span class="nw">8 bays</span> in use; the 24/09 erase covered <span class="nw">6 reviewed disks</span>, listed by controller location. Controller locations are not front bay numbers, so they are not matched bay by bay. Refresh the drive inventory to get a current count.</div>
+                <div class="act"><button class="btn sm" type="button">Refresh drive inventory</button><span class="gl">Read-only · reads the current disks</span></div>
+                <div class="act"><button class="btn sm" type="button" disabled>Update plan from server</button><span class="why">No current drive inventory: refresh first</span></div>
+              </div>
+            </div>
+            <div class="kv"><span class="k">ESXi</span><span class="v">Not installed<small>as of the 24/09 erase record</small></span><span class="prov rec">Recorded 24/09</span></div>
+            <div class="kv"><span class="k">Windows VM</span><span class="v">Planned for step 6</span><span class="prov saved">Saved plan</span></div>
+          </div>
+          <div class="mod-b">
+            <details class="tech">
+              <summary>Technical details</summary>
+              <div class="mod-b">
+                <div class="kv"><span class="k">iLO firmware</span><span class="v">iLO 5 · v1.37</span><span class="prov proven">Proven 08:35</span></div>
+                <div class="kv"><span class="k">System ROM (BIOS)</span><span class="v">U32 · v1.46</span><span class="prov proven">Proven 08:35</span></div>
+                <div class="kv"><span class="k">Last read-only check</span><span class="v">Today 08:35 · reached; iLO and ROM versions read</span><span class="prov proven">Proven 08:35</span></div>
+                <div class="kv"><span class="k">Erase method</span><span class="v">Overwrite (device sanitize)<small>the disk's own overwrite command</small></span><span class="prov rec">Recorded 24/09</span></div>
+              </div>
+            </details>
+          </div>
+          <div class="mod-b act" style="justify-content:space-between">
+            <button class="btn quiet" type="button">Report an issue…</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ ADD EQUIPMENT ============ -->
+    <section id="s-add" class="screen" aria-labelledby="h-add" hidden>
+      <div class="shead">
+        <div>
+          <h2 id="h-add">Add equipment</h2>
+          <p class="lede">Drag a card onto a slot, or tap the card and then the slot. The preview names the slots and says what will move before anything is placed. Changes stay in this draft until you save the layout; nothing here touches hardware.</p>
+        </div>
+        <div class="acts col">
+          <div class="act">
+            <span class="lbl">Rack height</span>
+            <div class="stepper" role="group" aria-label="Rack height, 4 to 60 U">
+              <button type="button" id="uDown" aria-label="One slot lower">−</button>
+              <div class="val"><span id="rackU">08</span><small>U</small></div>
+              <button type="button" id="uUp" aria-label="One slot higher">+</button>
+            </div>
+            <span class="gl" id="uRange">Racks are 4 to 60 U</span>
+            <span class="why block" id="uWhy" hidden></span>
+          </div>
+          <div class="nextkey">
+            <button class="btn primary lg" type="button" id="addNext">Back to step 3 · Connect equipment</button>
+            <span class="gl" id="addNextGl">No unsaved changes. This key becomes Save layout when you change something.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="cols" style="grid-template-columns:280px 1fr 340px">
+        <div class="mod">
+          <div class="mod-h"><span>Hardware palette</span><span class="r gl">drag or tap</span></div>
+          <div class="mod-b palette">
+            <button class="card" type="button" draggable="true" data-name="HPE DL360" data-h="1" aria-pressed="false"><span class="glyph"><i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i></span><span><span class="t" style="display:block">HPE DL360</span><span class="s">Server · 1 U · up to 10 disk bays</span></span><span class="u">1U</span></button>
+            <button class="card" type="button" draggable="true" data-name="HPE DL380" data-h="2" aria-pressed="true"><span class="glyph h2"><i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i></span><span><span class="t" style="display:block">HPE DL380</span><span class="s">Server · 2 U · up to 24 disk bays</span></span><span class="u">2U</span></button>
+            <button class="card" type="button" draggable="true" data-name="Cisco switch" data-h="1" aria-pressed="false"><span class="glyph"><i class="p"></i><i class="p"></i><i class="p"></i><i class="p"></i><i class="p"></i><i class="p"></i><i class="p"></i><i class="p"></i></span><span><span class="t" style="display:block">Cisco switch</span><span class="s">1 U · 24 or 48 ports + 4 fibre ports (SFP)</span></span><span class="u">1U</span></button>
+            <button class="card" type="button" draggable="true" data-name="UPS" data-h="2" aria-pressed="false"><span class="glyph h2"><i class="o"></i></span><span><span class="t" style="display:block">UPS</span><span class="s">Battery backup · 2 U</span></span><span class="u">2U</span></button>
+            <button class="card" type="button" draggable="true" data-name="Eaton 5P 1550" data-h="1" aria-pressed="false"><span class="glyph"><i class="o"></i><i class="o"></i></span><span><span class="t" style="display:block">Eaton 5P 1550</span><span class="s">Battery backup (UPS) · 1 U</span></span><span class="u">1U</span></button>
+            <button class="card" type="button" draggable="true" data-name="PDU" data-h="1" aria-pressed="false"><span class="glyph"><i class="o"></i><i class="o"></i><i class="o"></i><i class="o"></i></span><span><span class="t" style="display:block">PDU</span><span class="s">Power strip · 1 U rack mount, or side mount (no slot)</span></span><span class="u">1U</span></button>
+            <button class="card" type="button" draggable="true" data-name="NetApp storage" data-h="2" aria-pressed="false"><span class="glyph h2"><i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i></span><span><span class="t" style="display:block">NetApp storage</span><span class="s">Disk shelf · 2 U · 24 bays</span></span><span class="u">2U</span></button>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="preview" role="status" aria-live="polite">
+            <span class="lcdmini" id="pvSlots">U5–U6</span>
+            <div><div class="pt" id="pvTitle">Preview · HPE DL380 (2 U) goes into U5 and U6.</div><div class="ps" id="pvSub">Both slots are free, so nothing moves. Tap U5, or release the card, to place it.</div></div>
+            <button class="btn sm" type="button" id="pvCancel">Cancel</button>
+          </div>
+          <div class="drawing">
+            <div class="cap"><span id="addCap">Front view · 8 U · 355.6 mm tall</span><span id="addFree">Free: U5–U8</span></div>
+            <div data-rack="add"></div>
+            <div class="legend"><span><i class="pv"></i>Drop or move preview</span><span><i class="f"></i>Disk bay in the saved plan</span><span><i class="d"></i>Bay empty in the plan</span><span><i class="pl"></i>Saved plan, never answered</span><span><i class="s"></i>Selected</span></div>
+          </div>
+          <div class="dropzone" id="removezone"><span><b>Remove from rack</b> · drag a placed unit here to take it out of this layout. Its saved details are kept until you choose Remove equipment.</span><span class="pill">Drop zone</span></div>
+        </div>
+
+        <div class="mod">
+          <div class="mod-h"><span>Selected · U1 · HPE DL360 3</span><span class="r"><button class="btn sm" type="button" id="moveBtn">Move…</button></span></div>
+          <div class="mod-b fgrid">
+            <div class="field"><label for="e-name">Name <span class="prov saved">Saved</span></label><input id="e-name" value="HPE DL360 3"></div>
+            <div class="field"><span class="lbl">Model <span class="prov saved">Saved plan</span></span><div class="ro">HPE DL360 Gen10</div><span class="hint">From the saved plan. Pick a different palette card to change the model.</span></div>
+            <div class="fgrid f2">
+              <div class="field"><label for="e-slot">Bottom slot <span class="prov saved">Saved</span></label><input id="e-slot" value="U1"></div>
+              <div class="field"><label for="e-h">Height <span class="prov saved">Saved</span></label><input id="e-h" value="1 U"></div>
+            </div>
+            <div class="field"><label for="e-bays">Drive-bay count <span class="prov saved">Saved plan</span></label><input id="e-bays" type="number" min="1" max="10" value="10" inputmode="numeric"><span class="hint">The DL360 Gen10 takes up to 10 bays.</span><span class="why block" id="baysWhy" hidden>The DL360 has at most 10 bays</span></div>
+            <div class="field">
+              <div class="lbl">Bays in the plan · tap to switch <span class="prov saved" id="bayChip">Saved plan · 8 of 10</span></div>
+              <div class="bays" role="group" aria-label="Drive bays in the saved plan" id="bayGrid"></div>
+              <div class="notice" id="bayNotice" style="margin-top:8px"><span class="tri" aria-hidden="true"></span><div id="bayNoticeText"><b>Saved plan vs recorded erase scope.</b> The plan has <span class="nw" id="bayPlanN">8 bays</span> in use; the 24/09 erase covered <span class="nw">6 reviewed disks</span>, listed by controller location, not front bay. No drive inventory was read today: use Refresh drive inventory on Connect equipment for a current count.</div><div class="act"><button class="btn sm" type="button" disabled>Update plan from server</button><span class="why">No current drive inventory: refresh first</span></div></div>
+              <div class="hint" style="margin-top:6px">When RAID is planned, two disks become the ESXi boot pair (a mirrored pair the server starts from). They never count as storage.</div>
+            </div>
+          </div>
+          <div class="mod-b act" style="justify-content:space-between">
+            <button class="btn quiet" type="button">Remove equipment…</button>
+            <span class="gl">Edits go into this draft as you type</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="act" style="justify-content:space-between;margin-top:24px;padding-top:16px;border-top:1px solid var(--hairline)">
+        <button class="btn" type="button">Load plan…</button>
+        <div class="act">
+          <span class="gl" id="unsaved">No unsaved changes · Save layout is the key at the top once you change something</span>
+          <button class="btn quiet" type="button">Save a copy…</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ NETWORK SETTINGS ============ -->
+    <section id="s-network" class="screen" aria-labelledby="h-net" hidden>
+      <div class="shead">
+        <div>
+          <h2 id="h-net">Network settings</h2>
+          <p class="lede">Addresses the build will give the server, ESXi and the Windows VM. Saved with the kit; nothing is sent to hardware from here.</p>
+        </div>
+        <div class="acts col">
+          <span class="prov saved">Step 2 done · saved</span>
+          <div class="nextkey">
+            <button class="btn primary lg" type="button" id="netNext">Back to step 3 · Connect equipment</button>
+            <span class="gl" id="netNextGl">Defaults are saved. This key becomes Save defaults when you edit a field.</span>
+          </div>
+        </div>
+      </div>
+      <div class="provkey row" style="margin-bottom:16px" aria-label="What the chips mean">
+        <span><span class="prov proven">Proven</span>the device told us, at this time</span>
+        <span><span class="prov saved">Saved</span>you entered it</span>
+        <span><span class="prov suggested">Suggested</span>the app proposes it</span>
+        <span><span class="prov blank">Blank</span>not known yet</span>
+      </div>
+
+      <div class="cols" style="grid-template-columns:1fr 1fr">
+        <div class="mod">
+          <div class="mod-h"><span>Addressing</span></div>
+          <div class="mod-b fgrid">
+            <div class="fgrid f2">
+              <div class="field"><label for="n-subnet">Subnet <span class="prov saved">Saved</span></label><input id="n-subnet" value="192.0.2.0/27"><span class="hint">The address range the lab uses (32 addresses).</span></div>
+              <div class="field"><label for="n-gw">Gateway <span class="prov saved">Saved</span></label><input id="n-gw" value="192.0.2.1"><span class="hint">The router address traffic leaves through.</span></div>
+            </div>
+            <div class="fgrid f3">
+              <div class="field"><label for="n-vlan">VLAN <span class="prov saved">Saved</span></label><input id="n-vlan" value="100"><span class="hint">Virtual network number the switch port uses.</span></div>
+              <div class="field"><label for="n-mtu">MTU <span class="prov suggested">Suggested</span></label><input id="n-mtu" value="1500"><span class="hint">Largest packet, in bytes. 1500 is the standard.</span></div>
+              <div class="field"><span class="lbl">VM storage <span class="prov saved">Saved</span></span><div class="segc" role="radiogroup" aria-label="VM storage"><button type="button" role="radio" aria-checked="true" aria-pressed="true">Local datastore</button><button type="button" role="radio" aria-checked="false" aria-pressed="false" disabled aria-describedby="vsanWhy">vSAN</button></div><span class="hint">Local: VM files live on the server's own disks.</span><span class="why" id="vsanWhy">vSAN needs 3 hosts and vCenter; this kit has 1 server</span></div>
+            </div>
+          </div>
+          <div class="mod-h" style="border-top:1px solid var(--hairline-2)"><span class="sechead">SNMP <span class="gl">monitoring, optional</span></span><div class="r togrow"><span class="st">On</span><button class="tog" type="button" role="switch" aria-checked="true" aria-label="SNMP"></button></div></div>
+          <div class="mod-b fgrid">
+            <div class="fgrid f2">
+              <div class="field"><label for="n-snmpv">Version <span class="prov saved">Saved</span></label><select id="n-snmpv"><option>v3</option></select><span class="hint">v3 signs in and encrypts.</span></div>
+              <div class="field"><label for="n-mgr1">Manager 1 <span class="prov saved">Saved</span></label><input id="n-mgr1" value="198.51.100.20"><span class="hint">The monitoring server that receives status.</span></div>
+            </div>
+            <div class="act"><button class="btn sm" type="button">Add manager</button></div>
+          </div>
+        </div>
+
+        <div class="mod">
+          <div class="mod-h"><span class="sechead">DNS <span class="gl">turns names into addresses</span></span><div class="r togrow"><span class="st">On</span><button class="tog" type="button" role="switch" aria-checked="true" aria-label="DNS"></button></div></div>
+          <div class="mod-b fgrid">
+            <div class="dns">
+              <div class="field"><label for="d1">Server 1 <span class="prov saved">Saved</span></label><input id="d1" value="198.51.100.10"></div>
+              <div class="field"><label for="d2">Server 2 <span class="prov saved">Saved</span></label><input id="d2" value="198.51.100.11"></div>
+              <div class="field"><label for="d3">Server 3 <span class="prov saved">Saved</span></label><input id="d3" value="198.51.100.12"></div>
+              <div class="field"><label for="d4">Server 4 <span class="prov blank">Blank</span></label><input id="d4" value="" placeholder="empty"></div>
+              <div class="field"><label for="d5">Server 5 <span class="prov blank">Blank</span></label><input id="d5" value="" placeholder="empty"></div>
+              <div class="field"><label for="d6">Server 6 <span class="prov blank">Blank</span></label><input id="d6" value="" placeholder="empty"></div>
+              <div class="field"><label for="d7">Server 7 <span class="prov blank">Blank</span></label><input id="d7" value="" placeholder="empty"></div>
+              <div class="field"><label for="d8">Server 8 <span class="prov blank">Blank</span></label><input id="d8" value="" placeholder="empty"></div>
+            </div>
+            <span class="hint gl">Up to 8 servers, asked in order.</span>
+            <div class="field"><label for="n-dom">Domain <span class="prov blank">Blank</span></label><input id="n-dom" value="" placeholder="not set"><span class="hint">Optional. Leave empty if the lab has no domain name.</span></div>
+          </div>
+          <div class="mod-h" style="border-top:1px solid var(--hairline-2)"><span class="sechead">NTP <span class="gl">keeps clocks in time</span></span><div class="r togrow"><span class="st">Off</span><button class="tog" type="button" role="switch" aria-checked="false" aria-label="NTP"></button></div></div>
+          <div class="mod-b fgrid">
+            <div class="fgrid f2">
+              <div class="field"><label for="n-ntp">Servers <span class="prov blank">Blank</span></label><input id="n-ntp" value="" placeholder="none" disabled></div>
+              <div class="field"><label for="n-tz">Time zone <span class="prov blank">Blank</span></label><input id="n-tz" value="" placeholder="none" disabled></div>
+            </div>
+            <span class="why">NTP is off. Turn it on to set servers and a time zone.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="act" style="justify-content:space-between;margin-top:24px;padding-top:16px;border-top:1px solid var(--hairline)">
+        <button class="btn quiet" type="button" id="netReset">Reset to last saved</button>
+        <span class="gl">Save defaults is the key at the top once you edit a field</span>
+      </div>
+    </section>
+
+    <!-- ============ CONNECT EQUIPMENT ============ -->
+    <section id="s-connect" class="screen" aria-labelledby="h-con" hidden>
+      <div class="shead">
+        <div>
+          <h2 id="h-con">Connect equipment</h2>
+          <p class="lede">The app reads the server through its iLO (the server's built-in management port). Reading changes nothing. Each result below says when it was recorded and whether it is today's proof or a past record.</p>
+        </div>
+        <div class="acts"><span class="prov proven">Reached 08:35 today</span></div>
+      </div>
+
+      <div class="cols" style="grid-template-columns:300px 1fr">
+        <div class="stack">
+          <div class="mod">
+            <div class="mod-h"><span>Equipment</span></div>
+            <div class="mod-b list">
+              <button class="pick" type="button" aria-pressed="true"><span class="slot">U1</span><span class="t">HPE DL360 3 <span class="prov proven">Reached 08:35</span></span><span class="s">iLO 192.0.2.27 · answered</span></button>
+              <button class="pick" type="button" disabled><span class="slot">U3</span><span class="t">Cisco switch 6 <span class="prov saved">Saved</span></span><span class="s lk">Switch reading not supported</span></button>
+              <button class="pick" type="button" disabled><span class="slot">U2</span><span class="t">PDU 4 <span class="prov saved">Saved</span></span><span class="s lk">The app does not connect to PDUs</span></button>
+              <button class="pick" type="button" disabled><span class="slot">U4</span><span class="t">PDU 5 <span class="prov saved">Saved</span></span><span class="s lk">The app does not connect to PDUs</span></button>
+            </div>
+          </div>
+          <div class="mod">
+            <div class="mod-h"><span>iLO · HPE DL360 3</span></div>
+            <div class="mod-b fgrid">
+              <div class="field"><label for="c-addr">Current iLO address <span class="prov saved">Saved</span></label><input id="c-addr" value="192.0.2.27"><span class="hint">Where the management port answers.</span></div>
+              <div class="field withbtn"><div class="field"><label for="c-user">Username <span class="prov saved">Saved</span></label><input id="c-user" value="saved in kit" readonly></div><button class="btn" type="button">Change…</button></div>
+              <div class="field withbtn"><div class="field"><label for="c-pass">Password <span class="prov saved">Saved</span></label><input id="c-pass" value="••••••••••••" readonly></div><button class="btn" type="button">Change…</button></div>
+              <div class="togrow" style="align-items:flex-start"><button class="tog" type="button" role="switch" aria-checked="false" aria-label="Verify TLS certificate" data-tls="c"></button><div><div class="lab">Verify TLS certificate <span class="st">Off</span></div><div class="gl" data-tls-text data-off="Off: the connection is encrypted, but the iLO's identity is not checked, because its certificate is self-signed (made by the iLO itself). Turn this on once a trusted certificate is installed." data-on="On: the iLO's identity is checked. Its certificate is self-signed, so the next check fails until a trusted certificate is installed or this one is trusted.">Off: the connection is encrypted, but the iLO's identity is not checked, because its certificate is self-signed (made by the iLO itself). Turn this on once a trusted certificate is installed.</div></div></div>
+            </div>
+            <div class="mod-b act" style="justify-content:space-between">
+              <span class="prov proven">Reached 08:35 · iLO 5 v1.37</span>
+              <span class="act" style="gap:8px"><span class="gl">Checks the iLO answers</span><button class="btn" type="button">Check again</button></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="mod" id="result">
+            <div class="mod-h"><span>Drives &amp; RAID · HPE DL360 3</span><div class="r"><span class="gl">Reads the current disks · read-only</span><button class="btn sm" type="button">Refresh drive inventory</button></div></div>
+            <div class="mod-b">
+              <div class="result">
+                <div>
+                  <h3><span class="okc" aria-hidden="true">✓</span>Disk erasure verified · 6 reviewed disks</h3>
+                  <p class="gl" style="margin-top:4px;font-size:13px;line-height:18px">The storage controller reported erase completion for each of the 6 reviewed disks after erase activity was observed. Method: Overwrite (device sanitize), the disk's own overwrite command. No arrays were created and ESXi was not installed.</p>
+                  <p style="margin-top:6px"><span class="prov rec">Recorded 24/09 16:22</span> <span class="gl">recorded result, not a live check</span></p>
+                </div>
+                <div class="side">
+                  <button class="btn primary lg" type="button">Plan new RAID</button>
+                  <span class="gl" style="max-width:260px">RAID groups the disks. Planning writes nothing; 2 disks become the ESXi boot pair and never count as storage.</span>
+                </div>
+              </div>
+              <div class="req" id="alerts" role="status">
+                <span class="tri" aria-hidden="true"></span>
+                <div><b>Required before firmware approval: review the 10 hardware alerts.</b><span class="s">Recorded before the erase was requested at 14:34 on 24/09. Their current state is unknown; a current check is required.</span></div>
+                <button class="btn sm" type="button" data-dialog="alerts">Review the 10 alerts</button>
+              </div>
+              <div class="stages">
+                <div class="stage done"><span class="k">1 · Erase requested</span><span class="v">24/09 14:34</span><span class="s">Sent after you confirmed</span></div>
+                <div class="stage done"><span class="k">2 · Power-on requested</span><span class="v">24/09 14:35</span><span class="s">Confirmed separately</span></div>
+                <div class="stage done"><span class="k">3 · Verified</span><span class="v">24/09 16:22</span><span class="s">Controller reported completion for each disk</span></div>
+              </div>
+            </div>
+            <div class="mod-b">
+              <div class="tblwrap"><table class="tbl">
+                <thead><tr><th>Controller location</th><th>Model</th><th>Size</th><th>Type</th><th>Method</th><th>Recorded result</th></tr></thead>
+                <tbody>
+                  <tr><td class="num">1I:1:1</td><td class="num">EG000300JWEBF</td><td class="num">300 GB</td><td>HDD</td><td>Overwrite (device sanitize)</td><td><span class="ok">Completion reported</span></td></tr>
+                  <tr><td class="num">1I:1:2</td><td class="num">EG000300JWEBF</td><td class="num">300 GB</td><td>HDD</td><td>Overwrite (device sanitize)</td><td><span class="ok">Completion reported</span></td></tr>
+                  <tr><td class="num">2I:1:5</td><td class="num">EG001200JWJNQ</td><td class="num">1200 GB</td><td>HDD</td><td>Overwrite (device sanitize)</td><td><span class="ok">Completion reported</span></td></tr>
+                  <tr><td class="num">2I:1:6</td><td class="num">EG001200JWJNQ</td><td class="num">1200 GB</td><td>HDD</td><td>Overwrite (device sanitize)</td><td><span class="ok">Completion reported</span></td></tr>
+                  <tr><td class="num">2I:1:7</td><td class="num">EG001200JWJNQ</td><td class="num">1200 GB</td><td>HDD</td><td>Overwrite (device sanitize)</td><td><span class="ok">Completion reported</span></td></tr>
+                  <tr><td class="num">2I:1:8</td><td class="num">EG001200JWJNQ</td><td class="num">1200 GB</td><td>HDD</td><td>Overwrite (device sanitize)</td><td><span class="ok">Completion reported</span></td></tr>
+                </tbody>
+              </table></div>
+              <p class="foot">Location as the storage controller reports it: port, box, bay. It is not the same as the front bay number. HDD is a spinning hard disk. Models are HPE part numbers. All six rows come from the 24/09 16:22 record; they are not a live check, and no drive inventory was read today.</p>
+            </div>
+          </div>
+
+          <div class="mod">
+            <div class="mod-h"><span>Other disk actions · each opens its own dialog</span></div>
+            <div class="mod-b groups">
+              <div class="grp">
+                <div class="gh">Read-only · changes nothing</div>
+                <div class="row"><button class="btn" type="button" data-dialog="report">Erasure report…</button><span>The 24/09 record, to read or save</span></div>
+                <div class="row"><button class="btn" type="button" data-dialog="diag">Diagnostics…</button><span>Reads the storage controller and power supplies</span></div>
+              </div>
+              <div class="grp danger">
+                <div class="gh"><span class="tri" aria-hidden="true"></span>Changes that delete data · you confirm first</div>
+                <div class="row"><button class="btn" type="button" data-dialog="erase">Erase disks again…</button><span>Deletes all data on the 6 reviewed disks</span></div>
+                <div class="row"><button class="btn" type="button" data-dialog="recover">Advanced recovery…</button><span>Removes old RAID settings left on the disks; deletes data</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="act" style="justify-content:space-between;margin-top:24px;padding-top:16px;border-top:1px solid var(--hairline)">
+        <span class="gl">Firmware can be checked before or after you plan RAID. Approving firmware waits for the alert review; creating RAID waits for the firmware review.</span>
+        <button class="btn" type="button" data-go="s-firmware">Continue to Check firmware</button>
+      </div>
+    </section>
+
+    <!-- ============ CHECK FIRMWARE ============ -->
+    <section id="s-firmware" class="screen" aria-labelledby="h-fw" hidden>
+      <div class="shead">
+        <div>
+          <h2 id="h-fw">Check firmware</h2>
+          <p class="lede">Compare what each device reported with the HPE firmware bundle (SPP, the Service Pack for ProLiant). Comparing only reads. Approving an upgrade is a separate, guarded step.</p>
+        </div>
+      </div>
+
+      <div class="mod" style="margin-bottom:24px">
+        <div class="mod-b" style="display:grid;grid-template-columns:minmax(320px,440px) auto auto 1fr;gap:12px;align-items:end">
+          <div class="field"><label for="spp">Selected SPP package <span class="prov saved">Saved</span></label><input id="spp" value="P95170_001_gen10spp-2026.05.00.00" readonly></div>
+          <button class="btn" type="button">Change package…</button>
+          <button class="btn text" type="button">Get HPE SPP link</button>
+          <span class="gl" style="justify-self:end;align-self:center">The bundle file stays on this computer</span>
+        </div>
+      </div>
+
+      <div class="cols" style="grid-template-columns:1fr 360px">
+        <div class="mod">
+          <div class="mod-h"><span>Devices · against SPP 2026.05.00.00</span></div>
+          <div class="mod-b tblwrap" style="padding:0">
+            <table class="tbl">
+              <thead><tr><th>Device</th><th>Component</th><th>Reading</th><th>Provenance</th><th>Against SPP</th><th></th></tr></thead>
+              <tbody>
+                <tr><td rowspan="2"><b>HPE DL360 3</b><br><span class="dim">U1 · HPE DL360 Gen10</span></td><td>iLO 5<br><span class="dim">management port</span></td><td class="num">v1.37</td><td><span class="prov proven">Proven 08:35</span></td><td rowspan="2">Not compared yet</td><td rowspan="2" style="text-align:right"><button class="btn primary" type="button">Check against SPP</button><br><span class="gl">read-only</span></td></tr>
+                <tr><td>System ROM U32<br><span class="dim">the server's BIOS</span></td><td class="num">v1.46</td><td><span class="prov proven">Proven 08:35</span></td></tr>
+                <tr><td><b>Cisco switch 6</b><br><span class="dim">U3 · Catalyst 9300</span> <span class="prov saved">Saved plan</span></td><td>IOS<br><span class="dim">switch software</span></td><td class="num" style="color:var(--muted)">—</td><td><span class="prov blank">Blank</span></td><td>Not applicable</td><td style="text-align:right"><button class="btn sm" type="button" disabled>Read firmware</button><br><span class="why">Switch reading not supported yet</span></td></tr>
+                <tr><td><b>PDU 4</b>, <b>PDU 5</b></td><td>—</td><td class="num" style="color:var(--muted)">—</td><td><span class="prov blank">Blank</span></td><td>Not applicable</td><td style="text-align:right"><span class="why">The app does not check PDUs</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mod-b act" style="justify-content:space-between;align-items:flex-start">
+            <span class="act" style="align-items:flex-start"><button class="btn" type="button" disabled>Review upgrades</button><span class="whylist"><span class="why">Nothing compared yet</span><span class="why block">Review the 10 alerts before firmware approval</span></span></span>
+            <span class="act" style="align-items:flex-start"><span class="whylist"><span class="why block">Compare HPE DL360 3 with the SPP</span><span class="why block">Review and approve firmware</span></span><button class="btn" type="button" disabled>Continue to Prepare ESXi</button></span>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="alert" role="status">
+            <span class="n">10</span>
+            <div><div class="t">Required before firmware approval</div><div class="s">10 hardware alerts recorded before the erase; current state unknown. A current check is required.</div></div>
+            <button class="btn sm" type="button" data-dialog="alerts">Review the 10 alerts</button>
+          </div>
+          <div class="mod">
+            <div class="mod-h"><span>Readings</span><span class="r gl">each with its source</span></div>
+            <div class="mod-b" style="padding-top:0;padding-bottom:0">
+              <div class="kv"><span class="k">HPE DL360 3 · iLO 5</span><span class="v">v1.37</span><span class="prov proven">08:35 today</span></div>
+              <div class="kv"><span class="k">HPE DL360 3 · ROM</span><span class="v">U32 v1.46</span><span class="prov proven">08:35 today</span></div>
+              <div class="kv"><span class="k">Cisco switch 6</span><span class="v blank">No reading</span><span class="prov blank">Blank</span></div>
+              <div class="kv"><span class="k">SPP package</span><span class="v">2026.05.00.00</span><span class="prov saved">Saved</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FIRST CONTACT FAILED ============ -->
+    <section id="s-fail" class="screen" aria-labelledby="h-fail" hidden>
+      <div class="shead">
+        <div>
+          <h2 id="h-fail">Connect equipment</h2>
+          <p class="lede">The iLO at 192.0.2.27 refused the check. Nothing was changed.</p>
+        </div>
+      </div>
+
+      <div class="cols" style="grid-template-columns:300px 1fr">
+        <div class="mod">
+          <div class="mod-h"><span>iLO · HPE DL360 3</span></div>
+          <div class="mod-b fgrid">
+            <div class="field"><label for="f-addr">Current iLO address <span class="prov saved">Saved</span></label><input id="f-addr" value="192.0.2.27"></div>
+            <div class="field withbtn"><div class="field"><label for="f-user">Username <span class="prov saved">Saved</span></label><input id="f-user" value="saved in kit" readonly></div><button class="btn" type="button">Change…</button></div>
+            <div class="field withbtn"><div class="field"><label for="f-pass">Password <span class="prov saved">Saved</span></label><input id="f-pass" value="••••••••••••" readonly></div><button class="btn" type="button">Change…</button></div>
+            <div class="togrow" style="align-items:flex-start"><button class="tog" type="button" role="switch" aria-checked="true" aria-label="Verify TLS certificate" data-tls="f"></button><div><div class="lab">Verify TLS certificate <span class="st">On</span></div><div class="gl" data-tls-text data-on="On: this is what refused the check. The iLO's certificate is self-signed, so this computer cannot confirm the iLO's identity." data-off="Off for 192.0.2.27: the connection is encrypted, but the iLO's identity is not checked. Turn this on once a trusted certificate is installed.">On: this is what refused the check. The iLO's certificate is self-signed, so this computer cannot confirm the iLO's identity.</div></div></div>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="fail" role="alert">
+            <div class="fh"><h3><i>!</i>Certificate not trusted</h3><span class="act"><span class="pill">Read-only check · nothing changed</span><button class="btn primary" type="button">Check connection again</button></span></div>
+            <div class="fb">
+              <div><h4>What was tried</h4><p style="font-size:13px">A read-only check of the iLO's Redfish service (its standard management interface) at 192.0.2.27, with certificate verification on. The iLO answered, then this computer refused the connection because it does not trust the iLO's certificate.</p></div>
+              <div><h4>What it means</h4><p style="font-size:13px">The iLO's certificate is self-signed (made by the iLO itself), so this computer cannot confirm the iLO is the device it claims to be. It is not a password problem and not a network problem. The username and password were never sent.</p></div>
+              <div><h4>What to check, in order</h4><ol style="font-size:13px">
+                <li>Confirm 192.0.2.27 is the iLO you expect.</li>
+                <li>Trust this certificate after comparing its fingerprint:<div class="act" style="margin-top:6px"><button class="btn sm" type="button">Trust this certificate…</button><span class="gl">Shows the fingerprint first; saves nothing until you confirm</span></div></li>
+                <li>If you cannot compare it yet, you can turn off Verify TLS certificate for this iLO. The connection stays encrypted, but the iLO's identity is no longer checked. It asks you to confirm, and you can turn it on again once a trusted certificate is installed.</li>
+                <li>Press Check connection again.</li></ol></div>
+            </div>
+          </div>
+
+          <div class="mod">
+            <div class="mod-h"><span>HPE DL360 3 · nothing proven yet</span></div>
+            <div class="mod-b" style="padding-top:0;padding-bottom:0">
+              <div class="kv"><span class="k">Model</span><span class="v blank">Not yet answered</span><span class="prov blank">Blank</span></div>
+              <div class="kv"><span class="k">Drive bays</span><span class="v blank">Not yet answered</span><span class="prov blank">Blank</span></div>
+              <div class="kv"><span class="k">Drives</span><span class="v blank">Not yet answered</span><span class="prov blank">Blank</span></div>
+              <div class="kv"><span class="k">iLO address</span><span class="v">192.0.2.27</span><span class="prov saved">Saved</span></div>
+            </div>
+            <div class="mod-b act" style="justify-content:space-between">
+              <span class="why block">Drives &amp; RAID stays closed until the iLO answers</span>
+              <button class="btn" type="button" disabled>Plan new RAID</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+  </div>
+
+  <div class="scrim" id="scrim" hidden><div class="modal" id="modal" role="dialog" aria-modal="true" aria-label="Dialog"></div></div>
+
+  <!-- ============ DESIGNER'S NOTE ============ -->
+  <section class="note" aria-labelledby="h-note">
+    <div>
+      <h2 id="h-note">Designer's note</h2>
+      <h3>Audience</h3>
+      <p>Professional operators who expect the precision of a bench instrument, and the lab technician who works beside them. They read a value, its unit and its source in one glance. Every technical word gets a short plain gloss the first time it appears on a screen.</p>
+      <h3>Metaphor</h3>
+      <p>A Rams / Braun / Teenage Engineering console. Off-white surfaces, graphite type, hairline rules on an 8 px grid, embossed keys, knurled steppers, and LCD readouts with ghost segments. The Step readout is a status display; the Blockers readout is a key that goes to the first blocker. The rack is a front view with U ticks and a dimension line.</p>
+      <h3>Colour has one meaning each</h3>
+      <p><b>Graphite</b>: selected, switched on, and the screen you are viewing. <b>Signal red</b>: the one next key on a screen, the current step marker, and blockers that stop progress (with a square). <b>Green</b>: current proof only, bound to this server with its time (reached 08:35, iLO 5 v1.37, System ROM U32 v1.46). A recorded past result, such as the 24/09 erase, is graphite with its date and the words “recorded result, not a live check”. Saved-plan values are graphite too; toggles and decoration never use green. <b>Amber</b>: a disagreement or a change that deletes data. Limits that are simply not supported are muted text with a lock.</p>
+      <h3>Type pairing</h3>
+      <p><b>Archivo</b> (400–700) for labels, headings and prose, a plain grotesk in the Akzidenz tradition. <b>IBM Plex Mono</b> (400–600) with tabular numerals for every readout, address, version, time and unit. Fallbacks: Helvetica Neue / Arial and Cascadia Mono / Consolas.</p>
+      <h3>Narrow widths</h3>
+      <p>Between 900 and 1280 px the fixed console scrolls inside its own frame, and each screen's next key and the Blockers readout move to the left so they stay in view. Below 900 px the console restacks: readouts in two columns, the step rail in two columns, every screen in one column, wide tables scroll inside their own box. Below 560 px everything is one column.</p>
+    </div>
+    <div>
+      <h3>Palette · light</h3>
+      <div class="swatches">
+        <div class="sw"><i style="background:#E7E5DF"></i><span><b>Bone</b>#E7E5DF surface</span></div>
+        <div class="sw"><i style="background:#F5F4F0"></i><span><b>Panel</b>#F5F4F0</span></div>
+        <div class="sw"><i style="background:#DCD9D1"></i><span><b>Recess</b>#DCD9D1</span></div>
+        <div class="sw"><i style="background:#1E1F22"></i><span><b>Ink</b>#1E1F22</span></div>
+        <div class="sw"><i style="background:#2A2C30"></i><span><b>Graphite</b>#2A2C30 selected / on</span></div>
+        <div class="sw"><i style="background:#5E6167"></i><span><b>Muted</b>#5E6167 text</span></div>
+        <div class="sw"><i style="background:#B4B1A9"></i><span><b>Hairline</b>#B4B1A9</span></div>
+        <div class="sw"><i style="background:#CC3820"></i><span><b>Signal key</b>#CC3820 → #B32C16</span></div>
+        <div class="sw"><i style="background:#A8230F"></i><span><b>Blocker text</b>#A8230F</span></div>
+        <div class="sw"><i style="background:#1A6B3E"></i><span><b>Proof green</b>#1A6B3E</span></div>
+        <div class="sw"><i style="background:#7A5A00"></i><span><b>Caution</b>#7A5A00</span></div>
+        <div class="sw"><i style="background:#C2CBB6"></i><span><b>LCD glass</b>#C2CBB6</span></div>
+      </div>
+      <h3>Palette · dark</h3>
+      <div class="swatches">
+        <div class="sw"><i style="background:#151618"></i><span><b>Surface</b>#151618</span></div>
+        <div class="sw"><i style="background:#1F2023"></i><span><b>Panel</b>#1F2023</span></div>
+        <div class="sw"><i style="background:#E9E7E1"></i><span><b>Ink</b>#E9E7E1</span></div>
+        <div class="sw"><i style="background:#D6D3CB"></i><span><b>Graphite</b>#D6D3CB</span></div>
+        <div class="sw"><i style="background:#F0533C"></i><span><b>Signal red</b>#F0533C</span></div>
+        <div class="sw"><i style="background:#5CCB8C"></i><span><b>Proof green</b>#5CCB8C</span></div>
+        <div class="sw"><i style="background:#E2B65A"></i><span><b>Caution</b>#E2B65A</span></div>
+        <div class="sw"><i style="background:#1E2A22"></i><span><b>LCD backlit</b>#1E2A22</span></div>
+      </div>
+    </div>
+
+    <div class="full">
+      <h3>Specimens · dialogs that open from keys on Connect equipment</h3>
+      <p class="gl" style="margin-bottom:12px">Drawn open here so they can be reviewed; in the product each opens as a modal from its key. Commands are never invented: a write shows the request the app renders from its preview data, then a separate typed confirmation, then sending, then the completion rule.</p>
+      <div class="specs">
+        <div>
+          <div class="specnote">Opens from “Erase disks again…”</div>
+          <div class="dialog" id="spec-erase">
+            <div class="dh"><h3>Erase disks again · HPE DL360 3</h3><span class="pill danger">Deletes data</span></div>
+            <div class="dsum"><span class="tri" aria-hidden="true"></span><span>Deletes all data on the 6 reviewed disks. Nothing is sent until you confirm in step 2, and power-on is confirmed separately after that.</span></div>
+            <div class="dstage done"><span class="n">1</span><div><h4>Preview · shown from the app's preview</h4><div class="hint" style="margin:0 0 6px">One grouped conditional PATCH to this server's SmartStorageConfig settings, with this body:</div><div class="cmd">{
+  "DataGuard": "Disabled",
+  "LogicalDrives": [],
+  "Actions": [{
+    "Action": "PhysicalDriveErase",
+    "ErasePattern": "SanitizeRestrictedOverwrite",
+    "PhysicalDriveList": ["1I:1:1", "1I:1:2", "2I:1:5",
+                          "2I:1:6", "2I:1:7", "2I:1:8"]
+  }]
+}</div><div class="hint">DataGuard Disabled lets the controller accept this destructive change. LogicalDrives [] means no arrays are kept. SanitizeRestrictedOverwrite is device sanitize: the disk's own overwrite command. The list is exactly the 6 reviewed disks, by controller location.</div></div></div>
+            <div class="dstage on"><span class="n">2</span><div><h4>Confirm · type the server name to unlock Send</h4><div class="fgrid" style="gap:8px;margin-top:4px"><div class="field"><label for="ce-conf">Type HPE DL360 3</label><input id="ce-conf" value="" placeholder="server name" data-confirm="HPE DL360 3" autocomplete="off"></div><div class="act"><button class="btn primary" type="button" data-send disabled>Send erase to 6 disks on HPE DL360 3</button><span class="why block">Type HPE DL360 3 exactly to unlock this key</span></div></div></div></div>
+            <div class="dstage todo"><span class="n">3</span><div><h4>Sending, then accepted, pending, uncertain or failed</h4><div class="hint">Replaces this form once sent. A missing answer never retries by itself. After the iLO accepts, “Power on to apply…” appears here as its own key with its own confirmation; the erase runs only after power-on.</div></div></div>
+            <div class="dstage todo"><span class="n">4</span><div><h4>Completion</h4><div class="hint">Each disk must show erase activity and then report completion; progress percentage may not be reported. Last time, power-on to verified took about 1 h 47 min.</div></div></div>
+            <div class="mod-b act end"><button class="btn quiet" type="button" data-close>Close without sending</button></div>
+          </div>
+        </div>
+        <div>
+          <div class="specnote">Opens from “Advanced recovery…”</div>
+          <div class="dialog" id="spec-recover">
+            <div class="dh"><h3>Advanced recovery · remove old RAID settings</h3><span class="pill danger">Deletes data</span></div>
+            <div class="dsum"><span class="tri" aria-hidden="true"></span><span>Removes RAID settings (metadata) an earlier setup left on the disks of HPE DL360 3. Any data they described is lost. This is not a repair for a failing disk.</span></div>
+            <div class="dstage done"><span class="n">1</span><div><h4>Preview · shown from the app's preview</h4><div class="cmd" style="color:var(--muted)">The app shows the exact request from its preview here before you confirm. This design does not print one.</div></div></div>
+            <div class="dstage on"><span class="n">2</span><div><h4>Confirm · type the server name to unlock Send</h4><div class="fgrid" style="gap:8px;margin-top:4px"><div class="field"><label for="cr-conf">Type HPE DL360 3</label><input id="cr-conf" value="" placeholder="server name" data-confirm="HPE DL360 3" autocomplete="off"></div><div class="act"><button class="btn primary" type="button" data-send disabled>Send settings removal to HPE DL360 3</button><span class="why block">Type HPE DL360 3 exactly to unlock this key</span></div></div></div></div>
+            <div class="dstage todo"><span class="n">3</span><div><h4>Sending, then accepted, pending, uncertain or failed</h4><div class="hint">A missing answer never retries by itself.</div></div></div>
+            <div class="dstage todo"><span class="n">4</span><div><h4>Verify</h4><div class="hint">The controller configuration is read again to show whether any RAID settings remain.</div></div></div>
+            <div class="mod-b act end"><button class="btn quiet" type="button" data-close>Close without sending</button></div>
+          </div>
+        </div>
+        <div>
+          <div class="specnote">Opens from “Diagnostics…”</div>
+          <div class="dialog" id="spec-diag">
+            <div class="dh"><h3>Diagnostics · HPE DL360 3</h3><span class="pill">Read-only</span></div>
+            <div class="dsum"><span>Reads the storage controller and the power supplies. Changes nothing, so there is no typed confirmation. Hardware alerts are read from “Review the 10 alerts”.</span></div>
+            <div class="dstage done"><span class="n">1</span><div><h4>What is read · shown from the app's preview</h4><div class="cmd" style="color:var(--muted)">Storage controller status and power supply status, read-only. The app shows its exact read requests here from its preview.</div></div></div>
+            <div class="dstage on"><span class="n">2</span><div><h4>Run</h4><div class="act" style="margin-top:4px"><button class="btn primary" type="button">Run read-only diagnostics</button></div></div></div>
+            <div class="dstage todo"><span class="n">3</span><div><h4>Results, each with the time it was read</h4><div class="hint">Unresolved errors stay visible here until a later read clears them.</div></div></div>
+            <div class="mod-b act end"><button class="btn quiet" type="button" data-close>Close</button></div>
+          </div>
+        </div>
+        <div>
+          <div class="specnote">Opens from “Erasure report…”</div>
+          <div class="dialog" id="spec-report">
+            <div class="dh"><h3>Erasure report · HPE DL360 3</h3><span class="pill">Read-only</span></div>
+            <div class="mod-b" style="padding-top:4px;padding-bottom:4px">
+              <div class="kv"><span class="k">Operation</span><span class="v">Disk erase<small>Method: Overwrite (device sanitize), the disk's own overwrite command</small></span><span></span></div>
+              <div class="kv"><span class="k">Server</span><span class="v">HPE DL360 3 · 192.0.2.27</span><span class="prov saved">Saved</span></div>
+              <div class="kv"><span class="k">Erase requested</span><span class="v">24/09 14:34</span><span class="prov rec">Recorded</span></div>
+              <div class="kv"><span class="k">Power-on requested</span><span class="v">24/09 14:35</span><span class="prov rec">Recorded</span></div>
+              <div class="kv"><span class="k">Result</span><span class="v">Disk erasure verified<small>Controller reported erase completion for the 6 reviewed disks after erase activity was observed · recorded result, not a live check</small></span><span class="prov rec">Recorded 24/09 16:22</span></div>
+              <div class="kv"><span class="k">Reviewed disks</span><span class="v" style="font-size:12px;line-height:18px">1I:1:1 · EG000300JWEBF · 300 GB HDD<br>1I:1:2 · EG000300JWEBF · 300 GB HDD<br>2I:1:5 · EG001200JWJNQ · 1200 GB HDD<br>2I:1:6 · EG001200JWJNQ · 1200 GB HDD<br>2I:1:7 · EG001200JWJNQ · 1200 GB HDD<br>2I:1:8 · EG001200JWJNQ · 1200 GB HDD<small>Controller locations, not front bay numbers</small></span><span class="prov rec">Recorded</span></div>
+              <div class="kv"><span class="k">Also recorded</span><span class="v">No arrays created · ESXi not installed</span><span class="prov rec">Recorded</span></div>
+            </div>
+            <div class="mod-b act end"><button class="btn" type="button">Save report as a file…</button><button class="btn quiet" type="button" data-close>Close</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="specs" style="margin-top:16px">
+        <div>
+          <div class="specnote">Opens from “Review the 10 alerts” (Connect equipment and Check firmware)</div>
+          <div class="dialog" id="spec-alerts">
+            <div class="dh"><h3>Review the 10 alerts · HPE DL360 3</h3><span class="pill">Read-only</span></div>
+            <div class="dsum"><span class="tri" aria-hidden="true"></span><span>10 hardware alerts were recorded before the erase was requested at 14:34 on 24/09. Their current state is unknown. A current check is required before any firmware approval. Acknowledging an alert only records that you saw it; it never clears health.</span></div>
+            <div class="dstage done"><span class="n">1</span><div><h4>What is read</h4><div class="hint" style="margin-top:0">The server's health log (IML, the integrated management log), read-only. The app shows its exact read request here from its preview.</div></div></div>
+            <div class="dstage on"><span class="n">2</span><div><h4>Read the current state</h4><div class="act" style="margin-top:4px"><button class="btn primary" type="button">Read current alert state</button></div></div></div>
+            <div class="dstage todo"><span class="n">3</span><div><h4>Results</h4><div class="hint">Each of the 10 alerts with its recorded time and its state now, as the log returns them. This design does not draw alert contents.</div></div></div>
+            <div class="mod-b act end"><button class="btn quiet" type="button" data-close>Close</button></div>
+          </div>
+        </div>
+        <div>
+          <div class="specnote">Opens when you switch Verify TLS certificate off</div>
+          <div class="dialog" id="spec-tlsoff">
+            <div class="dh"><h3>Turn off certificate verification for 192.0.2.27?</h3><span class="pill danger">Weakens a check</span></div>
+            <div class="dsum"><span class="tri" aria-hidden="true"></span><span>The connection stays encrypted, but the app no longer checks that 192.0.2.27 is the iLO it claims to be. Prefer Trust this certificate… after comparing its fingerprint. Turn verification on again once a trusted certificate is installed.</span></div>
+            <div class="mod-b act end"><button class="btn quiet" type="button" data-close>Keep it on</button><button class="btn" type="button" data-tls-confirm>Turn off for this iLO</button></div>
+          </div>
+        </div>
+      </div>
+
+      <h3>Specimen · move preview (opens from “Move…” on Add equipment)</h3>
+      <div class="preview" style="max-width:760px"><span class="lcdmini">U1→U5</span><div><div class="pt">Preview · Move HPE DL360 3 from U1 to U5.</div><div class="ps">U5 is free, so nothing else moves. U1 becomes free. Tap U5 to make the move in this draft.</div></div><button class="btn sm" type="button">Cancel</button></div>
+
+      <h3>First contact · the seven named failures (screen F draws “Certificate not trusted”)</h3>
+      <div class="failcat">
+        <div><b>Nothing answered</b><br><span>off, wrong network, or the address moved</span></div>
+        <div><b>Not an iLO</b><br><span>a web server answered; probably the OS address</span></div>
+        <div><b>Sign-in refused</b><br><span>it is an iLO; the password or username was wrong</span></div>
+        <div><b>No inventory permission</b><br><span>sign-in worked; the account lacks the role</span></div>
+        <div><b>Certificate not trusted</b><br><span>drawn on screen F</span></div>
+        <div><b>Older iLO</b><br><span>real iLO, too old for Redfish; cannot be read</span></div>
+        <div><b>Target mismatch</b><br><span>answered, but it is a device already in the rack</span></div>
+      </div>
+      <p class="gl" style="margin-top:8px">Alerts are shown only as a count (10), when they were recorded and that their current state is unknown; this design does not draw alert contents.</p>
+      <p class="gl" style="margin-top:8px"><b>Corrected 2026-09-25 after evidence review: erase wording, plan vs recorded disk count, commands, proof colour, alerts.</b></p>
+    </div>
+
+    <div class="full mapwrap">
+      <table class="map">
+        <thead><tr><th>Functionality</th><th>Where it lives</th></tr></thead>
+        <tbody>
+          <tr><td>Kit: choose, rename, save as new, build reports, run history</td><td>A · My Rack toolbar under the title: Kit select, Rename kit…, Save as new kit…, then Build reports and Run history as quiet keys</td></tr>
+          <tr><td>Next step, always findable</td><td>Each screen's one primary sits in its header: A “Go to Drives &amp; RAID · HPE DL360 3”, B and C “Back to step 3” (or Save layout / Save defaults when there are edits), D “Plan new RAID”, E “Check against SPP”, F “Check connection again”. The Step readout is status only; the Blockers readout key goes to the alert review on Connect</td></tr>
+          <tr><td>Rack front view and list view</td><td>A · Front view / List segmented control; the drawing has U ticks, a dimension line, disk bays from the saved plan (8 of 10), “Reached 08:35” on the server and dashed never-answered units</td></tr>
+          <tr><td>Select equipment, details with provenance</td><td>A · Selected panel with the chip legend (Proven, Recorded, Saved, Suggested, Blank) and a chip on every value; Drives today is Blank (not read today); saved plan vs recorded erase scope notice with Refresh drive inventory and a disabled “Update plan from server” (no current drive inventory: refresh first); Edit in rack on the rack module</td></tr>
+          <tr><td>Readiness Connection / Firmware / ESXi / Windows</td><td>A · Readiness row under the rack</td></tr>
+          <tr><td>Technical details, report an issue</td><td>A · Technical details disclosure (closed by default): iLO and ROM versions, last check (reached; versions read), erase method; Report an issue… key</td></tr>
+          <tr><td>Rack height 4–60 U</td><td>B · header stepper with “Racks are 4 to 60 U”; − disables at 4 and + at 60 with the reason; the drawing redraws at the new height</td></tr>
+          <tr><td>Hardware palette (7 items)</td><td>B · left column: DL360, DL380, Cisco switch, UPS, Eaton 5P 1550, PDU (rack or side mount), NetApp storage</td></tr>
+          <tr><td>Drag or tap, drop preview naming slots and what moves</td><td>B · preview bar and dashed ghost in the drawing; tapping another card recomputes the free slots</td></tr>
+          <tr><td>Move equipment</td><td>B · Move… on the Selected panel switches the preview to a move preview (U1→U5, ghost in the drawing); static specimen in this note</td></tr>
+          <tr><td>Remove-from-rack zone, remove equipment</td><td>B · Remove from rack drop zone under the drawing; Remove equipment… key</td></tr>
+          <tr><td>Edit name, model, bottom slot, height, bay count, per-bay grid</td><td>B · Selected panel: Name, slot, height and bay count editable (Saved plan; bay count 1–10 for the DL360); Model from the saved plan; plan grid redraws at the bay count; notice compares the plan with the recorded erase scope</td></tr>
+          <tr><td>Save layout, save a copy, load plan, go on</td><td>B · header next key: “Back to step 3 · Connect equipment”, which becomes “Save layout (n)” once anything changes; footer: Load plan…, unsaved state, Save a copy…</td></tr>
+          <tr><td>Network: subnet, gateway, VLAN, MTU, VM storage, DNS ×8 + domain, NTP, SNMP, reset, save defaults, go on</td><td>C · two modules; every field has a chip and a one-line hint; MTU shows Suggested; VM storage shows Local datastore and a disabled vSAN with its reason; header next key “Back to step 3”, which becomes “Save defaults” once a field is edited; Reset to last saved in the footer</td></tr>
+          <tr><td>Connect: pick equipment, address, username, password, TLS toggle, check</td><td>D · left column: picker (limits in muted text with a lock), iLO form, TLS toggle that states what Off costs (switching it off asks first), Check again</td></tr>
+          <tr><td>Drives &amp; RAID: refresh, erase result with stages, per-disk table, plan new RAID</td><td>D · result module: Refresh drive inventory; “Disk erasure verified · 6 reviewed disks”, Recorded 24/09 16:22, recorded result, not a live check; Erase requested / Power-on requested / Verified stages; table by controller location; Plan new RAID once, beside the heading</td></tr>
+          <tr><td>10 hardware alerts</td><td>D · required line under the erase result: recorded before the erase, current state unknown, required before firmware approval; “Review the 10 alerts” opens a read-only dialog (specimen above). Same key on E; the Blockers readout goes here</td></tr>
+          <tr><td>Erasure report, erase disks again, diagnostics, advanced recovery</td><td>D · Other disk actions, split into Read-only and Changes that delete data; each opens its own modal (specimens above)</td></tr>
+          <tr><td>Continue from Connect to Check firmware</td><td>D · footer key “Continue to Check firmware”</td></tr>
+          <tr><td>Firmware: SPP package, change, HPE link, per-device check, review upgrades, readings, continue (blocked with reason)</td><td>E · package row, device table, alert requirement at the top of the right column, Readings; Review upgrades disabled (nothing compared; review the 10 alerts first); Continue disabled (compare; review and approve firmware)</td></tr>
+          <tr><td>First-contact failure state</td><td>F · Certificate not trusted: Check connection again in the failure header; what was tried (in words), what it means, what to check with “Trust this certificate…” first; device values blank; readout and step rail switch to the failed state; the other six in this note</td></tr>
+          <tr><td>Prepare ESXi, Install Windows</td><td>Step rail: locked with reasons (needs firmware review; needs ESXi)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  // Saved plan only. No drive inventory was read today, so nothing here claims a current drive read.
+  var PLAN=[1,2,3,4,6,7,8,9];
+  var KIT=[
+    {u:1,h:1,name:'HPE DL360 3',kind:'server',bays:10,reached:'08:35'},
+    {u:2,h:1,name:'PDU 4',kind:'pdu'},
+    {u:3,h:1,name:'Cisco switch 6',kind:'switch',ports:24,sfp:4},
+    {u:4,h:1,name:'PDU 5',kind:'pdu'}
+  ];
+  function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+  function tx(x,y,str,a){a=a||{};
+    return '<text x="'+x+'" y="'+y+'" font-size="'+(a.size||11)+'"'+(a.anchor?' text-anchor="'+a.anchor+'"':'')+(a.weight?' font-weight="'+a.weight+'"':'')+(a.ls?' letter-spacing="'+a.ls+'"':'')+' fill="'+(a.fill||'var(--ink)')+'">'+esc(str)+'</text>';}
+  function used(){var m={};KIT.forEach(function(e){for(var i=0;i<e.h;i++)m[e.u+i]=1;});return m;}
+  function freeRun(n,h){var m=used();for(var u=1;u<=n-h+1;u++){var ok=true;for(var i=0;i<h;i++)if(m[u+i])ok=false;if(ok)return u;}return 0;}
+
+  function rackSVG(o){
+    var n=o.units, compact=!!o.compact, U=n>24?20:(n>12?28:40), W=compact?430:520, L=72, T=30, H=n*U, R=L+W, DX=R+48;
+    var sw=compact?R+30:DX+104, sh=T+H+(compact?16:30), id=o.id, plan=o.plan||PLAN, i, u, y;
+    var s='<svg viewBox="0 0 '+sw+' '+sh+'" role="img" aria-label="Front view of an '+n+' U rack">';
+    s+=tx(L,T-12,'FRONT',{fill:'var(--muted)',ls:1.5});
+    s+='<rect x="'+(L-14)+'" y="'+T+'" width="14" height="'+H+'" fill="var(--recess)" stroke="var(--draw)"/>';
+    s+='<rect x="'+R+'" y="'+T+'" width="14" height="'+H+'" fill="var(--recess)" stroke="var(--draw)"/>';
+    var hs=Math.min(6,U/5);
+    for(u=1;u<=n;u++){
+      y=T+(n-u)*U;
+      for(i=0;i<3;i++){var hy=y+U*(2*i+1)/6-hs/2;s+='<rect x="'+(L-10)+'" y="'+hy+'" width="'+hs+'" height="'+hs+'" fill="var(--well)"/><rect x="'+(R+4)+'" y="'+hy+'" width="'+hs+'" height="'+hs+'" fill="var(--well)"/>';}
+      s+='<line x1="'+(L-14)+'" y1="'+y+'" x2="'+(R+14)+'" y2="'+y+'" stroke="var(--draw-faint)" stroke-dasharray="1 3"/>';
+      s+='<line x1="'+(L-30)+'" y1="'+(y+U/2)+'" x2="'+(L-20)+'" y2="'+(y+U/2)+'" stroke="var(--draw)"/>';
+      s+=tx(L-34,y+U/2+4,'U'+u,{size:U<24?10:11,anchor:'end'});
+    }
+    s+='<line x1="'+(L-14)+'" y1="'+(T+H)+'" x2="'+(R+14)+'" y2="'+(T+H)+'" stroke="var(--draw)"/>';
+    var m=used();
+    var ghost=o.preview||o.move;
+    if(ghost&&ghost.u+ghost.h-1<=n){for(i=0;i<ghost.h;i++)m[ghost.u+i]=2;}
+    for(u=1;u<=n;u++){if(!m[u]){y=T+(n-u)*U;s+=tx(L+W/2,y+U/2+4,'FREE',{size:U<24?10:11,anchor:'middle',fill:'var(--faint)',ls:1.5});}}
+    KIT.forEach(function(e){
+      y=T+(n-e.u-e.h+1)*U;var ph=e.h*U, isPlan=e.kind!=='server', two=U>=36;
+      s+='<rect x="'+L+'" y="'+(y+2)+'" width="'+W+'" height="'+(ph-4)+'" fill="'+(e.kind==='switch'?'var(--plate-2)':'var(--plate)')+'" stroke="var(--draw)" stroke-width="'+(isPlan?1:1.25)+'"'+(isPlan?' stroke-dasharray="5 3"':'')+'/>';
+      s+='<circle cx="'+(L+8)+'" cy="'+(y+ph/2)+'" r="2.5" fill="none" stroke="var(--draw)"/><circle cx="'+(R-8)+'" cy="'+(y+ph/2)+'" r="2.5" fill="none" stroke="var(--draw)"/>';
+      var tag = e.kind==='server' ? 'REACHED '+e.reached : (e.kind==='switch' ? 'PLAN · 24 + 4 SFP' : 'PLAN · OUTLETS NOT RECORDED');
+      if(two){
+        s+=tx(L+22,y+ph/2-3,e.name,{size:12,weight:600});
+        s+=tx(L+22,y+ph/2+12,tag,{size:11,fill:e.kind==='server'?'var(--proof)':'var(--muted)',weight:e.kind==='server'?600:400});
+      } else {
+        s+=tx(L+22,y+ph/2+4,e.name,{size:11,weight:600});
+      }
+      if(e.kind==='server'){
+        var bw=compact?20:26,gap=3,bh=Math.min(26,ph-10),x0=R-18-e.bays*(bw+gap)+gap,by=y+(ph-bh)/2;
+        for(i=1;i<=e.bays;i++){var bx=x0+(i-1)*(bw+gap), pl=plan.indexOf(i)>=0;
+          if(pl){s+='<rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" fill="var(--draw)"/><rect x="'+(bx+3)+'" y="'+(by+bh-5)+'" width="'+(bw-6)+'" height="2" fill="var(--plate)"/>';}
+          else {s+='<rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" fill="none" stroke="var(--draw)" stroke-dasharray="2 2"/>';}
+          if(bh>=18){s+=tx(bx+bw/2,by+12,String(i),{size:11,anchor:'middle',weight:600,fill:pl?'var(--panel)':'var(--ink)'});}
+        }
+      } else if(e.kind==='switch'){
+        var pw=compact?10:11,pg=compact?2:3,cols=e.ports/2,phh=Math.min(8,(ph-14)/2),sfpw=pw+8;
+        var px0=R-18-e.sfp*(sfpw+3)-12-cols*(pw+pg);
+        for(i=0;i<e.ports;i++){var c=i%cols,r=Math.floor(i/cols);s+='<rect x="'+(px0+c*(pw+pg))+'" y="'+(y+ph/2-phh-2+r*(phh+4))+'" width="'+pw+'" height="'+phh+'" fill="none" stroke="var(--draw)"/>';}
+        var sx0=R-18-e.sfp*(sfpw+3)+3;
+        for(i=0;i<e.sfp;i++){s+='<rect x="'+(sx0+i*(sfpw+3))+'" y="'+(y+ph/2-5)+'" width="'+sfpw+'" height="10" fill="none" stroke="var(--draw)" stroke-width="1.5"/>';}
+      }
+      if(o.selected===e.u){
+        s+='<rect x="'+(L-3)+'" y="'+(y)+'" width="'+(W+6)+'" height="'+ph+'" fill="none" stroke="var(--graphite)" stroke-width="2.5"/>';
+        s+='<path d="M'+(L-66)+' '+(y+ph/2-6)+' l9 6 l-9 6z" fill="var(--graphite)"/>';
+      }
+    });
+    if(ghost&&ghost.u+ghost.h-1<=n){y=T+(n-ghost.u-ghost.h+1)*U;
+      s+='<rect x="'+(L+1)+'" y="'+(y+3)+'" width="'+(W-2)+'" height="'+(ghost.h*U-6)+'" fill="var(--panel)" stroke="var(--graphite)" stroke-width="1.5" stroke-dasharray="6 4"/>';
+      s+=tx(L+W/2,y+ghost.h*U/2+4,ghost.label,{size:12,weight:600,anchor:'middle'});
+    }
+    if(!compact){
+      s+='<line x1="'+DX+'" y1="'+T+'" x2="'+DX+'" y2="'+(T+H)+'" stroke="var(--draw)"/>';
+      s+='<line x1="'+(DX-6)+'" y1="'+T+'" x2="'+(DX+6)+'" y2="'+T+'" stroke="var(--draw)"/><line x1="'+(DX-6)+'" y1="'+(T+H)+'" x2="'+(DX+6)+'" y2="'+(T+H)+'" stroke="var(--draw)"/>';
+      for(u=0;u<=n;u++){s+='<line x1="'+(DX-3)+'" y1="'+(T+u*U)+'" x2="'+(DX+3)+'" y2="'+(T+u*U)+'" stroke="var(--draw)"/>';}
+      s+='<line x1="'+(R+14)+'" y1="'+T+'" x2="'+(DX-10)+'" y2="'+T+'" stroke="var(--draw-faint)" stroke-dasharray="2 2"/><line x1="'+(R+14)+'" y1="'+(T+H)+'" x2="'+(DX-10)+'" y2="'+(T+H)+'" stroke="var(--draw-faint)" stroke-dasharray="2 2"/>';
+      s+=tx(DX+12,T+H/2-4,n+' U',{size:12,weight:600});
+      s+=tx(DX+12,T+H/2+12,(n*44.45).toFixed(1)+' mm',{fill:'var(--muted)'});
+      s+=tx(DX+12,T+H+4,'U1 = floor',{fill:'var(--muted)'});
+    }
+    return s+'</svg>';
+  }
+
+  // ---------- LCD ghost segments always match their text ----------
+  Array.prototype.slice.call(document.querySelectorAll('.seg')).forEach(function(g){g.setAttribute('data-ghost',g.textContent.replace(/[A-Z0-9]/gi,'8'));});
+
+  // ---------- My Rack drawing ----------
+  var home=document.querySelector('[data-rack="home"]');
+  if(home) home.innerHTML=rackSVG({id:'rh',units:8,selected:1});
+
+  // ---------- Add equipment state ----------
+  var add=document.querySelector('[data-rack="add"]');
+  var st={n:8,mode:'place',card:{name:'HPE DL380',h:2},plan:PLAN.slice(),changes:0};
+  var cards=Array.prototype.slice.call(document.querySelectorAll('.card'));
+  function slotName(u,h){return h>1?('U'+u+'–U'+(u+h-1)):('U'+u);}
+  function drawAdd(){
+    var n=st.n, opts={id:'ra',units:n,compact:true,selected:1,plan:st.plan};
+    var sl=document.getElementById('pvSlots'),tt=document.getElementById('pvTitle'),sb=document.getElementById('pvSub');
+    if(st.mode==='place'){
+      var h=st.card.h,u=freeRun(n,h);
+      if(u){opts.preview={u:u,h:h,label:st.card.name+' · '+h+' U → '+slotName(u,h)};
+        sl.textContent=slotName(u,h);
+        tt.textContent='Preview · '+st.card.name+' ('+h+' U) goes into '+(h>1?('U'+u+' and U'+(u+1)):('U'+u))+'.';
+        sb.textContent=(h>1?'Both slots are':'The slot is')+' free, so nothing moves. Tap U'+u+', or release the card, to place it.';
+      } else {sl.textContent='NO ROOM';tt.textContent=st.card.name+' ('+h+' U) does not fit.';sb.textContent='It needs '+h+' free slot'+(h>1?'s':'')+' in a row; the '+n+' U rack has none. Raise the rack height, or remove a unit.';}
+    } else if(st.mode==='move'){
+      var mu=freeRun(n,1);
+      if(mu){opts.move={u:mu,h:1,label:'HPE DL360 3 → U'+mu};sl.textContent='U1→U'+mu;tt.textContent='Preview · Move HPE DL360 3 from U1 to U'+mu+'.';sb.textContent='U'+mu+' is free, so nothing else moves. U1 becomes free. Tap U'+mu+' to make the move in this draft.';}
+      else {sl.textContent='NO ROOM';tt.textContent='HPE DL360 3 cannot move.';sb.textContent='The '+n+' U rack has no free slot. Raise the rack height first.';}
+    } else {sl.textContent='—';tt.textContent='Nothing armed.';sb.textContent='Tap a card and then a slot, or drag a card onto the rack. Use Move… to move a placed unit.';}
+    if(add) add.innerHTML=rackSVG(opts);
+    document.getElementById('addCap').textContent='Front view · '+n+' U · '+(n*44.45).toFixed(1)+' mm tall';
+    var m=used(),fr=[];for(var k=1;k<=n;k++)if(!m[k])fr.push(k);
+    document.getElementById('addFree').textContent=fr.length?('Free: U'+fr[0]+(fr.length>1?'–U'+fr[fr.length-1]:'')):'No free slots';
+  }
+  var addNext=document.getElementById('addNext'),addNextGl=document.getElementById('addNextGl');
+  function paintAddNext(){
+    var c=st.changes;
+    document.getElementById('unsaved').textContent=c?(c+' unsaved change'+(c>1?'s':'')+' in this draft'):'No unsaved changes · Save layout is the key at the top once you change something';
+    if(addNext){addNext.textContent=c?('Save layout ('+c+')'):'Back to step 3 · Connect equipment';
+      addNextGl.textContent=c?'Saves this layout to the kit. Nothing is sent to hardware.':'No unsaved changes. This key becomes Save layout when you change something.';}
+  }
+  function markChange(){st.changes++;paintAddNext();}
+  if(addNext) addNext.addEventListener('click',function(){if(st.changes){st.changes=0;paintAddNext();}else{show('s-connect','result');}});
+  cards.forEach(function(c){c.addEventListener('click',function(){
+    cards.forEach(function(x){x.setAttribute('aria-pressed',String(x===c));});
+    st.mode='place';st.card={name:c.getAttribute('data-name'),h:+c.getAttribute('data-h')};drawAdd();});});
+  var pvc=document.getElementById('pvCancel');
+  if(pvc) pvc.addEventListener('click',function(){st.mode='none';cards.forEach(function(x){x.setAttribute('aria-pressed','false');});drawAdd();});
+  var mv=document.getElementById('moveBtn');
+  if(mv) mv.addEventListener('click',function(){st.mode='move';cards.forEach(function(x){x.setAttribute('aria-pressed','false');});drawAdd();});
+
+  // ---------- bay plan grid ----------
+  var grid=document.getElementById('bayGrid');
+  function drawBays(){
+    if(!grid) return;
+    var h='',n=KIT[0].bays;
+    for(var i=1;i<=n;i++){var occ=st.plan.indexOf(i)>=0;
+      h+='<button class="bay '+(occ?'occ':'empty')+'" type="button" data-bay="'+i+'" aria-pressed="'+occ+'" aria-label="Bay '+i+(occ?', in plan':', empty in plan')+'">'+i+'</button>';}
+    grid.innerHTML=h;
+    document.getElementById('bayChip').textContent='Saved plan · '+st.plan.length+' of '+n;
+    document.getElementById('bayPlanN').textContent=st.plan.length+' bay'+(st.plan.length===1?'':'s');
+  }
+  var baysIn=document.getElementById('e-bays'),baysWhy=document.getElementById('baysWhy');
+  if(baysIn) baysIn.addEventListener('change',function(){
+    var v=parseInt(baysIn.value,10); if(isNaN(v))v=KIT[0].bays;
+    baysWhy.hidden=!(v>10);
+    v=Math.max(1,Math.min(10,v)); baysIn.value=v; KIT[0].bays=v;
+    st.plan=st.plan.filter(function(b){return b<=v;});
+    drawBays();drawAdd();markChange();});
+  if(grid) grid.addEventListener('click',function(e){var b=e.target.closest('[data-bay]');if(!b)return;var i=+b.getAttribute('data-bay'),k=st.plan.indexOf(i);
+    if(k>=0)st.plan.splice(k,1);else{st.plan.push(i);st.plan.sort(function(a,b){return a-b;});}
+    drawBays();drawAdd();markChange();});
+
+  // ---------- rack height stepper (4 to 60) ----------
+  var dn=document.getElementById('uDown'),up=document.getElementById('uUp'),val=document.getElementById('rackU'),why=document.getElementById('uWhy');
+  function setU(v){
+    st.n=Math.max(4,Math.min(60,v));val.textContent=(st.n<10?'0':'')+st.n;
+    dn.disabled=st.n<=4;up.disabled=st.n>=60;
+    if(st.n<=4){why.textContent='4 U is the smallest rack';why.hidden=false;}
+    else if(st.n>=60){why.textContent='60 U is the tallest rack';why.hidden=false;}
+    else why.hidden=true;
+    drawAdd();
+  }
+  if(dn&&up){dn.addEventListener('click',function(){setU(st.n-1);markChange();});up.addEventListener('click',function(){setU(st.n+1);markChange();});}
+  drawBays();drawAdd();
+
+  // ---------- screen switching ----------
+  var tabs=Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
+  var sections=Array.prototype.slice.call(document.querySelectorAll('.app > section.screen'));
+  var steps=Array.prototype.slice.call(document.querySelectorAll('.rail .step'));
+  // The failure screen frames a device that has not answered: no answer time, no erase history, its own blocker.
+  var CH={roLastT:['08:35','--:--'],roLastD:['TODAY','NONE'],roLastSub:['<b>HPE DL360 3</b> reached at 192.0.2.27','<b>HPE DL360 3</b> · no answer yet'],
+    roStepSub:['Drives &amp; RAID · erase recorded 24/09','First contact failed · certificate'],railSub3:['Erase recorded 24/09 · plan RAID next','First contact failed'],
+    roBlkN:['02','01'],roBlkSeg:['ALERTS · FIRMWARE','CERTIFICATE'],roBlkSub:['Alerts: before firmware approval · firmware: before ESXi','Certificate not trusted: fix first contact']};
+  function chrome(fail){
+    Object.keys(CH).forEach(function(k){var el=document.getElementById(k);if(!el)return;el.innerHTML=CH[k][fail?1:0];
+      if(el.classList.contains('seg'))el.setAttribute('data-ghost',el.textContent.replace(/[A-Z0-9]/gi,'8'));});
+    var b=document.getElementById('roBlk');
+    if(b){b.setAttribute('data-go',fail?'s-fail':'s-connect');b.setAttribute('data-anchor',fail?'h-fail':'alerts');
+      b.setAttribute('aria-label',fail?'1 blocker: the iLO certificate is not trusted. Go to it':'2 blockers. Review the 10 alerts before firmware approval; firmware review before ESXi. Go to the first blocker');}
+  }
+  function show(id,anchor){
+    chrome(id==='s-fail');
+    sections.forEach(function(sec){sec.hidden=(sec.id!==id);});
+    tabs.forEach(function(t){t.setAttribute('aria-selected',String(t.getAttribute('data-target')===id));});
+    var viewId=id==='s-fail'?'s-connect':id;
+    steps.forEach(function(s){s.classList.toggle('viewing',s.getAttribute('data-go')===viewId);});
+    var target=anchor?document.getElementById(anchor):null;
+    if(target){target.scrollIntoView({block:'start'});return;}
+    var frame=document.querySelector('.frame');
+    if(frame&&frame.getBoundingClientRect().top<0) frame.scrollIntoView({block:'start'});
+  }
+  tabs.forEach(function(t){t.addEventListener('click',function(){show(t.getAttribute('data-target'));});});
+  Array.prototype.slice.call(document.querySelectorAll('[data-go]')).forEach(function(b){
+    b.addEventListener('click',function(){show(b.getAttribute('data-go'),b.getAttribute('data-anchor'));});
+  });
+  show('s-rack');
+
+  // ---------- rack view segmented control ----------
+  var views=Array.prototype.slice.call(document.querySelectorAll('[data-view]'));
+  views.forEach(function(v){v.addEventListener('click',function(){
+    views.forEach(function(x){x.setAttribute('aria-pressed',String(x===v));});
+    document.getElementById('view-elev').hidden=(v.getAttribute('data-view')!=='elev');
+    document.getElementById('view-list').hidden=(v.getAttribute('data-view')!=='list');
+  });});
+
+  // ---------- physical toggles (visual only) ----------
+  var pendingTls=null;
+  function setTog(t,on){
+    t.setAttribute('aria-checked',String(on));
+    var s=t.parentNode.querySelector('.st'); if(s) s.textContent=on?'On':'Off';
+    var g=t.parentNode.querySelector('[data-tls-text]'); if(g) g.textContent=g.getAttribute(on?'data-on':'data-off');
+  }
+  Array.prototype.slice.call(document.querySelectorAll('.tog')).forEach(function(t){
+    t.addEventListener('click',function(){
+      var on=t.getAttribute('aria-checked')!=='true';
+      // Switching certificate verification off is never silent: the consequence is stated and confirmed first.
+      if(t.hasAttribute('data-tls')&&!on){pendingTls=t;openDialog('tlsoff',t);return;}
+      setTog(t,on);
+    });
+  });
+
+  // ---------- guarded dialogs: open as modals, cloned from the specimens ----------
+  var scrim=document.getElementById('scrim'),modal=document.getElementById('modal'),opener=null;
+  function openDialog(name,btn){
+    var spec=document.getElementById('spec-'+name);if(!spec)return;
+    var c=spec.cloneNode(true);c.removeAttribute('id');
+    Array.prototype.slice.call(c.querySelectorAll('[id]')).forEach(function(el){el.id='m-'+el.id;});
+    Array.prototype.slice.call(c.querySelectorAll('label[for]')).forEach(function(el){el.setAttribute('for','m-'+el.getAttribute('for'));});
+    modal.innerHTML='';modal.appendChild(c);
+    var h=c.querySelector('h3');modal.setAttribute('aria-label',h?h.textContent:'Dialog');
+    scrim.hidden=false;opener=btn;
+    var f=c.querySelector('input,[data-close]');if(f)f.focus();
+  }
+  function closeDialog(){scrim.hidden=true;modal.innerHTML='';if(opener)opener.focus();}
+  Array.prototype.slice.call(document.querySelectorAll('[data-dialog]')).forEach(function(b){b.addEventListener('click',function(){openDialog(b.getAttribute('data-dialog'),b);});});
+  scrim.addEventListener('click',function(e){
+    if(e.target.closest('[data-tls-confirm]')){if(pendingTls)setTog(pendingTls,false);pendingTls=null;closeDialog();return;}
+    if(e.target===scrim||e.target.closest('[data-close]')){pendingTls=null;closeDialog();}});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!scrim.hidden)closeDialog();});
+  document.addEventListener('input',function(e){
+    var t=e.target;if(!t.matches||!t.matches('[data-confirm]'))return;
+    var box=t.closest('.dstage'),ok=t.value.trim()===t.getAttribute('data-confirm');
+    var send=box.querySelector('[data-send]'),w=box.querySelector('.why');
+    if(send)send.disabled=!ok;if(w)w.hidden=ok;
+  });
+
+  // ---------- network settings: one next key, Save defaults once edited ----------
+  var net=document.getElementById('s-network'),netNext=document.getElementById('netNext'),netGl=document.getElementById('netNextGl'),netDirty=false;
+  function paintNet(){if(!netNext)return;netNext.textContent=netDirty?'Save defaults':'Back to step 3 · Connect equipment';
+    netGl.textContent=netDirty?'Saves these defaults to the kit. Nothing is sent to hardware.':'Defaults are saved. This key becomes Save defaults when you edit a field.';}
+  if(net){net.addEventListener('input',function(){netDirty=true;paintNet();});
+    net.addEventListener('click',function(e){if(e.target.closest('.tog'))setTimeout(function(){netDirty=true;paintNet();},0);});}
+  if(netNext) netNext.addEventListener('click',function(){if(netDirty){netDirty=false;paintNet();}else{show('s-connect','result');}});
+  var netReset=document.getElementById('netReset'); if(netReset) netReset.addEventListener('click',function(){netDirty=false;paintNet();});
+
+  // ---------- theme switch ----------
+  var order=['auto','dark','light'],ti=0;
+  var tb=document.getElementById('theme'),tl=document.getElementById('themeLabel');
+  if(tb){tb.addEventListener('click',function(){
+    ti=(ti+1)%order.length;var md=order[ti];
+    if(md==='auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme',md);
+    tl.textContent='THEME · '+md.toUpperCase();
+  });}
+})();
+</script>

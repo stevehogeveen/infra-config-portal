@@ -5,6 +5,7 @@ import os
 import signal
 import subprocess
 import uuid
+from contextlib import nullcontext
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime
 from pathlib import PureWindowsPath
@@ -13,6 +14,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.services.runtime_write_scope import dispatch_lease, WriteScopeError
 from app.providers.esxi_readonly import EsxiReadonlyAdapter
 from app.providers.ilo_redfish import IloRedfishAdapter, IloRedfishConfig
 from app.providers.redaction import redact_sensitive
@@ -178,17 +180,24 @@ def run_workflow_action(
         )
         return _save_profile_bound_trace(result)
 
-    if spec.kind == "api":
-        result = _run_api_action(action, run_id, started_at, session, payload)
-    else:
-        result = _run_command_action(
-            action,
-            run_id,
-            started_at,
-            spec.command,
-            spec.timeout_seconds,
-            request_env_overrides=_guarded_command_env_overrides(action_id, payload),
-        )
+    lease = dispatch_lease(action_id) if action.get("mode") in {"write", "destructive", "upgrade"} else nullcontext()
+    try:
+        with lease as ticket:
+            if spec.kind == "api":
+                result = _run_api_action(action, run_id, started_at, session, payload)
+            else:
+                result = _run_command_action(
+                    action,
+                    run_id,
+                    started_at,
+                    spec.command,
+                    spec.timeout_seconds,
+                    request_env_overrides=_guarded_command_env_overrides(action_id, payload),
+                )
+            if ticket is not None and result.get("executed") and result.get("status") not in {"completed", "verified"}:
+                ticket["retain"] = True
+    except WriteScopeError as exc:
+        return _save_profile_bound_trace(_blocked_result(action, run_id, started_at, [str(exc)]))
 
     reports = _existing_report_artifacts([*_string_list(action.get("reports")), *_string_list(spec.reports)])
     result["report_artifacts"] = _unique(

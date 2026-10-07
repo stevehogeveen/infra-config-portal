@@ -71,10 +71,27 @@ def init_database(*, force: bool = False) -> None:
 
     Base.metadata.create_all(bind=engine)
     ensure_device_inventory_dhcp_column(engine)
+    ensure_guarded_status_width(engine)
     with SessionLocal() as session:
         seed_legacy_devices(session)
     ensure_per_device_ilo_storage(engine)
     _initialized_engine_urls.add(engine_key)
+
+
+def ensure_guarded_status_width(target_engine: Engine) -> None:
+    """Widen guarded_operations.status to 64 on PostgreSQL databases created at 24 (see
+    alembic 0009). Widening a varchar is metadata-only and keeps every row."""
+    if target_engine.dialect.name != "postgresql":
+        return
+    inspector = inspect(target_engine)
+    if "guarded_operations" not in inspector.get_table_names():
+        return
+    column = next((c for c in inspector.get_columns("guarded_operations") if c["name"] == "status"), None)
+    length = getattr(column["type"], "length", None) if column else None
+    if length is None or length >= 64:
+        return
+    with target_engine.begin() as connection:
+        connection.execute(text("ALTER TABLE guarded_operations ALTER COLUMN status TYPE VARCHAR(64)"))
 
 
 def ensure_device_inventory_dhcp_column(target_engine: Engine) -> None:

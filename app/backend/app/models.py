@@ -18,6 +18,73 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+class RuntimeWriteScope(Base):
+    __tablename__ = "runtime_write_scopes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scope: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    generation: Mapped[int] = mapped_column(Integer, default=0)
+    changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    changed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class RuntimeScopeReview(Base):
+    __tablename__ = "runtime_scope_reviews"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    actor: Mapped[str] = mapped_column(String(255))
+    target_scope: Mapped[str] = mapped_column(String(24))
+    generation: Mapped[int] = mapped_column(Integer)
+    bootstrap_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    consumed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class RuntimeDispatchLease(Base):
+    __tablename__ = "runtime_dispatch_leases"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    action_id: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class GuardedOperation(Base):
+    __tablename__ = "guarded_operations"
+    __table_args__ = (
+        UniqueConstraint("profile_id", "device_id", "resource", "idempotency_key",
+                         name="uq_guarded_attempt"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    profile_id: Mapped[str] = mapped_column(String(128))
+    device_id: Mapped[str] = mapped_column(String(36))
+    resource: Mapped[str] = mapped_column(String(64))
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    intent_hash: Mapped[str] = mapped_column(String(64))
+    # A device-wide lock also excludes a competing resource or kit.
+    active_device: Mapped[str | None] = mapped_column(String(36), unique=True)
+    status: Mapped[str] = mapped_column(String(64), default="accepted")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class FirmwareApproval(Base):
+    __tablename__ = "firmware_approvals"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    profile_id: Mapped[str] = mapped_column(String(128))
+    device_id: Mapped[str] = mapped_column(String(36))
+    actor: Mapped[str] = mapped_column(String(255))
+    intent_json: Mapped[dict] = mapped_column(JSON)
+    confirmation_phrase: Mapped[str] = mapped_column(String(256))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    operation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("guarded_operations.id"), unique=True, nullable=True,
+    )
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -182,6 +249,14 @@ class DeviceInventory(Base):
         default=utcnow,
         onupdate=utcnow,
     )
+
+
+class RackLayoutPlan(Base):
+    __tablename__ = "rack_layout_plans"
+
+    profile_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    layout_json: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class DeviceInventoryState(Base):
