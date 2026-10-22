@@ -18829,7 +18829,7 @@ address exists. Button reads "Save sign-in" / "Saved" / "Check connection" accor
   is set, and the briefing asks "Remove it?" first (test added).
 - Network question: Kit Pilot reads this PC's own networks from `ipconfig /all`
   (`finder.my_networks`, `parse_ipconfig`, GET /mynet) and offers them as chips
-  ("Use 131.137.133.0/27 (Ethernet, DHCP)"), with gateway and DNS prefilled from the lease;
+  ("Use 192.168.50.0/27 (Ethernet, DHCP)"), with gateway and DNS prefilled from the lease;
   typing "dhcp" picks the first. Nothing to know by heart on a DHCP network.
 Tests: 19 Kit Pilot tests pass.
 
@@ -18897,7 +18897,7 @@ Also: the verify phase no longer shows "sent" when the console phase failed.
 Result: cisco-switch-6 configured and saved, Vlan1 DHCP 192.168.1.97, SSH verified
 (C9300-24T, 17.15.05). Before/after running configs captured (masked) and in the hand-over.
 Write scope returned to read_only. Note: the switch is on 192.168.1.0/24, not the kit subnet
-131.137.133.0/27 (pre-flight will warn); the PC's wired port is still down.
+192.168.50.0/27 (pre-flight will warn); the PC's wired port is still down.
 
 ## 2026-10-22 — Kit Pilot on the real kit: a "verified" switch is re-checked before it is skipped
 The first flight skipped "Set up the switch" as already done: Lab Builder still held the 18 Oct
@@ -18906,7 +18906,7 @@ verified record (cisco-switch-6 at 192.168.1.97) although the switch had since b
 verified switch; if it no longer answers, the leg says so and sets the switch up again (with
 "replace existing" only when chosen in the briefing). Tests in test_options.py; chaos 300 clean.
 Second flight: cisco-switch-6 set up over COM5 with Vlan100 on DHCP, uplink Gi1/0/2, saved;
-DHCP gave 131.137.133.14; SSH verified (C9300-24T, 17.15.05). Before/after configs captured
+DHCP gave 192.168.50.14; SSH verified (C9300-24T, 17.15.05). Before/after configs captured
 (masked). Capture note: a CDP native-VLAN-mismatch syslog line landed inside the "after" capture
 despite logging synchronous; a follow-up should filter syslog lines out of the captured config.
 Follow-up done the same day: `strip_syslog` in cisco_console_setup.py removes log lines printed
