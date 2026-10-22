@@ -56,6 +56,7 @@ test("disks & raid: each server shows its bays and one decision: ready, erased, 
     if(device==="other")return route.fulfill({json:{...base,drives:six.map(i=>drive(i,i<3?{health:"Warning",label:"Erased",explanation:"EraseCompleted",eligible:false}:{})),volumes:[]}});
     if(device==="third")return route.fulfill({json:{...base,drives:six.map(i=>drive(i)),volumes:[{id:"v",name:"Logical drive 1",raid:"RAID0",capacity_bytes:1.2e12,bays:["1I:1:1","1I:1:2","1I:1:3","1I:1:4"]}]}});
     // A read too old to plan from: the page still draws it, marked as the last read.
+    expect(url.pathname).toBe("/api/v1/rack-plans/fixture/disk-preparation");
     return route.fulfill({json:{...base,current:false,drives:[],volumes:[],last_read:{checked_at:new Date(Date.now()-3600e3).toISOString(),drives:six.map(i=>drive(i)),
       volumes:[{id:"a",name:"Logical drive 1",raid:"RAID1",capacity_bytes:300e9,bays:["1I:1:1","1I:1:2"]},{id:"b",name:"Logical drive 2",raid:"RAID5",capacity_bytes:600e9,bays:["1I:1:3","1I:1:4","1I:1:5"]}]}}});
   });
@@ -145,6 +146,7 @@ test("disks & raid: Read disks is a read-only check that redraws the bays", asyn
     if (url.pathname === "/api/v1/rack-plans/fixture") return route.fulfill({ json: { ...planJson, equipment: planJson.equipment.slice(0, 1) } });
     if (url.pathname.endsWith("/status")) return route.fulfill({ json: { status: "not_started", active: false, message: "No operation" } });
     if (url.pathname.endsWith("/probe")) { probed = true; return route.fulfill({ json: { status: "ok", warnings: [], blockers: [] } }); }
+    expect(url.pathname).toBe("/api/v1/rack-plans/fixture/disk-preparation");
     return route.fulfill({ json: { name: "Test server", current: probed, checked_at: new Date().toISOString(), controllers: [], blockers: [], health_issues: [], volumes: [],
       saved_intent: { volumes: [], wipe_existing_logical_drives: false }, drives: probed ? [1, 4].map(i => ({ id: `d${i}`, location: `1I:1:${i}`, model: "Fixture", capacity_bytes: 300e9, health: "OK", eligible: true })) : [] } });
   });
@@ -171,6 +173,7 @@ test("disks & raid: erased disks open a hands-on guide that ends with a read-onl
     if (url.pathname.endsWith("/status")) return route.fulfill({ json: { status: "not_started", active: false, message: "No operation" } });
     if (url.pathname.endsWith("access-settings")) return route.fulfill({ json: { host: "192.0.2.10", username_configured: true, password_configured: true } });
     if (url.pathname.endsWith("/probe")) { reenabled = true; return route.fulfill({ json: { status: "ok", warnings: [], blockers: [] } }); }
+    expect(url.pathname).toBe("/api/v1/rack-plans/fixture/disk-preparation");
     return route.fulfill({ json: { name: "Test server", current: true, checked_at: new Date().toISOString(), controllers: [], blockers: [], health_issues: [], volumes: [],
       saved_intent: { volumes: [], wipe_existing_logical_drives: false }, drives: [1, 2].map(i => drive(i, !reenabled)) } });
   });

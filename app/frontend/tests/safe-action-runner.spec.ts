@@ -4,6 +4,8 @@ const checkedAt = "2026-06-09T21:00:00Z";
 let labProfileScenario: "none" | "shared" | "single" = "shared";
 let healthHostIpv4Addresses = ["192.168.1.99"];
 let workflowActionsOverride: Record<string, unknown>[] | null = null;
+// Every /api or /health request installApiMocks has no explicit mock for, as "METHOD /path".
+let unmockedRequests: string[] = [];
 
 const safeAction = workflowAction({
   action_id: "build-verification.run-full",
@@ -208,7 +210,12 @@ test.beforeEach(async ({ page }) => {
   labProfileScenario = "shared";
   healthHostIpv4Addresses = ["192.168.1.99"];
   workflowActionsOverride = null;
+  unmockedRequests = [];
   await installApiMocks(page);
+});
+
+test.afterEach(() => {
+  expect(unmockedRequests, "requests with no explicit mock in installApiMocks").toEqual([]);
 });
 
 /** iLO access, first-contact proof and iLO settings live on Server & iLO, under "iLO & access". */
@@ -2708,8 +2715,11 @@ async function installApiMocks(page: Page) {
         })
       });
     }
-    if (!url.pathname.startsWith("/api/v1/")) {
+    if (url.pathname !== "/api" && !url.pathname.startsWith("/api/")) {
       return route.continue();
+    }
+    if (!url.pathname.startsWith("/api/v1/")) {
+      return unmocked(route);
     }
     // The rack (My Rack, Add equipment, Connect) is drawn from the saved rack plan.
     if (url.pathname.startsWith("/api/v1/rack-plans/") && url.pathname.split("/").length === 5) {
@@ -3033,6 +3043,59 @@ async function installApiMocks(page: Page) {
     if (url.pathname === "/api/v1/ui-intent") {
       return json(route, uiIntentResponse(request.postDataJSON() as Record<string, unknown>));
     }
+    // Idle backend answers: nothing has been read, reviewed or run on this kit yet.
+    if (url.pathname === "/api/v1/runtime/write-scope" && request.method() === "GET") {
+      return json(route, writeScopeState());
+    }
+    if (/^\/api\/v1\/devices\/[^/]+\/inventory-jobs$/.test(url.pathname) && request.method() === "GET") {
+      return json(route, null);
+    }
+    if (url.pathname === "/api/v1/providers/ilo-redfish/setup-intent" && request.method() === "GET") {
+      return json(route, iloSetupIntentFixture({ device_id: url.searchParams.get("device_id") ?? seededIloDeviceId }));
+    }
+    if (url.pathname === "/api/v1/providers/ilo-redfish/discovered-settings") {
+      return json(route, iloDiscoveredSettingsUnavailable());
+    }
+    if (url.pathname === "/api/v1/providers/ilo-redfish/setup-plan-preview") {
+      return json(route, iloSetupPlanPreviewEmpty());
+    }
+    if (url.pathname === "/api/v1/providers/netapp-ontap/setup-preview") {
+      return json(route, netappSetupPreview());
+    }
+    if (url.pathname === "/api/v1/providers/ilo-redfish/probe" && request.method() === "POST") {
+      return json(route, iloProbeBlocked());
+    }
+    // Idle answers for the newer rack-first screens (jobs bell, My Rack health, Connect, cable map, build history).
+    // Shapes follow app/backend with nothing read, run or saved yet.
+    if (url.pathname === "/api/v1/jobs" && request.method() === "GET") {
+      return json(route, { running: [], attention: [], recent: [], now: "2026-01-01T00:00:00+00:00" });
+    }
+    if (url.pathname === "/api/v1/build-history" && request.method() === "GET") {
+      return json(route, []);
+    }
+    const deviceRead = request.method() === "GET" ? url.pathname.match(/^\/api\/v1\/devices\/([^/]+)\/(health|switch-access|switch-console\/ports)$/) : null;
+    if (deviceRead) {
+      const [, id, resource] = deviceRead;
+      if (resource === "health") {
+        return json(route, { overall: null, problems: [], checked_at: null });
+      }
+      if (resource === "switch-access") {
+        return json(route, {
+          device_id: id, host: "192.168.1.204", username: null, username_configured: false, password_configured: false,
+          enable_password_configured: false, updated_at: null, last_check: null, console: { port: null, baud: null, last: null }
+        });
+      }
+      return json(route, { helper_running: false, ports: [], saved_port: null, problem: "The console helper isn't running on this PC." });
+    }
+    const kitRead = request.method() === "GET" ? url.pathname.match(/^\/api\/v1\/rack-plans\/([^/]+)\/(.+)$/) : null;
+    if (kitRead) {
+      const [, profileId, resource] = kitRead;
+      const deviceId = url.searchParams.get("device_id") ?? seededIloDeviceId;
+      const idle = kitIdleRead(profileId, deviceId, resource);
+      if (idle) {
+        return idle.status ? route.fulfill({ status: idle.status, contentType: "application/json", body: JSON.stringify(idle.body) }) : json(route, idle.body);
+      }
+    }
     if (url.pathname === "/api/v1/ai-change-requests") {
       return json(route, aiChangeRequest(request.postDataJSON() as Record<string, unknown>));
     }
@@ -3049,8 +3112,133 @@ async function installApiMocks(page: Page) {
       const actionId = url.pathname.match(/\/api\/v1\/workflows\/actions\/(.+)\/runs$/)?.[1] ?? "";
       return json(route, actionId === "esxi.rebuild-install" ? [workflowActionRun(actionId)] : []);
     }
-    return json(route, {});
+    return unmocked(route);
   });
+}
+
+function writeScopeState() {
+  return { scope: "read_only", source: "server_configuration", changed_at: null, changed_by: null, active_operations: [], blockers: [] };
+}
+
+function iloDiscoveredSettingsUnavailable() {
+  return {
+    provider_id: "ilo-redfish",
+    source: "cached read-only iLO probe",
+    probe_time: null,
+    freshness: null,
+    target_matches_current_access: null,
+    available: false,
+    network: { dhcp_enabled: null, hostname: null, management_ip: null, subnet_mask_or_prefix: null, gateway: null, vlan: null },
+    dns_domain: { domain_name: null, dns_servers: [] },
+    time: { timezone: null, ntp_servers: [], ntp_protocol_enabled: null },
+    license: { status: null, name: null },
+    snmp: { enabled: null },
+    users: []
+  };
+}
+
+function iloSetupPlanPreviewEmpty() {
+  return {
+    provider_id: "ilo-redfish",
+    mode: "local-lab-readwrite",
+    plan_only: true,
+    apply_enabled: false,
+    generated_from: "saved iLO setup intent",
+    sections: [],
+    blockers: [],
+    warnings: [],
+    removable_warnings: []
+  };
+}
+
+function netappSetupPreview() {
+  return {
+    provider_id: "netapp-ontap",
+    action: "setup-preview",
+    status: "preview_only",
+    apply_enabled: false,
+    checked_at: checkedAt,
+    message: "NetApp setup preview generated. No ONTAP write action was run.",
+    blockers: [],
+    warnings: []
+  };
+}
+
+/** What the backend answers before contacting the iLO when the lab acknowledgement policy blocks probes. */
+function iloProbeBlocked() {
+  const message = "iLO read-only probe is blocked by lab acknowledgement policy.";
+  return { provider_id: "ilo-redfish", status: "blocked", message, warnings: [], blockers: [message], checked_at: checkedAt };
+}
+
+/** GET reads under /rack-plans/{id}/ answered as the backend does before anything is stored for the server. */
+function kitIdleRead(profileId: string, deviceId: string, resource: string): { status?: number; body: unknown } | null {
+  switch (resource) {
+    case "firmware-update/status":
+      return { status: 501, body: { detail: "Whole-SPP updates are not available for this server." } };
+    case "firmware-execution/status":
+      return { body: {
+        profile_id: profileId, device_id: deviceId, resource: "firmware-execution", status: "not_started",
+        operation_id: null, idempotency_key: null, evidence_at: null, reviewed_at: null, stages: [], blockers: [],
+        execution_available: false, message: "Stored workflow state only. This status performs no fresh hardware check.",
+        next_action: "Review the capability blockers before any installation or recovery approval."
+      } };
+    case "parts-update/status":
+      return { body: { state: "not_started", active: false, phases: [], parts: [], message: "No part-by-part update has run on this server." } };
+    case "raid-rebuild/status":
+      return { body: { status: "not_started", message: "No RAID operation has been submitted.", active: false } };
+    case "windows/status":
+      return { body: { state: "not_started", active: false, phases: [], message: "Windows has not been deployed from the app on this server." } };
+    case "windows/setup":
+      return { body: {
+        images: [], image: null, vm_name: null, datastore: null, network: null, saved_at: null,
+        host: { address: null, datastores: [], networks: [], problem: "Install ESXi on this server first.", default_datastore: null }
+      } };
+    case "esxi/install":
+      return { body: { state: "not_started", active: false, phases: {}, message: "ESXi has not been installed from the app on this server." } };
+    case "esxi/installer":
+      return { body: { status: "blocked", blockers: ["Choose the ESXi installer ISO.", "Save the ESXi host settings and root password."], built: null } };
+    case "esxi/media":
+      return { body: { root_ready: true, isos: [], selected: null, folder: "" } };
+    case "esxi/settings":
+      return { body: {
+        hostname: null, addressing: "static", management_ip: null, vlan_id: 0, management_nic: null, datastore_name: "datastore1",
+        password_set: false, signin_ready: false, data_volume: null, saved_at: null, kit: null, boot_volume: null
+      } };
+    case "disk-preparation":
+      return { body: {
+        name: "HPE DL360", model: "HPE DL360 Gen10", host: "192.168.1.201", current: false, checked_at: null, inventory_token: "",
+        controllers: [], drives: [], volumes: [], health_issues: [], apply_enabled: false, boot_mirror_matches: false, last_read: null,
+        blockers: ["Refresh drive inventory. A successful read of this exact server within the last five minutes is required."],
+        saved_intent: { volumes: [], wipe_existing_logical_drives: false },
+        cleanup_method: "Attended HPE Smart Storage Administrator (SSA). Remove only the reviewed logical volumes, then refresh inventory here. This is not physical-drive secure erase."
+      } };
+    case "firmware-assessment":
+      return { body: { status: "Cannot determine", rows: [], apply_enabled: false, reason: "Select an SPP above to compare installed firmware." } };
+    case "firmware-package":
+      return { body: {
+        root: "/media/firmware", host_root: null, folder: "", folders: [], files: [], warning: null,
+        download_url: "https://support.hpe.com/", documentation_url: "https://support.hpe.com/", selected: null, selection_current: false
+      } };
+    case "cable-map":
+      return { body: { state: "not_read", cables: [], unmatched_server_ports: [], other_switch_ports: [], problems: [] } };
+    case "switch-setup/status":
+      return { body: { state: "not_started", active: false, phases: [], message: "The switch has not been set up from the app." } };
+    case "switch-setup/setup":
+      return { body: {
+        settings: null,
+        defaults: { hostname: "cisco-switch-1", domain: "lab.local", vlan: 1, mode: "dhcp", uplink: "auto", uplink_mode: "access", address: null, prefix: 24, gateway: null, save: true, username: "admin" },
+        username: null, password_configured: false, enable_password_configured: false, console: { port: null, baud: null, last: null }
+      } };
+    default:
+      return null;
+  }
+}
+
+/** Records a request with no explicit mock and answers it as the backend would; afterEach fails the test. */
+function unmocked(route: Route) {
+  const request = route.request();
+  unmockedRequests.push(`${request.method()} ${new URL(request.url()).pathname}`);
+  return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "Not Found" }) });
 }
 
 function json(route: Route, body: unknown) {

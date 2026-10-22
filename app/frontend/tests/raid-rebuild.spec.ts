@@ -110,7 +110,7 @@ test("verified deletion opens erase preparation without sending a hardware write
       previews++;expect(request.postDataJSON()).toEqual({operation:"sanitize",erase_pattern:"auto"});
       return route.fulfill({json:{preview_id:"a".repeat(36),operation:"sanitize",name:"Test server",host:"192.0.2.10",controller:"Fixture controller",method:"PATCH",path:"/settings",payload:{},drives:[],blockers:["Fresh drive evidence required"],warnings:[],empty_bays:[],volumes:[],apply_enabled:false,confirmation:"ERASE ALL 0 DISKS Test server"}});
     }
-    expect(request.method()).toBe("GET");
+    expect(request.method()).toBe("GET");expect(path).toBe("/api/v1/rack-plans/fixture");
     return route.fulfill({json:{equipment:[]}});
   });
   await page.route("**/raid-fixture",r=>r.fulfill({contentType:"text/html",body:`<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module">import R from '/@react-refresh'; R.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>(t)=>t;window.__vite_plugin_react_preamble_installed__=true;await import('/tests/fixtures/diskPreparationHarness.tsx');</script></body></html>`}));

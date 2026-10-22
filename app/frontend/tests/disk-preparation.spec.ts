@@ -6,6 +6,7 @@ test("review disk health and save only a confirmed plan, never execute deletion"
   await page.route("**/api/**",route=>{
     const path=new URL(route.request().url()).pathname;
     if(path.endsWith("/probe")){probes++;return route.fulfill({json:{status:"ok"}});}
+    if(path.endsWith("/raid-rebuild/status"))return route.fulfill({json:{status:"not_started",message:"No RAID operation has been submitted.",active:false}});
     if(path.endsWith("/disk-preparation")){
       if(route.request().method()==="POST"){
         plans++;expect(route.request().postDataJSON()).toMatchObject({boot_drive_ids:["drive-1","drive-2"],remove_existing_volumes:true,data_loss_reviewed:true});
@@ -38,11 +39,13 @@ test("unavailable inventory has no editable drive assignments or automatic probe
   await page.route("**/api/**",route=>{
     const url=new URL(route.request().url());
     expect(route.request().method()).toBe("GET");
+    if(url.pathname.endsWith("/raid-rebuild/status"))return route.fulfill({json:{status:"not_started",message:"No RAID operation has been submitted.",active:false}});
     if(url.pathname.endsWith("/disk-preparation")){
       inventoryReads++;
       expect(url.searchParams.get("device_id")).toBe("s");
       return route.fulfill({json:{current:false,blockers:["Refresh drive inventory before planning storage."],drives:[],saved_intent:{volumes:[],wipe_existing_logical_drives:false}}});
     }
+    expect(url.pathname).toBe("/api/v1/rack-plans/fixture");
     return route.fulfill({json:{equipment:[{id:"s",device_id:"s",kind:"server",name:"Test server"}]}});
   });
   await page.route("**/disk-fixture*",r=>r.fulfill({contentType:"text/html",body:`<html><body><div id="root"></div><script type="module">import R from '/@react-refresh'; R.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>(t)=>t;window.__vite_plugin_react_preamble_installed__=true;await import('/tests/fixtures/diskPreparationHarness.tsx');</script></body></html>`}));

@@ -18310,7 +18310,6 @@ host Off, and restart choice. Reply here; I'll fold in anything you find.
   date-drift fixtures in untouched legacy specs (storage-progress, disk-
   preparation, storage-troubleshooting). Snapshot studio-home updated.
 
-<<<<<<< HEAD
 ## 2026-10-07 - Codex to Claude: Docker startup incident and successful recovery
 
 Operator requested this exact handoff for recurrence. This was a Docker Desktop
@@ -18914,7 +18913,6 @@ Follow-up done the same day: `strip_syslog` in cisco_console_setup.py removes lo
 into the captured running config and rejoins the interrupted line (" login lo" + log + "cal" →
 " login local"); Kit Pilot's evidence.py does the same when rendering older captures. Tests cover
 the split line, a whole-line log, and an untimestamped one.
-=======
 ## 2026-10-16 - Claude: safe-action-runner spec checked at e40c434 — 90/90 pass, nothing to delete or rewrite
 
 - Asked to triage "92 of 96 failing" in `tests/safe-action-runner.spec.ts` against the studio
@@ -18935,4 +18933,83 @@ the split line, a whole-line log, and an untimestamped one.
   read-only and never shows stale proof as green; fails closed when the backend is down.
 - Open: `installApiMocks` falls back to `json(route, {})` for any unmatched path, so it is not
   strictly closed. Making unmatched `/api` calls fail the test would be a separate change.
->>>>>>> 1b68445 (Log safe-action-runner spec check at e40c434: 90/90 pass)
+
+## 2026-10-22 - Claude: safe-action-runner mocks are now strict — 90/90 pass
+
+- `installApiMocks` in `tests/safe-action-runner.spec.ts` no longer answers unmatched paths with
+  `json(route, {})`. Any `/api/*` request without an explicit mock (including non-`/api/v1/`
+  paths that used to `route.continue()` to the Vite proxy) is recorded as `METHOD /path` and
+  answered `404 {"detail":"Not Found"}`; a `test.afterEach` fails the test if anything was
+  recorded. `/health` was already mocked. No app code changed.
+- The strict runs surfaced 30 distinct unmocked method+path pairs. Newly mocked, each with the
+  backend's idle answer (nothing read, reviewed or run yet; shapes taken from `app/backend`):
+  - `GET /api/v1/runtime/write-scope` — `read_only`, `server_configuration`, no active operations
+  - `GET /api/v1/devices/{id}/inventory-jobs` — `null` (no inventory run)
+  - `GET /api/v1/providers/ilo-redfish/setup-intent` — empty saved intent (`iloSetupIntentFixture()`)
+  - `GET /api/v1/providers/ilo-redfish/discovered-settings` — `available: false`, all values null
+  - `GET /api/v1/providers/ilo-redfish/setup-plan-preview` — plan-only, no sections
+  - `POST /api/v1/providers/ilo-redfish/probe` — `blocked` by lab acknowledgement policy (no hardware contact)
+  - `GET /api/v1/providers/netapp-ontap/setup-preview` — `preview_only`, apply disabled
+  - `GET /api/v1/rack-plans/{id}/…` (any kit, `kitIdleRead`):
+    `firmware-update/status` (501 "Whole-SPP updates are not available for this server."),
+    `firmware-execution/status`, `parts-update/status`, `raid-rebuild/status`, `windows/status`,
+    `esxi/install` (all `not_started`), `windows/setup`, `esxi/installer` (`blocked`: ISO and
+    settings missing), `esxi/media`, `esxi/settings`, `disk-preparation` (not current, refresh
+    blocker), `firmware-assessment` ("Cannot determine"), `firmware-package` (nothing selected).
+- Verified on `claude/strict-safe-action-mocks` (from 1b68445), port 4173 free first:
+  `npx playwright test tests/safe-action-runner.spec.ts --workers=3` → **90 passed, 4.3 min**.
+
+## 2026-10-22 - Claude: audit of `/api` mocking in the other 44 Playwright specs (read-only, no spec changed)
+
+Checked on Playwright 1.60 with a throwaway spec outside the repo: a `throw` or a failing `expect`
+inside a `page.route` handler **fails the test**, even after the handler has fulfilled. So handlers
+that end in `throw` / `expect(path)` are strict. Every spec in `app/frontend/tests/` routes `/api`.
+Line numbers are the `page.route("**/api/**"…)` call.
+
+| Class | What an unmatched `/api` request gets | Specs (handler line) |
+|---|---|---|
+| **Strict** | `throw` or a failing `expect`, so the test fails | connect-access 7; connection-storage 26, 91, 199, 251; disk-preparation 6; disk-sanitization 7; drive-allocation 23; erase-options 11; erase-progress 5, 39, 77, 103, 128; erase-support-reference 5; erase-wizard-recovery 16, 39; esxi-only 8; firmware-bridge 31; firmware-package 8; firmware-read 23, 70; firmware-upgrade-review 11; guarded-execution 33; guarded-execution-safety 17; hardware-art 18; inventory-workflow 6; kit-library 8; lab-defaults 6; rack-plan-files 21; rack-planner 7; raid-boot 5; raid-rebuild 6; reset-shutdown 5; setup-journey 12, 115, 235; storage-progress 14; storage-troubleshooting 5; studio-evidence 12; write-scope 11 |
+| **Closed, silent** | 404, nothing recorded, the test only fails if the UI assertions notice | blocker-guidance 9 (blanket 404 on purpose); connection-storage 12; esxi-step 32; firmware-overview 9; firmware-parts 41; firmware-recovery 11; firmware-update-panel 11; ilo-installer 12; spp-update 32; studio-home-visual 18; studio-palette 8; studio-rail 9; windows-step 30; write-scope 124 |
+| **Lenient** | a 200 with a plausible body for any path not otherwise matched | connection-storage 49, 142, 167 (any path → disk-preparation body); disk-preparation 38 (any GET → rack plan); firmware-package 51 (any GET → package listing); raid-rebuild 104 (any GET → `{equipment: []}`); setup-journey 60 (any GET → access settings) |
+| **Pass-through (live)** | GET/HEAD `route.continue()` to whatever serves `WORKBENCH_URL`; writes aborted | firmware-read 6; server-responsive-live 6; workbench-live 6. All three `test.skip` unless `WORKBENCH_URL` is set, so they are opt-in read-only checks of a running app |
+| **N/A** | blanket fixture by design | inventory-workflow 59 (every request → 503, testing the outage message) |
+
+- The 7 lenient handlers (in 5 specs) are the real gap: a new endpoint the component starts calling gets a
+  200 with the wrong shape, and the test can still pass. Fix pattern: same as
+  `safe-action-runner.spec.ts`. Replace the fallback with `unmocked(route)` (record and 404), and
+  add a `test.afterEach` that fails if anything was recorded. An inline `throw` also works for
+  single-handler specs.
+- The 14 "closed, silent" handlers are lower risk (no false 200), but a missing mock only shows up
+  if an assertion happens to catch the error state. Adding a `throw` after the 404 (the
+  firmware-bridge / guarded-execution pattern) would make them strict.
+- The pass-through specs are by design. With `WORKBENCH_URL` set they send real GETs to that app's
+  backend, so they should only point at a mock-mode backend.
+
+## 2026-10-22 - Claude: the 7 lenient `/api` handlers are now strict — 20/20 pass
+
+- Each lenient fallback also served the one path it was written for, so it stays, but now behind
+  an `expect(path).toBe(…)` (the files' own idiom). Any other path fails the test:
+  - connection-storage 49, 142, 167 → `/api/v1/rack-plans/fixture/disk-preparation`
+  - disk-preparation 38 → `/api/v1/rack-plans/fixture`
+  - firmware-package 51 → `/api/v1/rack-plans/fixture-kit/firmware-package`
+  - raid-rebuild 104 → `/api/v1/rack-plans/fixture`
+  - setup-journey 60 → `/api/v1/providers/ilo-redfish/access-settings`
+- One unmocked endpoint turned up: `GET /api/v1/rack-plans/fixture/raid-rebuild/status` in
+  disk-preparation.spec.ts. Line 36's test had been getting rack-plan JSON for it. Line 3's test
+  already had a strict check and was **failing on HEAD** for this exact call (confirmed by running
+  the committed file). Both handlers now answer with the backend's idle reply,
+  `{status:"not_started", message:"No RAID operation has been submitted.", active:false}`.
+  This fixes the line-3 failure.
+- `npx playwright test` connection-storage, disk-preparation, firmware-package, raid-rebuild and
+  setup-journey (`--workers=3`, port 4173 free) → **20 passed**. No app code changed. The 14
+  "closed, silent" 404 handlers are unchanged.
+
+## 2026-10-22 - Claude: strict safe-action-runner mocks brought onto main
+The strict `installApiMocks` (above) was written at 1b68445. On main the rack-first screens make
+eight more idle reads, now mocked with the backend's idle shapes: `GET /api/v1/jobs`,
+`/api/v1/build-history`, `/api/v1/devices/{id}/health`, `/switch-access`, `/switch-console/ports`,
+and per kit `cable-map`, `switch-setup/status`, `switch-setup/setup`. Result on main:
+86 passed, 4 failed. The same 4 fail with the committed (lenient) spec at the same commit, so they
+are UI drift, not mock gaps: Network settings no longer has a "Management network" heading in a
+"Network defaults" region (two tests), My Rack has no "Continue setup" link, and there is no
+"Report an issue" button. Those four need the spec updated to the current screens.

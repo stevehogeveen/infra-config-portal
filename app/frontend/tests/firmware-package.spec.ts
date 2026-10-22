@@ -60,6 +60,7 @@ test("dragging an ISO uploads bytes, refreshes files and never selects it automa
       return route.fulfill({status:201,json:{name:"dropped.iso",path:"dropped.iso",size_bytes:7}});
     }
     expect(request.method()).toBe("GET");
+    expect(url.pathname).toBe("/api/v1/rack-plans/fixture-kit/firmware-package");
     return route.fulfill({json:{root:"/media",host_root:"C:\\Media",folder:"",folders:[],files:uploaded?[{name:"dropped.iso",path:"dropped.iso",size_bytes:7}]:[],warning:null,selected:null,selection_current:false}});
   });
   await page.route("**/package-fixture",route=>route.fulfill({contentType:"text/html",body:`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module">

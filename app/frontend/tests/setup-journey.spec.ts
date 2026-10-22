@@ -68,6 +68,7 @@ test("My Rack: Edit rack brings back the shelf, placing, moving and saving the p
     }
     expect(req.method()).toBe("GET");
     if (url.pathname === "/api/v1/rack-plans/fixture") return route.fulfill({ json: plan });
+    expect(url.pathname).toBe("/api/v1/providers/ilo-redfish/access-settings");
     return route.fulfill({ json: { device_id: "server", host: "192.0.2.10", last_probe_status: "never" } });
   });
   await page.route("**/simple", route => route.fulfill({ contentType: "text/html", body: harnessHtml }));
