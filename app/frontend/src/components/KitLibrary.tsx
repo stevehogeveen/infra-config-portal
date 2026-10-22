@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Copy, Pencil, FileText, X, Save, Printer, FolderOpen } from "lucide-react";
-import { api, type KitReport } from "../api";
+import { api, jobsApi, type KitReport } from "../api";
 import type { LabProfileList } from "../types";
 import "../kitLibrary.css";
 import { FirmwareAssessmentTable } from "./FirmwareAssessmentTable";
@@ -63,6 +63,18 @@ export function KitLibrary({ state, onReload, variant = "bar" }: { state: LabPro
     try { await api.activateLabProfile(id); window.location.assign("/setup/guide"); }
     catch (err) { setError(err instanceof Error ? err.message : String(err)); setBusy(false); }
   }
+  /** Build it again: a new kit from a recipe file (design only; passwords and addresses asked again). */
+  async function startFromRecipe(file: File) {
+    setBusy(true); setError("");
+    try {
+      const recipe = JSON.parse(await file.text());
+      const name = `${String(recipe?.name || "Kit")} (rebuild ${new Date().toLocaleDateString()})`;
+      const result = await jobsApi.applyRecipe(name, recipe);
+      await api.activateLabProfile(result.kit.id);
+      window.alert(`New kit "${result.kit.name}" is ready.\n\nStill to do:\n- ${result.todo.join("\n- ")}`);
+      window.location.assign("/setup/guide");
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); setBusy(false); }
+  }
   async function saveName() {
     setBusy(true); setError("");
     try {
@@ -96,6 +108,7 @@ export function KitLibrary({ state, onReload, variant = "bar" }: { state: LabPro
       <button type="button" disabled={busy || profile.id === "runtime"} onClick={() => { setMenuOpen(false); open("rename"); }}><Pencil size={14} />Rename</button>
       <button type="button" disabled={busy} onClick={() => { setMenuOpen(false); open("copy"); }}><Copy size={14} />Save as new kit</button>
       <button type="button" disabled={busy} onClick={() => { setMenuOpen(false); open("reports"); }}><FileText size={14} />Build reports</button>
+      <label className="sd-menu-file"><FolderOpen size={14} />Start a kit from a recipe…<input type="file" accept=".json,application/json" disabled={busy} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; setMenuOpen(false); if (file) void startFromRecipe(file); }} /></label>
       <hr />
       <div className="sd-menu-label">Settings · appearance</div>
       <div className="sd-theme-row"><span>Theme</span><span className="sd-seg" role="group" aria-label="Theme"><button type="button" aria-pressed={theme === "light"} onClick={() => setTheme("light")}>Light</button><button type="button" aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}>Dark</button></span></div>

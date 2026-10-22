@@ -22,6 +22,16 @@ def _call(function, *args):
         raise HTTPException(409, str(exc)) from None
 
 
+def _read(function, *args):
+    """A review only reads; an iLO that does not answer is a plain message, not a server error."""
+    import httpx
+
+    try:
+        return _call(function, *args)
+    except httpx.HTTPError as exc:
+        raise HTTPException(409, f"The server's iLO did not answer ({type(exc).__name__}). Check this PC's network cable and the iLO's cable and power, then try again. Nothing was sent.") from None
+
+
 @router.get("/{profile_id}/parts-update/status")
 def parts_status(profile_id: str, device_id: str, session: Session = Depends(get_session)):
     server_in_kit(profile_id, device_id, session)
@@ -31,7 +41,7 @@ def parts_status(profile_id: str, device_id: str, session: Session = Depends(get
 @router.post("/{profile_id}/parts-update/review")
 def parts_review(profile_id: str, device_id: str, session: Session = Depends(get_session), actor: str = Depends(get_current_actor)):
     server_in_kit(profile_id, device_id, session)
-    return _call(service.review, session, profile_id, device_id, actor)
+    return _read(service.review, session, profile_id, device_id, actor)
 
 
 @router.post("/{profile_id}/parts-update/start")

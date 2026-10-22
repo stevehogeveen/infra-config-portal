@@ -5,6 +5,7 @@ test("rack plans render exact ports and bays, reject overlap and retain occupanc
   let saved = { revision: 0, rack_units: 12, equipment: [] as any[] };
   let accessSaves = 0;
   await page.route("**/api/**", async (route) => {
+    { const u = new URL(route.request().url()).pathname; if (/\/devices\/[^/]+\/health$|\/cable-map$|^\/api\/v1\/jobs$/.test(u)) return route.fulfill({ json: u.endsWith("/jobs") ? { running: [], attention: [], recent: [] } : u.endsWith("cable-map") ? { state: "not_read", cables: [], unmatched_server_ports: [], other_switch_ports: [] } : { overall: null, problems: [], checked_at: null } }); }
     if (new URL(route.request().url()).pathname === "/api/v1/providers/ilo-redfish/access-settings") {
       expect(new URL(route.request().url()).searchParams.get("device_id")).toBe("device-0");
       if (route.request().method() === "PUT") {

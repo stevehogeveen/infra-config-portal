@@ -658,6 +658,10 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  // Saved settings show as a short summary; "Change network settings" opens the full form.
+  const [editingNetwork, setEditingNetwork] = useState(false);
+  const networkSaved = Boolean(settingsProfileEditStateFrom(activeProfile).subnet);
+  const showForm = editingNetwork || dirty || !networkSaved;
 
   useEffect(() => {
     setEdit(settingsProfileEditStateFrom(activeProfile));
@@ -756,13 +760,22 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
       </div>
       {!activeProfile && <p role="alert">Kit settings are unavailable. Reload this page after the backend is connected.</p>}
       <form id="lab-defaults-form" className="lab-defaults-form" onSubmit={saveDefaults}>
-        <Guide eyebrow={<>Your guide · <b>Step 2 of 7</b> · Network settings</>}
-          say={dirty ? <>You have changed the shared network settings, so save them to keep them in your plan.</> : <>These network settings are shared by every piece of equipment in this kit; when they look right, carry on to connecting the equipment.</>}
+        <Guide eyebrow={<><b>Step 2 of 7</b></>}
+          say={dirty ? "Save your changes." : "Network settings saved."}
           reassure="Saving writes your plan only. Nothing on the network is changed."
           actionRef={guideActions.ref}
-          primary={dirty ? undefined : <a className="sd-primary" href={"/setup/connect" + (typeof window === "undefined" ? "" : window.location.search)}>Continue to connections</a>}
+          primary={dirty ? undefined : <a className="sd-primary" href={"/setup/connect" + (typeof window === "undefined" ? "" : window.location.search)}>Next: Connect equipment</a>}
           label={<><ProvenanceChip kind="saved" />These values are your plan. The app has not checked them against the network.</>} />
-        <div className="lab-defaults-grid">
+        {!showForm && <section className="net-summary" aria-label="Saved network settings">
+          <dl>
+            <div><dt>Management network</dt><dd>{edit.subnet}{edit.gateway ? ` · gateway ${edit.gateway}` : ""}{edit.vlanId ? ` · VLAN ${edit.vlanId}` : ""}{edit.mtu && edit.mtu !== "1500" ? ` · MTU ${edit.mtu}` : ""}</dd></div>
+            <div><dt>DNS</dt><dd>{edit.enableDns && serviceLists.dns.filter(Boolean).length ? serviceLists.dns.filter(Boolean).join(", ") + (edit.domainName ? ` · ${edit.domainName}` : "") : "Not used"}</dd></div>
+            <div><dt>Time (NTP)</dt><dd>{edit.enableNtp && serviceLists.ntp.filter(Boolean).length ? serviceLists.ntp.filter(Boolean).join(", ") + (edit.timezone ? ` · ${edit.timezone}` : "") : "Not used"}</dd></div>
+            <div><dt>Monitoring (SNMP)</dt><dd>{edit.enableSnmp && serviceLists.snmp.filter(Boolean).length ? `${edit.snmpVersion} · ${serviceLists.snmp.filter(Boolean).join(", ")}` : "Not used"}</dd></div>
+          </dl>
+          <button type="button" className="secondary-action" onClick={() => setEditingNetwork(true)}>Edit</button>
+        </section>}
+        <div className="lab-defaults-grid" hidden={!showForm}>
           <section aria-label="Network defaults" className="kit-defaults-section">
             <header className="kit-section-heading">
               <EthernetPort size={22} aria-hidden="true" />
@@ -923,7 +936,7 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
         </div>
         {error && <div role="alert" className="operator-feedback error lab-defaults-feedback">{error}</div>}
         {message && <div role="status" className="operator-feedback lab-defaults-feedback">{message}</div>}
-        <div className="lab-defaults-actions">
+        <div className="lab-defaults-actions" hidden={!showForm}>
           <span className={dirty ? "kit-unsaved" : ""}>{dirty ? "Unsaved changes" : "Saved plan only. No hardware changes."}</span>
           <div className="kit-save-controls">
           <button className="button-link" type="button" disabled={busy || !dirty} onClick={resetDefaults}><RotateCcw size={16} /> Reset changes</button>

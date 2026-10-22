@@ -154,12 +154,13 @@ def _read_host(host: dict[str, Any]) -> dict[str, Any]:
 
 # ---------------------------------------------------------------- settings
 
-def get_setup(session: Session, profile_id: str, device_id: str) -> dict[str, Any]:
+def get_setup(session: Session, profile_id: str, device_id: str, read_host: bool = True) -> dict[str, Any]:
+    """Saved settings and the image list; with read_host, ESXi is also asked for its datastores and networks."""
     saved = _latest(session, "kit.windows.settings", profile_id=profile_id, device_id=device_id)
     settings = dict(saved.data_json) if saved else {}
     try:
         host = _host(session, profile_id, device_id)
-        found = _read_host(host)
+        found = _read_host(host) if read_host else {"datastores": [], "networks": [], "problem": None}
         target = {"address": host["address"], **found, "default_datastore": host["datastore"]}
     except WindowsDeployError as exc:
         target = {"address": None, "datastores": [], "networks": [], "problem": str(exc), "default_datastore": None}

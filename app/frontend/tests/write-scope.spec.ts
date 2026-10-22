@@ -37,7 +37,7 @@ test("not available: a missing service is neutral and the entry is disabled, nev
 
 test("not available: GET answers but preview does not", async ({ page }) => {
   await mount(page, path => path === "/" ? { scope: "read_only", source: "env", active_operations: [], blockers: [] } : { __status: 501 });
-  await expect(pill(page)).toHaveText("Changes allowed: read-only");
+  await expect(pill(page)).toHaveText("Read-only mode");
   await section(page).getByRole("button", { name: "Limit to firmware only" }).click();
   await expect(section(page).getByText("Not available yet: the app cannot change write scope on this server yet.")).toBeVisible();
   await expect(section(page).getByRole("button", { name: "Limit to firmware only" })).toBeDisabled();
@@ -69,7 +69,7 @@ test("firmware_only: preview, typed phrase, one apply, then the server's re-read
     if (path === "/apply") { scope = "firmware_only"; return { scope, source: "database", active_operations: [], blockers: [] }; }
     throw new Error(`unexpected ${path}`);
   });
-  await expect(pill(page)).toHaveText("Changes allowed: read-only");
+  await expect(pill(page)).toHaveText("Read-only mode");
   await section(page).getByRole("button", { name: "Limit to firmware only" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("Storage and power writes stay refused.")).toBeVisible();
@@ -106,7 +106,7 @@ test("read_only revoke previews, needs no phrase, and keeps unresolved locks vis
   await expect(dialog.getByText("All hardware writes will be refused.")).toBeVisible();
   await expect(dialog.getByLabel("Confirmation phrase")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Lock", exact: true }).click();
-  await expect(pill(page)).toHaveText("Changes allowed: read-only");
+  await expect(pill(page)).toHaveText("Read-only mode");
   await expect(section(page).getByLabel("Unresolved operation locks")).toContainText("iLO 1.48 bridge install on srv (uncertain) · op-9");
   expect(calls.find(call => call.path === "/preview")!.body).toEqual({ target_scope: "read_only" });
   expect(calls.filter(call => call.path === "/apply")).toHaveLength(1);

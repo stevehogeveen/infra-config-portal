@@ -1,0 +1,60 @@
+  :root { --bg:#0f1720; --panel:#16222e; --line:#243342; --ink:#eef3f7; --dim:#8fa3b5; --amber:#ffb224; --green:#3ddc84; --red:#ff6b6b; --blue:#4da3ff; }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 "Segoe UI", system-ui, sans-serif; }
+  header { display:flex; align-items:baseline; gap:14px; padding:22px 28px 10px; }
+  header h1 { margin:0; font-size:22px; letter-spacing:.08em; text-transform:uppercase; color:var(--amber); }
+  header small { color:var(--dim); }
+  main { max-width:980px; margin:0 auto; padding:10px 20px 60px; display:grid; gap:18px; }
+  .board { background:var(--panel); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+  .leg { display:grid; grid-template-columns:44px 1fr auto; gap:14px; align-items:center; padding:14px 18px; border-bottom:1px solid var(--line); font-size:18px; }
+  .leg:last-child { border-bottom:0; }
+  .lamp { width:16px; height:16px; border-radius:50%; background:#33465a; justify-self:center; box-shadow:0 0 0 3px #1c2a38 inset; }
+  .leg.running .lamp { background:var(--amber); box-shadow:0 0 14px var(--amber); animation:pulse 1.2s infinite alternate; }
+  .leg.done .lamp { background:var(--green); box-shadow:0 0 10px rgba(61,220,132,.5); }
+  .leg.stopped .lamp { background:var(--red); box-shadow:0 0 12px rgba(255,107,107,.6); }
+  .leg .t { color:var(--dim); font-variant-numeric:tabular-nums; font-size:14px; }
+  .leg.running, .leg.done, .leg.stopped { color:var(--ink); } .leg.todo { color:#b9c7d3; }
+  .leg small { color:var(--dim); font-size:13px; margin-left:8px; }
+  @keyframes pulse { from { opacity:.65 } to { opacity:1 } }
+  .deck { display:grid; grid-template-columns:1fr auto; gap:18px; align-items:center; }
+  .say { min-height:54px; padding:14px 18px; background:var(--panel); border:1px solid var(--line); border-radius:14px; color:var(--amber); font-size:17px; }
+  .say.calm { color:var(--ink); } .say.bad { color:var(--red); }
+  .say a { color:var(--blue); }
+  .big { width:150px; height:150px; padding:12px; border-radius:50%; border:0; cursor:pointer; font:700 18px/1.15 "Segoe UI", system-ui, sans-serif; color:#0b1118; background:var(--amber); box-shadow:0 10px 30px rgba(255,178,36,.35); transition:transform .1s; overflow-wrap:anywhere; }
+  .big:hover { transform:scale(1.03); } .big:disabled { background:#33465a; color:#8fa3b5; box-shadow:none; cursor:default; transform:none; }
+  .big.go { background:var(--green); box-shadow:0 10px 30px rgba(61,220,132,.35); } .big.stop { background:var(--red); color:#fff; box-shadow:0 10px 30px rgba(255,107,107,.35); }
+  .quiet { background:none; border:1px solid var(--line); color:var(--dim); border-radius:8px; padding:6px 12px; cursor:pointer; font:14px "Segoe UI", system-ui, sans-serif; }
+  .approve { background:var(--panel); border:1px solid var(--amber); border-radius:14px; padding:18px; display:grid; gap:12px; }
+  .approve h2 { margin:0; font-size:18px; color:var(--amber); } .approve ol { margin:0; padding-left:22px; display:grid; gap:8px; } .approve ol b { display:block; }
+  .approve ol span { color:var(--dim); font-size:14px; } .approve ol li.skip { opacity:.55; } .approve ol li.skip b { text-decoration:line-through; }
+  .approve label { display:flex; gap:10px; align-items:flex-start; padding:10px 12px; background:#1e2d3b; border-radius:10px; }
+  .check { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:12px 18px; }
+  .check ul { list-style:none; margin:0; padding:0; columns:2; gap:24px; font-size:14px; } .check li { break-inside:avoid; padding:3px 0; color:var(--dim); }
+  .check li.ok::before { content:"● "; color:var(--green); } .check li.warn::before { content:"● "; color:var(--amber); } .check li.fail::before { content:"● "; color:var(--red); }
+  .check li.fail, .check li.warn { color:var(--ink); }
+  .stage { display:grid; grid-template-columns:270px 1fr; gap:18px; align-items:start; }
+  .rack { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; }
+  .rack svg { width:100%; height:auto; display:block; }
+  .rk-frame { fill:#0b1118; stroke:#33465a; stroke-width:2; }
+  .rk-unit { fill:#1c2a38; stroke:#2c3d4f; }
+  .rk-bay { fill:#243342; stroke:#33465a; stroke-width:.8; } .rk-bay.on { fill:#3a5a75; }
+  .rk-port { fill:#121c26; stroke:#33465a; stroke-width:.6; } .rk-port.on { fill:#1f5f3f; stroke:#3ddc84; }
+  .rk-led { fill:#33465a; } .rk-led.ok { fill:#3ddc84; filter:drop-shadow(0 0 4px #3ddc84); } .rk-led.run { fill:#ffb224; filter:drop-shadow(0 0 5px #ffb224); animation:pulse 1.2s infinite alternate; } .rk-led.bad { fill:#ff6b6b; filter:drop-shadow(0 0 5px #ff6b6b); }
+  .rk-label { fill:#8fa3b5; font:600 9px "Segoe UI", system-ui, sans-serif; letter-spacing:.06em; }
+  .rk-text { fill:#eef3f7; font:600 10px "Segoe UI", system-ui, sans-serif; }
+  .rk-vm { fill:#16222e; stroke:#33465a; stroke-width:1.2; } .rk-vm.ok { stroke:#3ddc84; } .rk-vm.run { stroke:#ffb224; } .rk-vm.bad { stroke:#ff6b6b; }
+  .rk-cable { stroke:#33465a; stroke-width:2; fill:none; stroke-dasharray:4 4; } .rk-cable.ok { stroke:#3ddc84; stroke-dasharray:none; }
+  .rk-stamp { fill:none; stroke:#3ddc84; stroke-width:3; } .rk-stamp-text { fill:#3ddc84; font:800 16px "Segoe UI", system-ui, sans-serif; letter-spacing:.2em; }
+  .report { background:#fff; border-radius:14px; overflow:hidden; border:0; width:100%; height:80vh; }
+  .warn { color:var(--red); font-size:14px; }
+  @media (max-width:760px) { .stage { grid-template-columns:1fr; } .rack { max-width:320px; } }
+  @media (max-width:640px) { .deck { grid-template-columns:1fr; } .big { justify-self:center; } .check ul { columns:1; } .leg { font-size:16px; } }
+
+.leg.skipped .lamp { background:var(--dim); }
+#timeline { max-height:240px; overflow:auto; padding-left:22px; font-size:14px; }
+#timeline time, #freshness { color:var(--dim); font-size:13px; }
+#timeline .needs_you { color:var(--red); }
+#flight-log h2 { font-size:17px; margin:0; }
+
+.leg[data-reason="already_verified"] .lamp { background:var(--green); }

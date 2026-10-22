@@ -40,7 +40,9 @@ def test_unknown_ambiguous_or_unsafe_report_rejected(old, new):
         parse_repository_report(FIXTURE.read_text().replace(old, new).encode())
 
 
-@pytest.mark.parametrize("data", [b"", b"x" * (LIMIT + 1), b"\xff", b"<report>\x00</report>"])
+# Short ids: pytest copies the test id into an environment variable, which Windows caps at 32767.
+@pytest.mark.parametrize("data", [b"", b"x" * (LIMIT + 1), b"\xff", b"<report>\x00</report>"],
+                         ids=["empty", "too-long", "not-utf8", "nul-byte"])
 def test_bounded_input(data):
     with pytest.raises(SumReportError):
         parse_repository_report(data)

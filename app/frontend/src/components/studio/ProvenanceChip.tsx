@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 export type Provenance = "proven" | "saved" | "recorded" | "suggested" | "blank" | "warn" | "danger";
 
 const defaults: Record<Provenance, string> = {
-  proven: "proven",
+  proven: "verified",
   saved: "saved plan",
   recorded: "recorded",
   suggested: "suggested",

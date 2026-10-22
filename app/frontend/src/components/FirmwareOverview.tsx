@@ -54,7 +54,7 @@ function lines(rows: Row[]): Line[] {
 
 function Status({ line }: { line: Line }) {
   if (line.status === "Update available") return <span className="fw-pill fw-pill-up">Update available</span>;
-  if (!line.target) return <span className="fw-pill">No update</span>;
+  if (!line.target) return <span className="fw-pill">Not in package</span>;
   return <span className="fw-pill">{line.status === "Cannot determine" ? "Not compared" : "Up to date"}</span>;
 }
 
@@ -143,7 +143,7 @@ export function FirmwareOverview({ profileId, deviceId, deviceName, model, packa
         : !loading && <ProvenanceChip kind="blank">not read yet</ProvenanceChip>}</span>
       <button type="button" className="secondary-action" disabled={loading || busy || !!blocker} onClick={() => void check()}><RefreshCw size={15} />{busy ? "Reading..." : "Check again"}</button>
       {/* One button: through the iLO first, then HPE's boot disc only if something still needs it. */}
-      {sppMode && <button type="button" className={partsActive || spp.inProgress ? "secondary-action" : "primary-action fw-review"} disabled={!partsActive && !spp.inProgress && (!!blocker || loading)}
+      {sppMode && (partsActive || spp.inProgress || !all.length || counts.updates > 0) && <button type="button" className={partsActive || spp.inProgress ? "secondary-action" : "primary-action fw-review"} disabled={!partsActive && !spp.inProgress && (!!blocker || loading)}
         onClick={() => setPartsOpen(true)}>{partsActive || spp.inProgress ? "Updating firmware · open" : "Update firmware"}</button>}
     </header>
     {blocker === "connection" ? <p className="fw-card-why" role="note">Save this server's iLO address and sign-in first. <Link to={`/setup/connect?device=${encodeURIComponent(deviceId)}`}>Open connection settings</Link></p>
@@ -155,9 +155,9 @@ export function FirmwareOverview({ profileId, deviceId, deviceName, model, packa
     </div>}
     {loading ? <p className="fw-card-empty" role="status">Loading…</p>
       : all.length && !rows.length ? <p className="fw-card-empty">Nothing in this view.</p>
-      : !rows.length ? <p className="fw-card-empty">{result?.reason || "No firmware reading yet. Use Check again once a package is chosen."}</p>
+      : !rows.length ? (blocker ? null : <p className="fw-card-empty">{result?.reason || "No firmware reading yet. Use Check again once a package is chosen."}</p>)
       : <table className="fw-table">
-        <thead><tr><th>Part</th><th>Installed</th><th>Can go to</th><th>Status</th><th><span className="sr-only">Action</span></th></tr></thead>
+        <thead><tr><th>Part</th><th>Installed</th><th>In package</th><th>Status</th><th><span className="sr-only">Action</span></th></tr></thead>
         <tbody>{rows.map(line => {
           const path = line.ilo ? iloPath(line.installed, line.target, isIlo5(line)) : [];
           const next = path[0];
@@ -165,9 +165,9 @@ export function FirmwareOverview({ profileId, deviceId, deviceName, model, packa
           return <tr key={line.key}>
             <th scope="row"><strong>{line.label}</strong>{line.detail && <small>{line.detail}</small>}</th>
             <td data-label="Installed" className="fw-v">{line.installed || "Not reported"}</td>
-            <td data-label="Can go to">{path.length > 1 ? <><span className="fw-path">{path.map((step, index) => <span key={step}>{index > 0 && <i aria-hidden="true">→</i>}<b className={index === 0 ? "next" : ""}>{step}</b></span>)}</span>
+            <td data-label="In package">{path.length > 1 ? <><span className="fw-path">{path.map((step, index) => <span key={step}>{index > 0 && <i aria-hidden="true">→</i>}<b className={index === 0 ? "next" : ""}>{step}</b></span>)}</span>
                 <small>Needs {path.slice(0, -1).join(" and ")} first</small></>
-              : line.target ? <span className="fw-v">{line.target}</span> : <small>No match in package</small>}</td>
+              : line.target ? <span className="fw-v">{line.target}</span> : <small>Not in this package</small>}</td>
             <td data-label="Status"><Status line={line} /></td>
             <td className="fw-act">{sppMode || line.status !== "Update available" ? null
               : updateActive && line.ilo ? <button type="button" className="secondary-action" onClick={() => setPanelOpen(true)}>Update in progress · open</button>

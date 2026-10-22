@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kit Pilot · Briefing</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  .brief { display:grid; grid-template-columns:1fr 270px; gap:18px; align-items:start; }
+  .chat { background:var(--panel); border:1px solid var(--line); border-radius:14px; display:grid; grid-template-rows:1fr auto; min-height:72vh; max-height:82vh; }
+  .log { overflow:auto; padding:18px; display:grid; gap:12px; align-content:start; }
+  .msg { max-width:78%; padding:12px 16px; border-radius:16px; font-size:16px; line-height:1.45; white-space:pre-wrap; }
+  .msg.pilot { background:#1e2d3b; border-top-left-radius:4px; justify-self:start; }
+  .msg.you { background:var(--amber); color:#0b1118; border-top-right-radius:4px; justify-self:end; }
+  .msg.good { border-left:3px solid var(--green); } .msg.bad { border-left:3px solid var(--red); } .msg.work { color:var(--dim); font-style:italic; }
+  .msg a { color:var(--blue); }
+  .typing { justify-self:start; color:var(--dim); font-size:14px; padding:4px 16px; } .typing i { display:inline-block; width:6px; height:6px; margin-right:3px; border-radius:50%; background:var(--dim); animation:blink 1s infinite; } .typing i:nth-child(2) { animation-delay:.2s } .typing i:nth-child(3) { animation-delay:.4s }
+  @keyframes blink { 0%,80%,100% { opacity:.2 } 40% { opacity:1 } }
+  .bar { border-top:1px solid var(--line); padding:12px 14px; display:grid; gap:10px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; } .chip { border:1px solid var(--amber); color:var(--amber); background:transparent; border-radius:999px; padding:7px 14px; cursor:pointer; font:600 14px "Segoe UI", system-ui, sans-serif; }
+  .chip[aria-pressed="true"] { background:rgba(255,178,36,.22); box-shadow:inset 0 0 0 1px var(--amber); }
+  .chip:hover { background:rgba(255,178,36,.12); } .chip.quiet { border-color:var(--line); color:var(--dim); }
+  .fields { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:8px; }
+  .fields label { display:grid; gap:3px; font-size:12px; color:var(--dim); } .fields input, .fields select, .ask input { background:#0f1720; border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:9px 10px; font:15px "Segoe UI", system-ui, sans-serif; min-width:0; width:100%; }
+  .ask { display:flex; gap:8px; } .ask input { flex:1; } .send { border:0; border-radius:8px; padding:0 16px; background:var(--amber); color:#0b1118; font:700 15px "Segoe UI", system-ui, sans-serif; cursor:pointer; }
+  .side { display:grid; gap:12px; } .rack { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; position:sticky; top:16px; }
+  .facts { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:12px 14px; font-size:13px; color:var(--dim); display:grid; gap:4px; } .facts b { color:var(--ink); font-weight:600; }
+  .facts .ok::before { content:"● "; color:var(--green); } .facts .no::before { content:"○ "; }
+  @media (max-width:760px) { .brief { grid-template-columns:1fr; } .rack { position:static; max-width:320px; } .msg { max-width:92%; } }
+</style>
+</head>
+<body>
+<header><h1>Kit Pilot</h1><small>Briefing</small><span style="flex:1"></span>
+  <a class="quiet" href="/setup" style="text-decoration:none;padding:6px 12px;border:1px solid var(--line);border-radius:8px;color:var(--dim)">Form view</a>
+  <a class="quiet" href="/" style="text-decoration:none;padding:6px 12px;border:1px solid var(--line);border-radius:8px;color:var(--dim);margin-left:8px">Flight board →</a></header>
+<main>
+  <div class="brief">
+    <div class="chat">
+      <div class="log" id="log" aria-live="polite"></div>
+      <div class="bar"><div class="chips" id="chips"></div><div id="form"></div>
+        <form class="ask" id="ask"><input id="text" autocomplete="off" placeholder="Type an answer…"><button class="send" type="submit">Send</button></form></div>
+    </div>
+    <aside class="side"><div class="rack" id="rack" aria-hidden="true"></div><div class="facts" id="facts"></div></aside>
+  </div>
+</main>
+<script src="/rack.js"></script>
+<script>
+/* The briefing: a scripted interview. Every answer is saved through the same /save and /read calls as the
+   form view, so nothing here can touch equipment except the explicit reads it announces first. */
+const $ = id => document.getElementById(id);
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let plan = {}, pending = null, draftKey = null, draft = {}, step = "equipment";  // pending: resolver for the current question
+const api = async (path, body) => { const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j; };
+
+// Drafts are tab-local, kit-specific and contain only non-secret answers.
+function remember() { if (draftKey) { try { sessionStorage.setItem(draftKey, JSON.stringify(draft)); } catch {} } }
+function checkpoint(name) { step = name; draft.step = name; remember(); }
+function draftQuestion(chips, fields) { return step + ":" + (fields ? fields.map(f => f.id).join(",") : chips.map(c => c.label).join(",")); }
+function bubble(text, who = "pilot", kind = "") { const d = document.createElement("div"); d.className = `msg ${who} ${kind}`; d.innerHTML = text; $("log").append(d); $("log").scrollTop = 1e9; return d; }
+async function say(text, kind = "") { const t = document.createElement("div"); t.className = "typing"; t.innerHTML = "<i></i><i></i><i></i>"; $("log").append(t); $("log").scrollTop = 1e9; await wait(Math.min(900, 250 + text.length * 6)); t.remove(); return bubble(text, "pilot", kind); }
+function ask(chips = [], fields = null, { free = true } = {}) {
+  return new Promise(resolve => {
+    pending = resolve;
+    const key = draftQuestion(chips, fields), saved = draft[key] || {};
+    const store = () => {
+      const values = {};
+      for (const f of fields || []) if (f.type !== "password") values[f.id] = $("f-" + f.id).value;
+      draft[key] = { values, text: fields ? "" : $("text").value }; remember();
+    };
+    // Between questions, Send does nothing and keeps what was typed, so typing early loses nothing.
+    const done = answer => { store(); if (answer.chip !== undefined) { draft[key].chip = answer.chip; remember(); } pending = null; $("chips").innerHTML = ""; $("form").innerHTML = ""; $("ask").hidden = false; $("ask").dataset.ready = ""; $("ask").onsubmit = e => e.preventDefault(); resolve(answer); };
+    $("chips").innerHTML = chips.map((c, i) => `<button type="button" class="chip ${c.quiet ? "quiet" : ""}" data-i="${i}" aria-pressed="${saved.chip === (c.value ?? c.label)}">${esc(c.label)}</button>`).join("");
+    $("chips").querySelectorAll(".chip").forEach(b => b.onclick = () => { const c = chips[Number(b.dataset.i)]; bubble(esc(c.label), "you"); done({ chip: c.value ?? c.label }); });
+    $("form").innerHTML = fields ? `<div class="fields">${fields.map(f => `<label>${esc(f.label)}${f.options ? `<select id="f-${f.id}">${f.options.map(o => `<option value="${esc(o.value ?? o)}">${esc(o.label ?? o)}</option>`).join("")}</select>` : `<input id="f-${f.id}" type="${f.type || "text"}" value="${esc(f.value ?? "")}" placeholder="${esc(f.placeholder ?? "")}" autocomplete="${f.type === "password" ? "new-password" : "off"}">`}</label>`).join("")}</div>` : "";
+    for (const f of fields || []) {
+      const el = $("f-" + f.id);
+      if (f.type !== "password" && saved.values?.[f.id] !== undefined) el.value = saved.values[f.id];
+      else if (f.options && f.value !== undefined) el.value = f.value;
+      el.addEventListener("input", store); el.addEventListener("change", store);
+    }
+    $("text").value = saved.text || ""; $("text").oninput = store;
+    $("ask").hidden = !free && !fields; $("text").placeholder = fields ? "Press Send when the fields are filled" : "Type an answer…";
+    $("ask").dataset.ready = "1";
+    if (fields) setTimeout(() => $("f-" + fields[0].id)?.focus(), 50); else if (free) $("text").focus();
+    $("ask").onsubmit = e => { e.preventDefault(); const text = $("text").value.trim(); const values = fields ? Object.fromEntries(fields.map(f => [f.id, $("f-" + f.id).value])) : null;
+      if (!text && !fields) return; if (fields) bubble(esc(fields.filter(f => f.type !== "password").map(f => values[f.id]).filter(Boolean).join(" · ") || "(filled in)"), "you"); else bubble(esc(text), "you"); done({ text, values }); $("text").value = ""; };
+  });
+}
+async function refresh() { plan = await api("/plan");
+  const key = "kit-pilot:briefing:" + (plan.kit?.id || "new");
+  if (draftKey !== key) { draftKey = key; try { draft = JSON.parse(sessionStorage.getItem(key) || "{}"); } catch { draft = {}; } }
+  facts(); }
+function facts() {
+  const k = plan.kit || {}, s = plan.server || {}, w = plan.switch || {};
+  const row = (ok, text) => `<div class="${ok ? "ok" : "no"}">${text}</div>`;
+  $("facts").innerHTML = `<b>What I know so far</b>` + row(k.id, `Kit ${esc(k.name || "")} ${esc(k.subnet || "")}`) + row(s.id, `Server ${esc(s.name || "")}`) + row(w.id, `Switch ${esc(w.name || "")}`)
+    + row((s.ilo || {}).probe_ok, (s.ilo || {}).probe_ok ? "iLO read ok" : (s.ilo || {}).password_configured ? "iLO sign-in saved" : "iLO not read") + row((w.console_last || {}).answered, (w.console_last || {}).answered ? "Switch read on console" : "Switch not read")
+    + row(false, (s.esxi || {}).saved_at ? "ESXi: saved plan, not verified" : "ESXi not planned") + row(false, (s.windows || {}).saved_at ? "Windows: saved plan, not verified" : "Windows not planned");
+  const legs = [["connect", (s.ilo || {}).probe_ok], ["switch", (w.console_last || {}).answered], ["esxi", false], ["windows", false]].map(([id, ok]) => ({ id, state: ok ? "done" : "todo" }));
+  $("rack").innerHTML = drawRack({ legs, equipment: [s.id && { kind: "server", name: s.name }, w.id && { kind: "switch", name: w.name }].filter(Boolean) });
+}
+async function save(section, values, workText) {
+  const w = bubble(esc(workText || "Saving…"), "pilot", "work");
+  try { await api("/save", { section, values }); w.remove(); await refresh(); return true; }
+  catch (err) { w.remove(); await say(`That didn't save: ${esc(err.message)}`, "bad"); return false; }
+}
+const ipOk = v => /^\d{1,3}(\.\d{1,3}){3}$/.test(v.trim()) && v.split(".").every(n => Number(n) <= 255);
+const cidrOk = v => /^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(v.trim());
+const yes = a => /^(y|yes|yep|yeah|ok|sure|done|plugged|connected)/i.test(a.text || a.chip || "");
+
+async function interview() {
+  await refresh();
+  if (draft.step === "summary") return summary();
+  const stages = ["network", "ilo", "switch", "esxi", "windows", "options"];
+  const resume = stages.indexOf(draft.step);
+  if (resume >= 0) {
+    const actions = [askNetwork, () => plan.server?.id && askIlo(plan.server), () => plan.switch?.id && askSwitch(plan.switch), () => plan.server?.id && askEsxi(), () => plan.server?.id && askWindows(), askOptions];
+    for (let i = resume; i < (draft.editing ? resume + 1 : stages.length); i++) await actions[i]();
+    draft.editing = false; remember(); return summary();
+  }
+  const k = plan.kit || {}, s = plan.server || {}, w = plan.switch || {};
+  await say(`Hello. I'm Kit Pilot. I'll ask a few questions, read the equipment when I can, and build the kit when you say go. Nothing is changed until you approve the flight.`);
+  // 1. what are we building
+  let kind = "both";
+  if (s.id || w.id) {
+    await say(`I already know about ${[s.id && `<b>${esc(s.name)}</b>`, w.id && `<b>${esc(w.name)}</b>`].filter(Boolean).join(" and ")}. Keep that equipment?`);
+    const a = await ask([{ label: "Keep it" }, { label: "Change it", quiet: true }], null, { free: false });
+    kind = a.chip === "Keep it" ? "keep" : "both";
+  }
+  if (kind !== "keep") {
+    await say(`First: what are we building?`);
+    const a = await ask([{ label: "A server and a switch", value: "both" }, { label: "Just a server", value: "server" }, { label: "Just a switch", value: "switch" }], null, { free: false });
+    kind = a.chip;
+    const fields = [];
+    if (kind !== "switch") fields.push({ id: "server_name", label: "Server name", value: s.name || "HPE DL360 1" }, { id: "server_model", label: "Model", options: ["HPE DL360 Gen10", "HPE DL380 Gen10"] });
+    if (kind !== "server") fields.push({ id: "switch_name", label: "Switch name", value: w.name || "Cisco switch 1" }, { id: "switch_ports", label: "Ports", options: ["24", "48"] });
+    const losing = [kind === "switch" && s.id && s.name, kind === "server" && w.id && w.name].filter(Boolean);
+    if (losing.length) {
+      await say(`Careful: that leaves <b>${esc(losing.join(" and "))}</b> out of the kit. It would be removed from the plan (its records stay, and it can be added back). Remove it?`, "bad");
+      const c = await ask([{ label: "Keep it in the kit", value: "keep" }, { label: "Yes, remove it", value: "remove", quiet: true }], null, { free: false });
+      if (c.chip === "keep") return interview();
+    }
+    await say(`Good. What should I call ${kind === "both" ? "them" : "it"}, and which model?`);
+    const b = await ask([], fields);
+    while (!await save("equipment", { ...b.values, switch_ports: Number(b.values.switch_ports || 24), remove_missing: losing.length > 0 }, "Adding the equipment to the rack…")) { await say(`Let's try those names again.`); Object.assign(b, await ask([], fields)); }
+    await say(`Added. You'll see ${kind === "both" ? "both" : "it"} in the rack on the right.`, "good");
+  }
+  // 2. network
+  if (k.id && k.subnet) {
+    await say(`The kit's network is <b>${esc(k.subnet)}</b> via <b>${esc(k.gateway || "?")}</b>. Keep it?`);
+    const a = await ask([{ label: "Keep it" }, { label: "Change it", quiet: true }], null, { free: false });
+    if (a.chip !== "Keep it") await askNetwork();
+  } else await askNetwork();
+  // 3. iLO
+  const srv = plan.server || {};
+  if (srv.id) {
+    if ((srv.ilo || {}).password_configured) {
+      await say(`The iLO sign-in for <b>${esc(srv.name)}</b> is saved (${esc(srv.ilo.host || "address unknown")}, user ${esc(srv.ilo.username || "?")}). Shall I read the server now?`);
+      const a = await ask([{ label: "Read it" }, { label: "Change the sign-in first", quiet: true }], null, { free: false });
+      if (a.chip !== "Read it") await askIlo(srv); else await readIlo(srv);
+    } else await askIlo(srv);
+  }
+  // 4. switch
+  const sw = plan.switch || {};
+  if (sw.id) await askSwitch(sw);
+  // 5. ESXi
+  if (srv.id) await askEsxi();
+  // 6. Windows
+  if (srv.id) await askWindows();
+  // 7. flight options, asked here so the flight board never has to
+  await askOptions();
+  return summary();
+}
+async function summary() {
+  checkpoint("summary");
+  await refresh();
+  const f = plan;
+  await say(`That's the briefing. Here's the plan:\n• Kit <b>${esc(f.kit.name)}</b> on ${esc(f.kit.subnet)}\n${f.server.id ? `• ${esc(f.server.name)}: iLO ${esc((f.server.ilo || {}).host || "?")}, ESXi ${esc((f.server.esxi || {}).hostname || "?")} (${esc((f.server.esxi || {}).addressing || "?")}), Windows ${esc((f.server.windows || {}).vm_name || "?")}\n` : ""}${f.switch.id ? `• ${esc(f.switch.name)}: ${esc((f.switch.setup || {}).hostname || "?")}, VLAN ${esc((f.switch.setup || {}).vlan ?? "?")}, ${esc((f.switch.setup || {}).mode || "?")}, console ${esc(f.switch.console_port || "not read")}\n` : ""}Ready when you are.`, "good");
+  const edits = ["network", "server sign-in", "switch", "ESXi", "Windows", "options"];
+  const a = await ask([{ label: "Go to the flight board" }, ...edits.map(x => ({ label: "Change " + x, value: x, quiet: true }))], null, { free: false });
+  if (a.chip === "Go to the flight board") { location.href = "/"; return; }
+  const actions = { network: askNetwork, "server sign-in": () => plan.server?.id ? askIlo(plan.server) : say("No server in this kit."), switch: () => plan.switch?.id ? askSwitch(plan.switch) : say("No switch in this kit."), ESXi: () => plan.server?.id ? askEsxi() : say("No server in this kit."), Windows: () => plan.server?.id ? askWindows() : say("No server in this kit."), options: askOptions };
+  draft.editing = true; remember();
+  await actions[a.chip]();
+  draft.editing = false; remember();
+  return summary();
+}
+
+async function askOptions() {
+  checkpoint("options");
+  const opts = { skip: [], replace_switch: false };
+  await refresh();
+  const sw = plan.switch || {}, s = plan.server || {};
+  if (sw.id && (sw.console_last || {}).answered && (sw.console_last || {}).prompt_state !== "setup-wizard") {
+    await say(`<b>${esc(sw.name)}</b> already has settings (it isn't at its new-switch dialog). On the flight, shall I replace its users, management address and SSH with the plan, or leave it alone?`);
+    const a = await ask([{ label: "Replace them with the plan", value: "replace" }, { label: "Leave the switch alone this run", value: "leave", quiet: true }], null, { free: false });
+    if (a.chip === "replace") opts.replace_switch = true; else opts.skip.push("switch");
+  }
+  if (s.id) {
+    await say(`Firmware: the flight compares the server with the package and installs what's out of date, which restarts the server (ESXi and Windows go down meanwhile). Do it this run, or skip it for now?`);
+    const f = await ask([{ label: "Update firmware this run", value: "do" }, { label: "Skip firmware this run", value: "skip", quiet: true }], null, { free: false });
+    if (f.chip === "skip") opts.skip.push("firmware");
+    await say(`And the final proof: it restarts Windows once to prove it comes back. Run it at the end?`);
+    const t = await ask([{ label: "Yes, prove it works", value: "do" }, { label: "Skip the proof this run", value: "skip", quiet: true }], null, { free: false });
+    if (t.chip === "skip") opts.skip.push("acceptance");
+  }
+  await api("/do", { action: "options", options: opts });
+  await say(`Noted: ${opts.skip.length ? "skipping " + opts.skip.map(x => ({ switch: "the switch", firmware: "firmware", acceptance: "the proof" }[x])).join(" and ") + " this run" : "flying every leg"}${opts.replace_switch ? "; the switch's existing settings get replaced" : ""}. You can change these by going through the briefing again.`, "good");
+}
+async function askNetwork() {
+  checkpoint("network");
+  const k = plan.kit || {};
+  const nets = (await api("/mynet")).networks || [];
+  await say(`What network will this kit live on? If it's a DHCP network and you don't know the subnet, I can read it from this PC: it's on ${nets.length ? nets.map(n => `<b>${esc(n.subnet)}</b> (${esc(n.adapter)}${n.dhcp ? ", DHCP" : ""})`).join(" and ") : "no network I can see"}. Or type the subnet (like 192.0.2.0/27).`);
+  let subnet, picked = null;
+  for (;;) {
+    const a = await ask(nets.map(n => ({ label: `Use ${n.subnet} (${n.adapter}${n.dhcp ? ", DHCP" : ""})`, value: n.subnet })), null);
+    if (a.chip) { subnet = a.chip; picked = nets.find(n => n.subnet === subnet); break; }
+    const text = (a.text || "").trim();
+    if (/^dhcp$/i.test(text) && nets.length) { subnet = nets[0].subnet; picked = nets[0]; await say(`DHCP it is: this PC's lease says <b>${esc(subnet)}</b>.`); break; }
+    subnet = text; if (cidrOk(subnet)) break;
+    await say(`I need it as address/prefix, for example 192.0.2.0/27${nets.length ? ", or pick one of this PC's networks above" : ""}.`, "bad");
+  }
+  const guess = subnet.split("/")[0].split("."); guess[3] = String(Number(guess[3]) + 1);
+  await say(`Gateway, DNS and the kit's name? ${picked ? "These come from this PC's DHCP lease" : "I've guessed the usual ones"}; change anything that's wrong.`);
+  const b = await ask([], [{ id: "name", label: "Kit name", value: k.name || "Lab kit" }, { id: "gateway", label: "Gateway", value: (picked && picked.gateway) || k.gateway || guess.join(".") }, { id: "dns", label: "DNS (comma separated)", value: (picked && picked.dns.length ? picked.dns : k.dns || []).join(", ") }, { id: "domain", label: "Domain", value: k.domain || "lab.local" }]);
+  if (!ipOk(b.values.gateway)) { await say(`That gateway isn't an IP address.`, "bad"); return askNetwork(); }
+  if (await save("kit", { name: b.values.name, subnet, gateway: b.values.gateway, dns: b.values.dns.split(",").map(x => x.trim()).filter(Boolean), domain: b.values.domain }, "Saving the network…"))
+    await say(`Network saved: <b>${esc(subnet)}</b> via ${esc(b.values.gateway)}.`, "good");
+  else return askNetwork();
+}
+async function lookFor(kind, label) {
+  const w = bubble(`Pinging ${esc((plan.kit || {}).subnet || "the kit's network")} and asking whatever answers what it is (read-only; this takes a few seconds)…`, "pilot", "work");
+  try {
+    const r = await api("/find", {}); w.remove();
+    const hits = r.found.filter(f => !kind || f.kind === kind || (kind === "ilo" && f.kind === "hpe"));
+    if (!hits.length) { await say(`Nothing on ${esc(r.subnet)} identified itself as ${label}. ${r.found.length ? `I did see ${r.found.length} other device${r.found.length === 1 ? "" : "s"} answer.` : "Nothing answered at all: check this PC is on that network and the cable is in."} You can type the address instead.`, "bad"); return null; }
+    await say(`On ${esc(r.subnet)} I found:\n${hits.map(f => `• <b>${esc(f.ip)}</b> · ${esc(f.detail)}${f.mac ? ` · ${esc(f.mac)}` : ""}`).join("\n")}\nWhich one is it?`, "good");
+    const a = await ask([...hits.map(f => ({ label: `${f.ip} · ${f.detail}`, value: f.ip })), { label: "None of these, I'll type it", value: "", quiet: true }], null, { free: false });
+    return a.chip || null;
+  } catch (err) { w.remove(); await say(`I couldn't look: ${esc(err.message)}`, "bad"); return null; }
+}
+async function askIlo(srv) {
+  checkpoint("ilo");
+  await say(`Now the server. Pull the little tag out of the front of <b>${esc(srv.name)}</b>: it shows the iLO's user and password. The iLO's address comes from DHCP, so you may not know it. Shall I look for it on the kit's network, or do you have it?`);
+  let host = (srv.ilo || {}).host || "";
+  const how = await ask([{ label: "Look for it on the network" }, { label: host ? `Use ${host}` : "I have the address", quiet: true }], null, { free: false });
+  if (how.chip === "Look for it on the network") host = (await lookFor("ilo", "an HPE iLO")) || host;
+  await say(host ? `Using <b>${esc(host)}</b>. Now the user and password from the tag.` : `What's the iLO address, and the user and password from the tag?`);
+  const a = await ask([], [{ id: "host", label: "iLO address", value: host, placeholder: "192.0.2.10" }, { id: "username", label: "User", value: (srv.ilo || {}).username || "Administrator" }, { id: "password", label: "Password (from the tag)", type: "password" }]);
+  if (!a.values.host) { await say(`I need the iLO address to go on.`, "bad"); return askIlo(srv); }
+  if (await save("ilo", a.values, "Saving the sign-in…")) await readIlo(srv); else return askIlo(srv);
+}
+async function readIlo(srv) {
+  const w = bubble("Reading the server through its iLO (read-only)…", "pilot", "work");
+  try { const r = await api("/read", { what: "ilo" }); w.remove(); await say(esc(r.message), r.ok ? "good" : "bad"); if (!r.ok) { const a = await ask([{ label: "Try again" }, { label: "Change the sign-in", quiet: true }, { label: "Skip for now", quiet: true }], null, { free: false }); if (a.chip === "Try again") return readIlo(srv); if (a.chip === "Change the sign-in") return askIlo(srv); } }
+  catch (err) { w.remove(); await say(`Couldn't read it: ${esc(err.message)}`, "bad"); }
+  await refresh();
+}
+async function askSwitch(sw) {
+  checkpoint("switch");
+  await say(`The switch, <b>${esc(sw.name)}</b>. A new switch is set up over its blue console cable. Is that cable plugged into this PC?`);
+  const a = await ask([{ label: "Yes, it's plugged in" }, { label: "Not yet", quiet: true }], null, { free: false });
+  if (!yes(a)) { await say(`No problem. Plug it in later and press <b>Read the switch</b> on the form view; the flight will wait at the switch leg until it's read.`); }
+  else {
+    await refresh();
+    const ports = (plan.switch || {}).console_ports || [];
+    if (!ports.length) await say(`I don't see any COM ports on this PC (${esc((plan.switch || {}).console_problem || "none listed")}). Check the cable and the console helper, then come back.`, "bad");
+    else {
+      await say(`I see ${ports.length === 1 ? "one COM port" : ports.length + " COM ports"}. Which one is the console cable?${ports.some(p => p.recommended) ? " I'd guess the one marked (console cable)." : ""}`);
+      const p = await ask(ports.map(x => ({ label: `${x.port} · ${x.description}${x.recommended ? " (console cable)" : ""}`, value: x.port })), null, { free: false });
+      const w = bubble(`Reading the switch on ${esc(p.chip)} (read-only, about a minute)…`, "pilot", "work");
+      try { const r = await api("/read", { what: "switch", port: p.chip }); w.remove(); await say(esc(r.message), r.ok ? "good" : "bad"); }
+      catch (err) { w.remove(); await say(`Couldn't read it: ${esc(err.message)}`, "bad"); }
+    }
+  }
+  await refresh();
+  const ss = (plan.switch || {}).setup || {}, k = plan.kit || {};
+  await say(`What should the switch become? Its name, management VLAN, how it gets its address, and the admin sign-in it will have.`);
+  const b = await ask([], [{ id: "hostname", label: "Switch name", value: ss.hostname || (plan.switch || {}).default_hostname || "lab-sw01" }, { id: "domain", label: "Domain", value: ss.domain || k.domain || "lab.local" }, { id: "vlan", label: "Management VLAN", value: ss.vlan ?? 1 }, { id: "mode", label: "Address", options: [{ value: "dhcp", label: "DHCP" }, { value: "static", label: "Static" }] }, { id: "addr", label: "Static address/prefix (if static)", value: ss.address ? `${ss.address}/${ss.prefix ?? 24}` : "" }, { id: "username", label: "Admin user", value: (plan.switch || {}).username || "admin" }, { id: "password", label: "Admin password", type: "password", placeholder: (plan.switch || {}).password_configured ? "(saved; blank keeps it)" : "" }]);
+  const [address, prefix] = (b.values.addr || "").split("/");
+  if (b.values.mode === "dhcp" && Number(b.values.vlan) !== 1) await say(`Note: VLAN ${esc(b.values.vlan)} with DHCP only works if the port the switch's cable goes into carries VLAN ${esc(b.values.vlan)} and a DHCP server answers there.`);
+  if (!await save("switch", { hostname: b.values.hostname, domain: b.values.domain, vlan: Number(b.values.vlan || 1), mode: b.values.mode, address: address || null, prefix: prefix ? Number(prefix) : null, username: b.values.username, password: b.values.password }, "Saving the switch plan…")) return askSwitch(sw);
+  await say(`Switch plan saved: <b>${esc(b.values.hostname)}</b>, VLAN ${esc(b.values.vlan)}, ${b.values.mode === "dhcp" ? "DHCP" : esc(b.values.addr)}.`, "good");
+}
+async function askEsxi() {
+  checkpoint("esxi");
+  await refresh();
+  const e = (plan.server || {}).esxi || {}, k = plan.kit || {};
+  if (!(e.isos || []).length) { await say(`There's no ESXi installer ISO in the media folder yet. Add one (Lab Builder → Prepare ESXi), then the flight can build the installer.`, "bad"); }
+  await say(`ESXi goes on the server's boot pair. What host name, how it gets its address, and the root password it will have? DHCP is fine: after the install I find ESXi by its network port's MAC address and carry on.`);
+  const a = await ask([], [{ id: "hostname", label: "Host name", value: e.hostname || "esx01" }, { id: "addressing", label: "Address", options: [{ value: "dhcp", label: "DHCP" }, { value: "static", label: "Static" }] }, { id: "management_ip", label: "Static address (if static)", value: e.management_ip || "" }, { id: "datastore_name", label: "VM datastore name", value: e.datastore_name || "VMdata" }, { id: "root_password", label: "Root password", type: "password", placeholder: e.password_set ? "(saved; blank keeps it)" : "" }, ...((e.isos || []).length ? [{ id: "iso", label: "Installer ISO", options: e.isos.map(i => ({ value: i.path, label: i.name })) }] : [])]);
+  if (a.values.addressing === "static" && !ipOk(a.values.management_ip || "")) { await say(`A static ESXi needs an IP address.`, "bad"); return askEsxi(); }
+  if (!await save("esxi", a.values, "Saving the ESXi plan…")) return askEsxi();
+  await say(`ESXi plan saved: <b>${esc(a.values.hostname)}</b>${a.values.addressing === "static" ? ` at ${esc(a.values.management_ip)}` : " (DHCP)"}, datastore ${esc(a.values.datastore_name)}.${k.domain ? "" : ""}`, "good");
+}
+async function askWindows() {
+  checkpoint("windows");
+  await refresh();
+  const w = (plan.server || {}).windows || {};
+  if (!(w.images || []).length) { await say(`No Windows OVA/OVF in the media folder yet, so I'll skip Windows. Add one and come back.`, "bad"); return; }
+  await say(`Last one: Windows. Which image, what to call the VM, and the administrator sign-in I'll use to prove it works at the end (it stays on this PC only)?`);
+  const a = await ask([], [{ id: "image", label: "Image", options: w.images.map(i => ({ value: i.path, label: i.name })) }, { id: "vm_name", label: "VM name", value: w.vm_name || "windows01" }, { id: "username", label: "Windows administrator", value: (w.signin || {}).username || "Administrator" }, { id: "password", label: "Password", type: "password", placeholder: (w.signin || {}).password_saved ? "(saved; blank keeps it)" : "" }]);
+  if (!await save("windows", a.values, "Saving the Windows plan…")) return askWindows();
+  await say(`Windows plan saved: <b>${esc(a.values.vm_name)}</b> from ${esc(w.images.find(i => i.path === a.values.image)?.name || a.values.image)}.`, "good");
+}
+interview().catch(err => bubble(`Kit Pilot's own server is not answering: ${esc(err.message)}`, "pilot", "bad"));
+</script>
+</body>
+</html>

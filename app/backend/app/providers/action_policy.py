@@ -68,6 +68,7 @@ ALLOWLISTED_WORKFLOW_ACTIONS = frozenset(
         "ilo-redfish.hpe-raid-reset",
         "ilo-redfish.hpe-raid-validate-after-reset",
         "cisco-console.bootstrap",
+        "cisco-console.erase-reload",
         "cisco-console.vlan-management-ssh-scp",
         "ilo.connection-setup",
         "ilo.bios-settings",
@@ -199,11 +200,13 @@ class LabActionPolicy:
                 return [*blockers, "Runtime write permissions could not be read. No hardware write is allowed."]
         write_scope = os.getenv("LAB_ALLOWED_WRITE_ACTIONS")
         if override is not None:
-            from app.services.runtime_write_scope import ESXI_INSTALL_ACTIONS, FIRMWARE_ACTIONS, STORAGE_ACTIONS, VM_DEPLOY_ACTIONS
+            from app.services.runtime_write_scope import ESXI_INSTALL_ACTIONS, FIRMWARE_ACTIONS, STORAGE_ACTIONS, SWITCH_RESET_ACTIONS, SWITCH_SETUP_ACTIONS, VM_DEPLOY_ACTIONS
             write_scope = (",".join(sorted(FIRMWARE_ACTIONS)) if override == "firmware_only"
                            else ",".join(sorted(STORAGE_ACTIONS)) if override == "storage_only"
                            else ",".join(sorted(ESXI_INSTALL_ACTIONS)) if override == "esxi_install_only"
-                           else ",".join(sorted(VM_DEPLOY_ACTIONS)) if override == "vm_deploy_only" else "")
+                           else ",".join(sorted(VM_DEPLOY_ACTIONS)) if override == "vm_deploy_only"
+                           else ",".join(sorted(SWITCH_SETUP_ACTIONS)) if override == "switch_setup_only"
+                           else ",".join(sorted(SWITCH_RESET_ACTIONS)) if override == "switch_reset_only" else "")
         if write_scope is not None and category not in {ActionCategory.READONLY, ActionCategory.APP_STATE_WRITE}:
             allowed = {value.strip() for value in write_scope.split(",") if value.strip()}
             if action_id not in allowed:
@@ -228,6 +231,8 @@ class LabActionPolicy:
                 (override == "firmware_only" and category in {ActionCategory.FIRMWARE_UPDATE, ActionCategory.POWER_ACTION})
                 or (override == "storage_only" and category == ActionCategory.POWER_ACTION)
                 or (override == "esxi_install_only" and category == ActionCategory.POWER_ACTION)
+                # Reset keeps the operator's lab flag as well as the narrowed scope.
+                or (override == "switch_reset_only" and category == ActionCategory.FACTORY_RESET and self.allow_factory_reset)
             )
         if not flag_enabled:
             blockers.append(f"{flag_name}=true is required for {category.value}.")

@@ -10,8 +10,10 @@ const harnessHtml = `<html><head><meta name="viewport" content="width=device-wid
 test("My Rack opens as saved status and never contacts equipment until Edit rack is chosen", async ({ page }) => {
   let current = true;
   await page.route("**/api/**", route => {
+    { const u = new URL(route.request().url()).pathname; if (/\/devices\/[^/]+\/health$|\/cable-map$|^\/api\/v1\/jobs$/.test(u)) return route.fulfill({ json: u.endsWith("/jobs") ? { running: [], attention: [], recent: [] } : u.endsWith("cable-map") ? { state: "not_read", cables: [], unmatched_server_ports: [], other_switch_ports: [] } : { overall: null, problems: [], checked_at: null } }); }
     expect(route.request().method()).toBe("GET");
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/jobs") return route.fulfill({ json: { running: [], attention: [], recent: [], now: new Date().toISOString() } });
     if (url.pathname === "/api/v1/rack-plans/fixture") return route.fulfill({ json: {
       revision: 1, rack_units: 4, equipment: [{
         id: "server", device_id: "server", name: "Server Alpha", kind: "server",
@@ -58,6 +60,7 @@ test("My Rack: Edit rack brings back the shelf, placing, moving and saving the p
   const plan = { revision: 1, rack_units: 6, equipment: [{ id: "server", device_id: "server", name: "Server Alpha", kind: "server",
     model: "HPE DL360 Gen10", position: 1, height: 1, mount: "rack", ports: 0, bay_count: 10, occupied_bays: [] }] };
   await page.route("**/api/**", route => {
+    { const u = new URL(route.request().url()).pathname; if (/\/devices\/[^/]+\/health$|\/cable-map$|^\/api\/v1\/jobs$/.test(u)) return route.fulfill({ json: u.endsWith("/jobs") ? { running: [], attention: [], recent: [] } : u.endsWith("cable-map") ? { state: "not_read", cables: [], unmatched_server_ports: [], other_switch_ports: [] } : { overall: null, problems: [], checked_at: null } }); }
     const req = route.request(), url = new URL(req.url());
     if (url.pathname === "/api/v1/rack-plans/fixture" && req.method() === "PUT") {
       savedPlan = req.postDataJSON();
@@ -72,7 +75,7 @@ test("My Rack: Edit rack brings back the shelf, placing, moving and saving the p
   await page.evaluate(() => localStorage.clear());
   await page.getByRole("button", { name: "Edit rack", exact: true }).click();
   await expect(page.getByRole("group", { name: "Choose hardware" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Your guide" })).toContainText("Editing changes your plan only");
+  await expect(page.getByRole("region", { name: "Your guide" }).locator("[title^=\"Editing changes your plan only\"]")).toHaveCount(1);
   // Add from the shelf: tap a card, then a slot.
   await page.getByRole("button", { name: "Place Cisco switch" }).click();
   await page.getByRole("button", { name: "Place at U4" }).click();
@@ -113,6 +116,7 @@ test("guided setup shares the rack, keeps later stages unverified and fits deskt
   let plan: any = { revision: 0, rack_units: 8, equipment: [] };
   let writes = 0;
   await page.route("**/api/**", async route => {
+    { const u = new URL(route.request().url()).pathname; if (/\/devices\/[^/]+\/health$|\/cable-map$|^\/api\/v1\/jobs$/.test(u)) return route.fulfill({ json: u.endsWith("/jobs") ? { running: [], attention: [], recent: [] } : u.endsWith("cable-map") ? { state: "not_read", cables: [], unmatched_server_ports: [], other_switch_ports: [] } : { overall: null, problems: [], checked_at: null } }); }
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/v1/rack-plans/fixture") {
       if (route.request().method() === "PUT") {
@@ -122,6 +126,7 @@ test("guided setup shares the rack, keeps later stages unverified and fits deskt
       }
       return route.fulfill({ json: plan });
     }
+    if (path === "/api/v1/jobs") return route.fulfill({ json: { running: [], attention: [], recent: [], now: new Date().toISOString() } });
     if (path === "/api/v1/providers/ilo-redfish/access-settings") return route.fulfill({ json: { host: "", username: "", verify_tls: false, username_configured: false, password_configured: false } });
     if (path.endsWith("/firmware-execution/status")) return route.fulfill({ json: { status: "not_started", blockers: [], stages: [] } });
     if (path.includes("/firmware-update/")) return route.fulfill({ status: 404, json: { detail: "Not Found" } });
@@ -139,10 +144,10 @@ test("guided setup shares the rack, keeps later stages unverified and fits deskt
   await page.getByRole("button", { name: "Place at U2", exact: true }).click();
   await page.getByLabel("Equipment name", { exact: true }).fill("Server Alpha");
   await saveRack(page);
-  await page.getByRole("link", { name: "Continue to network settings" }).click();
+  await page.getByRole("link", { name: "Next: Network settings" }).click();
   await expect(page.getByRole("heading", { name: "Network settings", exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Your guide" })).toContainText("Step 2 of 7");
-  await page.getByRole("link", { name: "Continue to connections" }).click();
+  await page.getByRole("link", { name: "Next: Connect equipment" }).click();
   await expect(page.getByRole("heading", { name: "Connect Server Alpha" })).toBeVisible();
   await expect(page.getByLabel("Current iLO address", { exact: true })).toHaveValue("");
   expect(writes).toBe(1);
@@ -185,6 +190,7 @@ test("guided setup shares the rack, keeps later stages unverified and fits deskt
   await page.goto("/simple");
   await expect(page.getByRole("button", { name: "Place HPE DL360", exact: true })).toBeHidden();
   await page.getByRole("link", { name: "Continue setup", exact: true }).click();
+  await page.getByRole("button", { name: "Add equipment", exact: true }).click();
   await expect(page.getByRole("button", { name: "Place HPE DL360", exact: true })).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 1200 });
   const frame = page.locator(".rack-plan-frame");
@@ -228,42 +234,28 @@ test("guided setup shares the rack, keeps later stages unverified and fits deskt
   await expect(page.getByLabel("Bottom slot", { exact: true })).toHaveValue("4");
 });
 
-test("activity is read-only, filters attention and reports refresh failures", async ({ page }) => {
+test("run history is read-only, groups the app's records, filters attention and reports refresh failures", async ({ page }) => {
   let fail = false;
-  let reads = 0;
-  await page.clock.install();
   await page.route("**/api/**", async route => {
     expect(route.request().method()).toBe("GET");
     const path = new URL(route.request().url()).pathname;
-    reads++;
-    if (path === "/api/v1/requests") return route.fulfill({ status: fail ? 503 : 200, json: fail ? { detail: "Fixture unavailable" } : [{ id: "request-1", status: "needs_approval", vm_deploy: { vm_name: "Windows Alpha" }, updated_at: "2026-09-10T12:00:00Z" }, { id: "request-2", status: "draft", vm_deploy: { vm_name: "Windows Beta" }, updated_at: "2026-09-10T11:00:00Z" }] });
-    if (["/api/v1/workflow-runs", "/api/v1/device-inventory"].includes(path)) return route.fulfill({ json: [] });
+    if (path === "/api/v1/build-history") return route.fulfill({ status: fail ? 503 : 200, json: fail ? { detail: "Fixture unavailable" } : [
+      { id: "e1", at: "2026-09-10T12:00:00Z", area: "Windows", message: "windows01 is running Windows.", outcome: "ok", actor: "op" },
+      { id: "e2", at: "2026-09-10T11:00:00Z", area: "Disks & RAID", message: "The RAID create was not confirmed.", outcome: "failed", actor: "op" }] });
     throw new Error(`Unexpected API request ${path}`);
   });
   await page.route("**/activity-test", route => route.fulfill({ contentType: "text/html", body: harnessHtml }));
   await page.goto("/activity-test");
-  await expect(page.locator(".activity-list > a")).toHaveCount(2);
-  const beforeHidden = reads;
-  await page.evaluate(() => {
-    Object.defineProperty(document, "hidden", { configurable: true, value: true });
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
-  await page.clock.fastForward(60000);
-  expect(reads).toBe(beforeHidden);
-  await page.evaluate(() => {
-    Object.defineProperty(document, "hidden", { configurable: true, value: false });
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
-  await expect.poll(() => reads).toBeGreaterThan(beforeHidden);
+  await expect(page.locator(".history-list > li")).toHaveCount(2);
   await page.getByRole("button", { name: "Needs attention (1)" }).click();
-  await expect(page.locator(".activity-list > a")).toHaveCount(1);
+  await expect(page.locator(".history-list > li")).toHaveCount(1);
+  await expect(page.locator(".history-list")).toContainText("The RAID create was not confirmed.");
   fail = true;
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("Could not refresh activity");
-  await expect(page.locator(".activity-list > a")).toHaveCount(1);
+  await expect(page.getByRole("alert")).toContainText("History could not be loaded");
+  await expect(page.locator(".history-list > li")).toHaveCount(1);
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
-    await page.screenshot({ path: `test-results/activity-${width}.png`, fullPage: true });
   }
 });

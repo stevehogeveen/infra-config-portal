@@ -54,7 +54,10 @@ def browse_standalone(folder: str = "") -> dict:
 
 
 def _identity(value):
-    return value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns
+    # On Windows a path stat and a handle stat report different creation times for the same
+    # file, so st_ctime is only part of the identity on POSIX (where it is the change time).
+    ctime = None if os.name == "nt" else value.st_ctime_ns
+    return value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, ctime
 
 
 def inspect_standalone(relative: str) -> dict:

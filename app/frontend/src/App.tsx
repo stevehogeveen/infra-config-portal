@@ -1,3 +1,10 @@
+import { HandoverPage } from "./components/HandoverPage";
+import { ResetPage } from "./components/ResetPage";
+import { RehearsalPage } from "./components/RehearsalPage";
+import { AskPage, TracePage } from "./components/InsightPages";
+import { KitInstaller } from "./components/KitInstaller";
+import { KitContract } from "./components/KitContract";
+import { LabelsPage } from "./components/LabelsPage";
 import { KitLibrary } from "./components/KitLibrary";
 import {
   Activity,
@@ -803,6 +810,14 @@ function App() {
               <RouterRoute path="/hardware" element={<Navigate to="/simple" replace />} />
               <RouterRoute path="/run-center" element={<Navigate to="/setup/history" replace />} />
               <RouterRoute path="/setup/history" element={<SetupJourney step="history"><ActivityPage /></SetupJourney>} />
+              <RouterRoute path="/labels" element={<RackHomeFrame><LabelsPage /></RackHomeFrame>} />
+              <RouterRoute path="/handover" element={<RackHomeFrame><HandoverPage /></RackHomeFrame>} />
+              <RouterRoute path="/reset" element={<RackHomeFrame><ResetPage /></RackHomeFrame>} />
+              <RouterRoute path="/rehearsal" element={<RackHomeFrame><RehearsalPage /></RackHomeFrame>} />
+              <RouterRoute path="/trace" element={<RackHomeFrame><TracePage /></RackHomeFrame>} />
+              <RouterRoute path="/ask" element={<RackHomeFrame><AskPage /></RackHomeFrame>} />
+              <RouterRoute path="/install" element={<RackHomeFrame><KitInstaller /></RackHomeFrame>} />
+              <RouterRoute path="/contract" element={<RackHomeFrame><KitContract /></RackHomeFrame>} />
               <RouterRoute path="/run-tools" element={<RunCenter />} />
               <RouterRoute path="/run" element={<RunCenter />} />
               <RouterRoute path="/control-center" element={<Navigate to="/simple" replace />} />

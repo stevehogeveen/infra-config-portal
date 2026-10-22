@@ -104,7 +104,7 @@ test("Prepare ESXi: pick the ISO, save host settings (plan only), then Install b
   const media = card.getByRole("radiogroup", { name: "ESXi installer ISO" });
   await media.getByRole("radio", { name: /ESXi 8\.0\.3 build 24859861/ }).click();
   await expect(media.getByRole("radio", { name: /ESXi 8\.0\.3/ })).toHaveAttribute("aria-checked", "true");
-  await expect(card.getByRole("region", { name: "Installer media" })).toContainText("Using VMware-ESXi-8.0.3");
+  await expect(card.getByRole("region", { name: "Installer media" })).toContainText(/Using (HPE )?ESXi 8\.0\.3 installer/);
 
   // 2: host settings. Mismatched passwords are caught before anything is saved.
   const settings = card.getByRole("region", { name: "Host settings" });

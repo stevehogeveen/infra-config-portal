@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.models import AuditEvent, FirmwareApproval, GuardedOperation, utcnow
 from app.services.audit import record_audit_event
 
-RESOURCES = frozenset({"firmware-execution", "drive-return-to-service", "esxi-install", "parts-update", "windows-deploy"})
+RESOURCES = frozenset({"firmware-execution", "drive-return-to-service", "esxi-install", "parts-update", "windows-deploy", "switch-setup", "acceptance-test", "switch-reset"})
 
 
 class OperationConflict(ValueError):

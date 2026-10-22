@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
-import { api, partsUpdateApi, sppUpdateApi, windowsApi, type RaidOperationStatus } from "../../api";
+import { api, partsUpdateApi, sppUpdateApi, switchApi, windowsApi, type RaidOperationStatus, type SwitchCheck } from "../../api";
 import type { IloAccessSettings, LabProfile } from "../../types";
 import type { PlannedEquipment, RackPlan } from "../RackPlanner";
 
@@ -99,10 +99,12 @@ type Snapshot = {
   accessFailed: Record<string, boolean>;
   storage: Record<string, StorageRead>;
   milestones: Record<string, Milestones>;
+  // A switch's last network (SSH) check, by device; read from the app, never from the switch.
+  switchChecks: Record<string, SwitchCheck | null>;
   loading: boolean;
 };
 
-const emptySnapshot = (profileId: string): Snapshot => ({ profileId, plan: null, access: {}, accessFailed: {}, storage: {}, milestones: {}, loading: true });
+const emptySnapshot = (profileId: string): Snapshot => ({ profileId, plan: null, access: {}, accessFailed: {}, storage: {}, milestones: {}, switchChecks: {}, loading: true });
 
 // Stored evidence only: each status endpoint returns recorded results and never contacts hardware.
 async function readMilestones(profileId: string, deviceId: string): Promise<Milestones | null> {
@@ -164,6 +166,10 @@ export function StudioProvider({ profile, children }: { profile: LabProfile | nu
       const accessRows = await Promise.all(servers.map(item => api.iloAccessSettings(item.device_id!)
         .then(value => [item.device_id!, value, false] as const).catch(() => [item.device_id!, null, true] as const)));
       update(value => ({ ...value, access: Object.fromEntries(accessRows.map(([key, row]) => [key, row])), accessFailed: Object.fromEntries(accessRows.map(([key, , failed]) => [key, failed])) }));
+      const switches = next.equipment.filter(item => item.kind === "switch" && item.device_id);
+      const switchRows = await Promise.all(switches.map(item => switchApi.read(item.device_id!)
+        .then(value => [item.device_id!, value.last_check] as const).catch(() => [item.device_id!, null] as const)));
+      update(value => ({ ...value, switchChecks: Object.fromEntries(switchRows) }));
       const storageRows = await Promise.all(servers.map(item => api.raidOperationStatus(profileId, item.device_id!)
         .then(status => [item.device_id!, { state: "ok", status } as StorageRead] as const)
         .catch(err => [item.device_id!, { state: "unavailable", message: err instanceof Error ? err.message : String(err) } as StorageRead] as const)));
@@ -195,12 +201,16 @@ export function StudioProvider({ profile, children }: { profile: LabProfile | nu
     .sort((a, b) => b.position - a.position)
     .map(item => {
       const itemAccess = item.device_id ? active?.access[item.device_id] ?? null : null;
+      const switchCheck = item.kind === "switch" && item.device_id ? active?.switchChecks[item.device_id] ?? null : null;
+      const switchProven = !!switchCheck && switchCheck.status === "ok" && !!switchCheck.checked_at && now - Date.parse(switchCheck.checked_at) <= PROOF_STALE_AFTER_MS;
       const storageRead = item.device_id && item.kind === "server" ? active?.storage[item.device_id] ?? { state: "loading" } as StorageRead : null;
       return {
         id: item.id, deviceId: item.device_id ?? null, name: item.name, kind: item.kind, model: item.model,
         position: item.position, height: item.height, access: itemAccess,
         accessUnavailable: !!(item.device_id && active?.accessFailed[item.device_id]),
-        proven: isProven(itemAccess, now), attention: attentionFor(itemAccess, now), answeredAt: itemAccess?.last_probe_time ?? null,
+        proven: item.kind === "switch" ? switchProven : isProven(itemAccess, now),
+        attention: item.kind === "switch" ? (switchCheck && !switchProven ? (switchCheck.status === "ok" ? "stale" : "failed") : null) : attentionFor(itemAccess, now),
+        answeredAt: item.kind === "switch" ? switchCheck?.checked_at ?? null : itemAccess?.last_probe_time ?? null,
         storage: storageRead?.state === "ok" ? storageRead.status : null, storageRead,
         milestones: item.device_id ? active?.milestones[item.device_id] ?? null : null,
       };

@@ -42,6 +42,21 @@ Run this from /home/administrator/infra-config-portal, not /home/administrator/i
 
 ## Run Locally
 
+### Windows lab PC (no Docker)
+
+Double-click `start-lab-builder.cmd` in the repository root. It starts the backend, the web
+pages and the console bridge (for switch console cables) in minimized windows and opens
+http://127.0.0.1:15173. Double-click `stop-lab-builder.cmd` to turn it off.
+
+Everything it needs lives in the ignored `.local/` folder: Python in `.local/runtime/python` and
+`.local/runtime/venv`, govc in `.local/runtime/bin`, the SQLite database `.local/lab-builder.db`
+and the settings `.local/native.env`. Not available natively: building a new ESXi installer ISO
+(needs xorriso) and verifying HPE RPM signatures (needs the Linux rpm tools); both refuse with
+a message rather than skipping a check. The ESXi/SPP media server (port 8088) may need a Windows
+Firewall allow the first time an iLO boots media from this PC.
+
+### Linux / Docker
+
 Safe app workflow from the repository root:
 
 ```bash

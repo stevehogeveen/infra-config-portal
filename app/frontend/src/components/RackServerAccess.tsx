@@ -5,12 +5,15 @@ import { shortTime } from "./studio/ProvenanceChip";
 
 /** Unsaved connection details kept per device while the operator switches equipment. */
 export type AccessDraft = { host: string; username: string; password: string; verifyTls: boolean; replacePassword: boolean };
-import { PlugZap, Save } from "lucide-react";
+import { Camera, PlugZap, Save } from "lucide-react";
+import { TagCamera } from "./TagCamera";
 import { api } from "../api";
 import type { IloAccessSettings, ProviderProbeResult } from "../types";
 
-export function RackServerAccess({ deviceId, onContinue, onDetectedModel, onChecked, onBusyChange, checkConnection = false, draft, onDraft, hoistSubmit = false, showTask = true }: { deviceId: string; onContinue?: (host: string) => void; onDetectedModel?: (model: string) => void; onChecked?: () => void; onBusyChange?: (busy:boolean) => void; checkConnection?: boolean; draft?: AccessDraft; onDraft?: (draft: AccessDraft | undefined) => void; hoistSubmit?: boolean; showTask?: boolean }) {
+export function RackServerAccess({ deviceId, onContinue, onDetectedModel, onChecked, onBusyChange, checkConnection = false, draft, onDraft, hoistSubmit = false, showTask = true, folded = false }: { deviceId: string; onContinue?: (host: string) => void; onDetectedModel?: (model: string) => void; onChecked?: () => void; onBusyChange?: (busy:boolean) => void; checkConnection?: boolean; draft?: AccessDraft; onDraft?: (draft: AccessDraft | undefined) => void; hoistSubmit?: boolean; showTask?: boolean; folded?: boolean }) {
   const formId = useId();
+  // A connected server folds to one line; Change details opens the form again.
+  const [open, setOpen] = useState(!folded);
   const [access, setAccess] = useState<IloAccessSettings | null>(null);
   const [host, setHost] = useState("");
   const [username, setUsername] = useState("");
@@ -20,6 +23,7 @@ export function RackServerAccess({ deviceId, onContinue, onDetectedModel, onChec
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [replacePassword, setReplacePassword] = useState(false);
+  const [camera, setCamera] = useState(false);
   const [probe, setProbe] = useState<ProviderProbeResult | null>(null);
   useEffect(() => { onBusyChange?.(busy); return () => onBusyChange?.(false); }, [busy, onBusyChange]);
   const savedConnection = Boolean(access?.host && access.username_configured && access.password_configured && host === access.host && username === (access.username || "") && !password && verifyTls === access.verify_tls);
@@ -42,7 +46,14 @@ export function RackServerAccess({ deviceId, onContinue, onDetectedModel, onChec
   // Proof belongs to the saved target. Editing the target or access means it no longer proves this draft.
   const targetEdited = !!access && (host.trim() !== (access.host || "") || username.trim() !== (access.username || "") || !!password || verifyTls !== access.verify_tls);
   const submitButton = <button className="rack-plan-save" type="submit" form={formId} disabled={busy || !access}>{checkConnection ? <PlugZap size={16} /> : <Save size={16} />}{busy ? "Working..." : checkConnection ? savedConnection ? "Check connection" : "Save and check connection" : "Save iLO connection"}</button>;
-  return <form id={formId} className="workbench-access" onChange={() => { setMessage(""); setProbe(null); onDetectedModel?.(""); }} onSubmit={async (event) => {
+  const summary = folded && !open && savedConnection;
+  return <>{summary && <div className="sd-connected" role="group" aria-label="Saved connection">
+    <span className="sd-connected-dot" aria-hidden="true" />
+    <div><b>iLO {access?.host}</b><small>{access?.username} · password saved{probe ? ` · ${probe.message}` : ""}</small></div>
+    <button type="submit" form={formId} className="secondary-action" disabled={busy}><PlugZap size={15} />{busy ? "Checking..." : "Check again"}</button>
+    <button type="button" className="ex-change" onClick={() => setOpen(true)}>Change details</button>
+  </div>}
+  <form id={formId} hidden={!!summary} className="workbench-access" onChange={() => { setMessage(""); setProbe(null); onDetectedModel?.(""); }} onSubmit={async (event) => {
     event.preventDefault(); setBusy(true); setError(""); setMessage("");
     try {
       if (!savedConnection) {
@@ -64,6 +75,13 @@ export function RackServerAccess({ deviceId, onContinue, onDetectedModel, onChec
   }}>
     {showTask && <div className="input-task" aria-live="polite"><span className="input-task-label">Your next step</span><h3>{savedConnection ? "Check the saved connection" : "Enter this server's connection details"}</h3><p>{savedConnection ? "Credentials saved for this server." : "Current iLO address and sign-in details required."}</p></div>}
     {targetEdited && access?.last_probe_time && <p className="sd-proof-note" role="note">The last answer ({shortTime(access.last_probe_time)}) was for the saved details{access.host ? <> at <strong>{access.host}</strong></> : null}. It does not prove these edited details; save and check again.</p>}
+    <button type="button" className="connection-secondary tc-open" disabled={busy || !access} onClick={() => setCamera(true)}><Camera size={15} aria-hidden="true" />Read the iLO tag with the camera</button>
+    {camera && <TagCamera onClose={() => setCamera(false)} onUse={fields => {
+      if (fields.host && !host.trim()) setHost(fields.host);
+      if (fields.username) setUsername(fields.username);
+      if (fields.password) { setReplacePassword(true); setPassword(fields.password); }
+      setMessage("Filled from the tag photo. Check the details, then save.");
+    }} />}
     <p>Current DHCP address for this server. Not its planned management address.</p>
     <label><span className="input-label">Current iLO address <small>Required</small></span><input aria-label="Current iLO address" required disabled={busy || !access} value={host} onChange={(e) => setHost(e.target.value)} placeholder="IP address or hostname" /></label>
     <label><span className="input-label">iLO username <small>{access?.username_configured ? "Saved; change if needed" : "Required"}</small></span><input aria-label="iLO username" required={!access?.username_configured} disabled={busy || !access} value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" /></label>
@@ -75,7 +93,7 @@ export function RackServerAccess({ deviceId, onContinue, onDetectedModel, onChec
     {checkConnection && <p>Read-only iLO connection and firmware inventory. No updates are installed.</p>}
     {probe && <section aria-label="Connection check result" aria-live="polite"><h3>Check result: {probe.status}</h3><p>{probe.message}</p>{probe.checked_at && <p>{new Date(probe.checked_at).toLocaleString()}</p>}{[...probe.blockers, ...probe.warnings].map((text, index) => <p key={index}>{text}</p>)}<h4>Reported firmware versions</h4><FirmwareVersions probe={probe} /><p>Installed versions only. Service-pack compatibility and upgrade approval are not assessed by this check.</p></section>}
     {!checkConnection && (message || savedConnection) && onContinue && <button className={message ? "rack-plan-save" : "connection-secondary"} type="button" disabled={busy} onClick={() => onContinue(access?.host || host.trim())}>Continue to checks</button>}
-  </form>;
+  </form></>;
 }
 
 export function FirmwareVersions({ probe }: { probe: ProviderProbeResult }) {

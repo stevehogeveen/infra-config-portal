@@ -193,3 +193,12 @@ def test_a_stale_result_changes_nothing(db_session, esxi):
 
 def test_errors_never_carry_the_password_even_url_encoded():
     assert govc._scrub("bad login for p%40ss%2Fw0rd and p@ss/w0rd", "p@ss/w0rd") == "bad login for *** and ***"
+
+
+def test_setup_can_be_read_from_records_only(db_session, esxi, monkeypatch):
+    def never(host):
+        raise AssertionError("ESXi must not be contacted with read_host=False")
+
+    monkeypatch.setattr(service, "_read_host", never)
+    setup = service.get_setup(db_session, "kit", "srv", read_host=False)
+    assert setup["host"]["address"] == HOST["address"] and setup["host"]["datastores"] == []

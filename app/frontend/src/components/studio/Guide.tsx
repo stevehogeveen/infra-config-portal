@@ -53,23 +53,18 @@ export type GuideProps = {
   actionRef?: (element: HTMLElement | null) => void;
 };
 
-export function GuideBanner({ eyebrow, say, reassure, primary, aside, trail, label, actionRef }: GuideProps) {
-  return <section className="sd-guide" aria-label="Your guide">
-    <span className="sd-orb" aria-hidden="true" />
+export function GuideBanner({ eyebrow, say, reassure, primary, actionRef }: GuideProps) {
+  // Straight to the point: where you are, what to do, one button. The safety note is a hover tip.
+  return <section className="sd-guide sd-guide-compact" aria-label="Your guide">
     <div className="sd-guide-text">
-      <p className="sd-g-eyebrow">{eyebrow}</p>
+      <p className="sd-g-eyebrow">{eyebrow}{reassure && <span className="sd-g-safe" title={typeof reassure === "string" ? reassure : undefined} aria-label={typeof reassure === "string" ? reassure : undefined}>
+        <svg className="sd-ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l5 2v3.8c0 3.2-2.2 5.5-5 6.6-2.8-1.1-5-3.4-5-6.6V3.8z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>safe</span>}</p>
       <p className="sd-say">{say}</p>
-      {reassure && <p className="sd-reassure"><svg className="sd-ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l5 2v3.8c0 3.2-2.2 5.5-5 6.6-2.8-1.1-5-3.4-5-6.6V3.8z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /><path d="M5.8 8l1.6 1.6 2.9-3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg><span>{reassure}</span></p>}
     </div>
     <div className="sd-g-act">
       <div className="sd-g-slot" ref={actionRef} />
       {primary}
-      {aside && <span className="sd-g-aside">{aside}</span>}
     </div>
-    {(trail?.length || label) ? <div className="sd-g-more">
-      {!!trail?.length && <details className="sd-trail"><summary>How we got here · {trail.length} note{trail.length === 1 ? "" : "s"}</summary><ol>{trail.map((item, index) => <li key={index} className={index === trail.length - 1 ? "last" : undefined}>{item}</li>)}</ol></details>}
-      {label && <p className="sd-newlabel">{label}</p>}
-    </div> : null}
   </section>;
 }
 

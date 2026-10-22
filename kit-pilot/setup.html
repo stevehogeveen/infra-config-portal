@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kit Pilot · Flight plan</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  .plan { display:grid; grid-template-columns:270px 1fr; gap:18px; align-items:start; }
+  .cards { display:grid; gap:14px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px 18px; display:grid; gap:10px; }
+  .card h2 { margin:0; font-size:17px; display:flex; align-items:center; gap:10px; } .card h2 .n { width:24px; height:24px; border-radius:50%; background:var(--amber); color:#0b1118; display:grid; place-items:center; font-size:13px; }
+  .card h2 .st { margin-left:auto; font-size:12px; font-weight:400; color:var(--dim); } .card h2 .st.ok { color:var(--green); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:10px; }
+  label { display:grid; gap:4px; font-size:13px; color:var(--dim); }
+  .grid > label { min-width:0; } select { max-width:100%; text-overflow:ellipsis; }
+  input, select { min-width:0; width:100%; background:#0f1720; border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:8px 10px; font:15px "Segoe UI", system-ui, sans-serif; }
+  input:focus, select:focus { outline:2px solid var(--blue); border-color:var(--blue); }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .btn { border:0; border-radius:8px; padding:8px 14px; cursor:pointer; font:600 14px "Segoe UI", system-ui, sans-serif; background:var(--amber); color:#0b1118; }
+  .btn.quiet { background:transparent; border:1px solid var(--line); color:var(--ink); }
+  .btn:disabled { opacity:.5; cursor:default; }
+  .note { font-size:13px; color:var(--dim); margin:0; } .note.ok { color:var(--green); } .note.bad { color:var(--red); }
+  .hint { font-size:12px; color:var(--dim); }
+  .fly { margin-top:4px; display:flex; justify-content:flex-end; }
+  .rack { position:sticky; top:16px; }
+  @media (max-width:760px) { .plan { grid-template-columns:1fr; } .rack { position:static; max-width:320px; } }
+</style>
+</head>
+<body>
+<header><h1>Kit Pilot</h1><small>Flight plan</small><span style="flex:1"></span><a class="quiet" href="/briefing" style="text-decoration:none;padding:6px 12px;border:1px solid var(--line);border-radius:8px;color:var(--dim)">Briefing</a><a class="quiet" href="/" style="text-decoration:none;padding:6px 12px;border:1px solid var(--line);border-radius:8px;color:var(--dim);margin-left:8px">Flight board →</a></header>
+<main>
+  <p class="say calm" id="top">Fill in what the kit should be. Nothing here changes equipment; "Read it" buttons only read.</p>
+  <div class="plan">
+    <div class="rack" id="rack" aria-hidden="true"></div>
+    <div class="cards" id="cards">
+      <section class="card" id="c-kit"><h2><span class="n">1</span>Kit<span class="st" id="st-kit"></span></h2>
+        <div class="grid">
+          <label>Kit name<input id="kit-name" placeholder="Kit Single Gen 10"></label>
+          <label>Subnet<input id="kit-subnet" placeholder="192.0.2.0/27"></label>
+          <label>Gateway<input id="kit-gateway" placeholder="192.0.2.1"></label>
+          <label>DNS servers (comma separated)<input id="kit-dns" placeholder="192.0.2.53, 192.0.2.54"></label>
+          <label>Domain name<input id="kit-domain" placeholder="lab.local"></label>
+        </div>
+        <div class="row"><button class="btn" id="save-kit">Save kit</button><p class="note" id="n-kit"></p></div>
+      </section>
+      <section class="card" id="c-equipment"><h2><span class="n">2</span>Equipment<span class="st" id="st-equipment"></span></h2>
+        <div class="grid">
+          <label>Server name<input id="srv-name" placeholder="HPE DL360 1"></label>
+          <label>Server model<select id="srv-model"><option>HPE DL360 Gen10</option><option>HPE DL380 Gen10</option></select></label>
+          <label>Switch name<input id="sw-name" placeholder="Cisco switch 1"></label>
+          <label>Switch ports<select id="sw-ports"><option>24</option><option>48</option></select></label>
+        </div>
+        <div class="row"><button class="btn" id="save-equipment">Save equipment</button><p class="note" id="n-equipment"></p></div>
+      </section>
+      <section class="card" id="c-ilo"><h2><span class="n">3</span>Server iLO<span class="st" id="st-ilo"></span></h2>
+        <p class="hint">From the pull-out tag on the server's front: the iLO's address (or its DHCP address), user and password.</p>
+        <div class="grid">
+          <label>iLO address<input id="ilo-host" placeholder="192.0.2.10"></label>
+          <label>User<input id="ilo-user" placeholder="Administrator" autocomplete="off"></label>
+          <label>Password<input id="ilo-pass" type="password" autocomplete="new-password" placeholder="(leave blank to keep the saved one)"></label>
+        </div>
+        <div class="row"><button class="btn" id="save-ilo">Save sign-in</button><button class="btn quiet" id="find-ilo">Find it on the network</button><button class="btn quiet" id="read-ilo">Read the server</button><p class="note" id="n-ilo"></p></div>
+        <div class="chips" id="found-ilo"></div>
+      </section>
+      <section class="card" id="c-switch"><h2><span class="n">4</span>Switch<span class="st" id="st-switch"></span></h2>
+        <p class="hint">A new switch is set up over its console cable (the blue cable to a COM port on this PC), then reached over SSH.</p>
+        <div class="grid">
+          <label>Console port<select id="sw-port"></select></label>
+          <label>Switch name (hostname)<input id="sw-host" placeholder="lab-sw01"></label>
+          <label>Domain<input id="sw-domain" placeholder="lab.local"></label>
+          <label>Management VLAN<input id="sw-vlan" type="number" min="1" max="4094" value="1"></label>
+          <label>Management address<select id="sw-mode"><option value="dhcp">DHCP</option><option value="static">Static</option></select></label>
+          <label>Static address / prefix<input id="sw-addr" placeholder="192.0.2.2/24"></label>
+          <label>Admin user<input id="sw-user" placeholder="admin" autocomplete="off"></label>
+          <label>Admin password<input id="sw-pass" type="password" autocomplete="new-password" placeholder="(leave blank to keep the saved one)"></label>
+        </div>
+        <div class="row"><button class="btn" id="save-switch">Save switch</button><button class="btn quiet" id="read-switch">Read the switch on the console</button><p class="note" id="n-switch"></p></div>
+      </section>
+      <section class="card" id="c-esxi"><h2><span class="n">5</span>ESXi<span class="st" id="st-esxi"></span></h2>
+        <div class="grid">
+          <label>Host name<input id="esxi-host" placeholder="esx01"></label>
+          <label>Address<select id="esxi-mode"><option value="dhcp">DHCP</option><option value="static">Static</option></select></label>
+          <label>Static address<input id="esxi-ip" placeholder="192.0.2.20"></label>
+          <label>Datastore name<input id="esxi-ds" value="VMdata"></label>
+          <label>Root password<input id="esxi-pass" type="password" autocomplete="new-password" placeholder="(leave blank to keep the saved one)"></label>
+          <label>Installer ISO<select id="esxi-iso"></select></label>
+        </div>
+        <div class="row"><button class="btn" id="save-esxi">Save ESXi</button><p class="note" id="n-esxi"></p></div>
+      </section>
+      <section class="card" id="c-windows"><h2><span class="n">6</span>Windows<span class="st" id="st-windows"></span></h2>
+        <div class="grid">
+          <label>Image (OVA/OVF)<select id="win-image"></select></label>
+          <label>VM name<input id="win-vm" value="windows01"></label>
+          <label>Windows administrator<input id="win-user" placeholder="Administrator" autocomplete="off"></label>
+          <label>Administrator password<input id="win-pass" type="password" autocomplete="new-password" placeholder="(for the final test; leave blank to keep)"></label>
+        </div>
+        <p class="hint">Datastore and network come from ESXi once it is installed; the VM goes on the datastore above and the first VM network.</p>
+        <div class="row"><button class="btn" id="save-windows">Save Windows</button><p class="note" id="n-windows"></p></div>
+      </section>
+      <div class="fly"><a class="btn" href="/" style="text-decoration:none">Go to the flight board →</a></div>
+    </div>
+  </div>
+</main>
+<script src="/rack.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let plan = null;
+const note = (id, text, kind = "") => { const n = $("n-" + id); n.textContent = text; n.className = "note " + kind; };
+async function call(path, body) { const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j; }
+async function load() {
+  plan = await (await fetch("/plan")).json();
+  const k = plan.kit || {};
+  $("kit-name").value = k.name || ""; $("kit-subnet").value = k.subnet || ""; $("kit-gateway").value = k.gateway || ""; $("kit-dns").value = (k.dns || []).join(", "); $("kit-domain").value = k.domain || "";
+  const srv = plan.server || {}, sw = plan.switch || {};
+  if (srv.name) $("srv-name").value = srv.name; if (srv.model) $("srv-model").value = srv.model; if (sw.name) $("sw-name").value = sw.name; if (sw.ports) $("sw-ports").value = sw.ports;
+  const ilo = srv.ilo || {}; $("ilo-host").value = ilo.host || ""; $("ilo-user").value = ilo.username || "";
+  const ports = sw.console_ports || []; $("sw-port").innerHTML = ports.map(p => `<option value="${esc(p.port)}" ${p.port === sw.console_port ? "selected" : ""}>${esc(p.port)} · ${esc(p.description)}${p.recommended ? " (console cable)" : ""}</option>`).join("") || `<option value="">${esc(sw.console_problem || "No COM ports found")}</option>`;
+  const ss = sw.setup || {}; $("sw-host").value = ss.hostname || sw.default_hostname || ""; $("sw-domain").value = ss.domain || k.domain || "lab.local"; $("sw-vlan").value = ss.vlan ?? 1; $("sw-mode").value = ss.mode || "dhcp";
+  $("sw-addr").value = ss.address ? `${ss.address}/${ss.prefix ?? 24}` : ""; $("sw-user").value = sw.username || ss.username || "admin";
+  const e = srv.esxi || {}; $("esxi-host").value = e.hostname || ""; $("esxi-mode").value = e.addressing || "dhcp"; $("esxi-ip").value = e.management_ip || ""; $("esxi-ds").value = e.datastore_name || "VMdata";
+  $("esxi-iso").innerHTML = (e.isos || []).map(i => `<option value="${esc(i.path)}" ${i.path === e.selected_iso ? "selected" : ""}>${esc(i.name)}</option>`).join("") || "<option value=''>No ESXi ISO in the media folder</option>";
+  const w = srv.windows || {}; $("win-image").innerHTML = (w.images || []).map(i => `<option value="${esc(i.path)}" ${i.path === w.image ? "selected" : ""}>${esc(i.name)}</option>`).join("") || "<option value=''>No OVA/OVF in the media folder</option>";
+  if (w.vm_name) $("win-vm").value = w.vm_name; $("win-user").value = (w.signin || {}).username || "";
+  status();
+}
+function status() {
+  const k = plan.kit || {}, srv = plan.server || {}, sw = plan.switch || {};
+  const set = (id, ok, text) => { const el = $("st-" + id); el.textContent = text; el.className = "st " + (ok ? "ok" : ""); };
+  set("kit", !!k.id, k.id ? "saved" : "not saved");
+  set("equipment", !!(srv.id && sw.id), srv.id && sw.id ? "saved" : srv.id || sw.id ? "one of two saved" : "not saved");
+  set("ilo", !!(srv.ilo || {}).password_configured, (srv.ilo || {}).probe_ok ? `read ok · ${srv.ilo.model || ""}` : (srv.ilo || {}).password_configured ? "sign-in saved" : "not saved");
+  set("switch", !!(sw.setup || {}).hostname && sw.password_configured, (sw.console_last || {}).answered ? `console read ok · ${sw.console_last.model || ""}` : (sw.setup || {}).hostname ? "settings saved" : "not saved");
+  set("esxi", !!(srv.esxi || {}).saved_at && !!(srv.esxi || {}).selected_iso, (srv.esxi || {}).saved_at ? ((srv.esxi || {}).selected_iso ? "saved" : "choose the ISO") : "not saved");
+  set("windows", !!(srv.windows || {}).saved_at, (srv.windows || {}).saved_at ? ((srv.windows || {}).signin || {}).password_saved ? "saved" : "saved · test sign-in missing" : "not saved");
+  const legs = [["connect", (srv.ilo || {}).probe_ok], ["switch", (sw.console_last || {}).answered], ["esxi", (srv.esxi || {}).saved_at && (srv.esxi || {}).selected_iso], ["windows", (srv.windows || {}).saved_at]]
+    .map(([id, ok]) => ({ id, state: ok ? "done" : "todo" }));
+  $("rack").innerHTML = drawRack({ legs, equipment: [srv.id && { kind: "server", name: srv.name }, sw.id && { kind: "switch", name: sw.name }].filter(Boolean) });
+}
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+async function save(id, values) {
+  const btn = $("save-" + id); btn.disabled = true; note(id, "Saving…");
+  try { await call("/save", { section: id, values }); note(id, "Saved.", "ok"); await load(); }
+  catch (err) { note(id, err.message, "bad"); }
+  finally { btn.disabled = false; }
+}
+$("save-kit").onclick = () => save("kit", { name: $("kit-name").value, subnet: $("kit-subnet").value, gateway: $("kit-gateway").value, dns: $("kit-dns").value.split(",").map(s => s.trim()).filter(Boolean), domain: $("kit-domain").value });
+$("save-equipment").onclick = () => save("equipment", { server_name: $("srv-name").value, server_model: $("srv-model").value, switch_name: $("sw-name").value, switch_ports: Number($("sw-ports").value) });
+$("save-ilo").onclick = () => save("ilo", { host: $("ilo-host").value, username: $("ilo-user").value, password: $("ilo-pass").value });
+$("save-switch").onclick = () => { const [address, prefix] = $("sw-addr").value.split("/"); save("switch", { hostname: $("sw-host").value, domain: $("sw-domain").value, vlan: Number($("sw-vlan").value), mode: $("sw-mode").value, address: address || null, prefix: prefix ? Number(prefix) : null, username: $("sw-user").value, password: $("sw-pass").value }); };
+$("save-esxi").onclick = () => save("esxi", { hostname: $("esxi-host").value, addressing: $("esxi-mode").value, management_ip: $("esxi-ip").value || null, datastore_name: $("esxi-ds").value, root_password: $("esxi-pass").value, iso: $("esxi-iso").value });
+$("save-windows").onclick = () => save("windows", { image: $("win-image").value, vm_name: $("win-vm").value, username: $("win-user").value, password: $("win-pass").value });
+$("find-ilo").onclick = async () => { $("find-ilo").disabled = true; note("ilo", "Pinging the kit's network and asking what answers (read-only)…"); try { const r = await call("/find", {});
+  const hits = r.found.filter(f => f.kind === "ilo" || f.kind === "hpe"); note("ilo", hits.length ? `Found ${hits.length} on ${r.subnet}; pick one:` : `Nothing on ${r.subnet} looks like an iLO (${r.found.length} devices answered).`, hits.length ? "ok" : "bad");
+  $("found-ilo").innerHTML = hits.map(f => `<button type="button" class="chip" data-ip="${esc(f.ip)}">${esc(f.ip)} · ${esc(f.detail)}</button>`).join("");
+  $("found-ilo").querySelectorAll(".chip").forEach(b => b.onclick = () => { $("ilo-host").value = b.dataset.ip; $("found-ilo").innerHTML = ""; note("ilo", `Using ${b.dataset.ip}. Save the sign-in, then read the server.`, "ok"); }); }
+  catch (err) { note("ilo", err.message, "bad"); } finally { $("find-ilo").disabled = false; } };
+$("read-ilo").onclick = async () => { $("read-ilo").disabled = true; note("ilo", "Reading the server through its iLO…"); try { const r = await call("/read", { what: "ilo" }); note("ilo", r.message, r.ok ? "ok" : "bad"); await load(); } catch (err) { note("ilo", err.message, "bad"); } finally { $("read-ilo").disabled = false; } };
+$("read-switch").onclick = async () => { $("read-switch").disabled = true; note("switch", "Reading the switch on the console cable (about a minute)…"); try { const r = await call("/read", { what: "switch", port: $("sw-port").value }); note("switch", r.message, r.ok ? "ok" : "bad"); await load(); } catch (err) { note("switch", err.message, "bad"); } finally { $("read-switch").disabled = false; } };
+load().catch(err => { $("top").textContent = "Kit Pilot's own server is not answering: " + err.message; });
+</script>
+</body>
+</html>

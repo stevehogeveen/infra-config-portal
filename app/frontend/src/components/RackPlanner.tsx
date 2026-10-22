@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Trash2, List, Server, Move } from "lucide-react";
+import { Trash2, List, Server, Move, Plus } from "lucide-react";
 import { EquipmentOverview, EquipmentChecklist } from "./EquipmentOverview";
 import { EquipmentStatus } from "./EquipmentStatus";
 import { api } from "../api";
@@ -11,12 +11,35 @@ import { HardwareThumbnail, hardwareName } from "./HardwareThumbnail";
 import { hardwareCatalog, serverFamily, RACK_UNIT_HEIGHT, type HardwarePreset } from "../hardwareCatalog";
 import { arrangePlacement, resizeRack } from "../rackPlacement";
 import { RackPlanFiles } from "./RackPlanFiles";
+import { CheckConnections } from "./CheckConnections";
+import { HealthLine, IdentifyButton, ResumeCard, useHealth } from "./KitJobs";
+import { PreflightButton } from "./Preflight";
+import { CableMap } from "./CableMap";
 import "../rackPlanner.css";
 import "../setupJourney.css";
 import { Guide } from "./studio/Guide";
 import { useStudio } from "./studio/StudioContext";
 import { computeSteps } from "./studio/StudioRail";
 import { ProvenanceChip, shortTime } from "./studio/ProvenanceChip";
+import { bayNumber, merged } from "./bays";
+
+/** Bays the server's last read-only check found a drive in (cached; reading this never contacts the server). */
+function useReadBays(profileId: string, deviceId: string | undefined, active: boolean) {
+  const [read, setRead] = useState<{ deviceId: string; bays: number[]; checkedAt: string | null } | null>(null);
+  useEffect(() => {
+    if (!active || !deviceId) return;
+    let cancelled = false;
+    api.diskPreparation(profileId, deviceId).then(view => {
+      const source = view.drives?.length ? { drives: view.drives, at: view.checked_at } : view.last_read ? { drives: view.last_read.drives, at: view.last_read.checked_at } : null;
+      if (cancelled || !source?.drives.length) return;
+      const bays = merged(source.drives.filter(drive => !drive.presence || drive.presence === "identified"), []).drives
+        .map(drive => Number(bayNumber(drive.location))).filter(bay => Number.isInteger(bay) && bay > 0);
+      setRead({ deviceId, bays: [...new Set(bays)].sort((a, b) => a - b), checkedAt: source.at || null });
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [profileId, deviceId, active]);
+  return read && read.deviceId === deviceId ? read : null;
+}
 
 export type PlannedEquipment = {
   id: string; name: string; kind: "server" | "switch" | "ups" | "pdu" | "storage";
@@ -74,12 +97,14 @@ export function RackPlanner({ profileId, profileName = "Standalone Windows kit",
   const [unitHeight, setUnitHeight] = useState(RACK_UNIT_HEIGHT);
   const selected = plan.equipment.find((item) => item.id === selectedId);
   const selectedHasDrives = selected?.kind === "server" || selected?.kind === "storage";
+  const readBays = useReadBays(profileId, selected?.kind === "server" ? selected.device_id ?? undefined : undefined, tab === "drives");
   const dirty = JSON.stringify(plan) !== saved || plan.equipment.some((item) => !item.device_id);
   const invalid = rackPlanError(plan);
   // A plan that could not be loaded is unknown, not empty: show only the error, never an empty rack.
   const failedLoad = !loaded && !!error;
   const draftKey = `rack-workbench-draft-v1:${profileId}`;
   const studio = useStudio();
+  const health = useHealth(plan.equipment.filter(item => item.kind === "server" && item.device_id).map(item => item.device_id!), studio?.devices);
   // Keep the rail, evidence drawer and this rack pointing at the same piece of equipment.
   useEffect(() => {
     if (studio?.selectedId && studio.selectedId !== selectedId && plan.equipment.some(item => item.id === studio.selectedId)) select(studio.selectedId);
@@ -169,6 +194,14 @@ export function RackPlanner({ profileId, profileName = "Standalone Windows kit",
     }
     setPlan(result.plan); setError(""); setPlacing(null); setDropSlot(null);
     setMessage(`Rack resized to ${result.plan.rack_units}U.${result.moved.length ? ` ${result.moved.length} item(s) moved down to fit.` : ""}`);
+  }
+  const [showShelf, setShowShelf] = useState(false);
+  /** A new kit's usual start: one DL360 at U1 and one Cisco switch at U3, as an unsaved draft. */
+  function startKit() {
+    const server = { ...newEquipment("server", undefined, hardwareCatalog.find(entry => entry.key === "dl360")!), position: 1 };
+    const sw = { ...newEquipment("switch", undefined, hardwareCatalog.find(entry => entry.key === "c9300")!), position: Math.min(3, Math.max(2, plan.rack_units)) };
+    setPlan({ ...plan, equipment: [server, sw] });
+    select(server.id); setView("rack");
   }
   function newEquipment(kind: PlannedEquipment["kind"], sourceDevice?: DeviceInventoryItem, preset = hardwareCatalog.find(entry => entry.kind === kind)!): PlannedEquipment {
     if (sourceDevice) sourceDevice = { ...sourceDevice, display_name: hardwareName(sourceDevice.display_name, kind) };
@@ -284,20 +317,20 @@ export function RackPlanner({ profileId, profileName = "Standalone Windows kit",
   if (mode === "connect") return <section className="rack-planner"><RackConnection plan={plan} profileId={profileId} loaded={loaded} busy={busy} error={error} selectedId={selectedId} onSelect={select} devices={devices} /></section>;
   return <section className={`rack-planner ${editing ? "is-editing" : "is-viewing"}`} aria-label="Rack planner" onDragStartCapture={() => setDragging(true)} onDragEndCapture={() => setDragging(false)} onDropCapture={() => setDragging(false)}>
     {mode === "equipment" && <Guide
-      eyebrow={<>Your guide · <b>Step 1 of 7</b> · Add equipment</>}
-      say={placing ? <>You are holding <em>{placing.name}</em> ({placing.height}U): drop it on a slot, or tap a free slot, and the preview shows what moves.</>
-        : !plan.equipment.length ? <>Add your first piece of equipment: drag a card onto the rack, or tap a card and then a slot.</>
-        : dirty ? <>Your rack layout has changes that are not saved yet, so review the names and positions, then save it.</>
-        : <>The rack layout is saved in your plan, so carry on to the network settings.</>}
+      eyebrow={<><b>Step 1 of 7</b></>}
+      say={placing ? <>Drop <em>{placing.name}</em> on a slot.</>
+        : !plan.equipment.length ? "Add your equipment."
+        : dirty ? "Save the rack layout."
+        : "Rack layout saved."}
       reassure={placing ? "Nothing is placed until you choose a slot. No hardware is touched." : "Planning and saving change your plan only. No hardware is touched."}
-      primary={!placing && !dirty && plan.equipment.length > 0 ? <a href="/setup/defaults" className="sd-primary">Continue to network settings</a> : undefined}
+      primary={!placing && !dirty && plan.equipment.length > 0 ? <a href="/setup/defaults" className="sd-primary">Next: Network settings</a> : undefined}
       aside={placing ? "Cancel placement puts it back on the shelf." : dirty ? "Save with Save a copy below. It also saves the active kit." : !plan.equipment.length ? "Choose hardware from the shelf below." : undefined}
       label={<><ProvenanceChip kind="saved" />Everything on this page is your plan. Nobody has checked it against the machines.</>} />}
     {mode === "rack" && editing && <Guide
-      eyebrow={<>Your guide · <b>My Rack</b> · Editing</>}
-      say={placing ? <>You are holding <em>{placing.name}</em> ({placing.height}U): drop it on a slot, or tap a free slot, and the preview shows what moves.</>
-        : dirty ? <>Your rack has changes that are not saved yet. Save them, or click Done editing to keep them as a draft.</>
-        : <>Drag hardware from the shelf onto the rack, or drag equipment to move it. Select a piece to rename or remove it.</>}
+      eyebrow={<><b>My Rack</b> · editing</>}
+      say={placing ? <>Drop <em>{placing.name}</em> on a slot.</>
+        : dirty ? "Save your changes."
+        : "Drag equipment to add or move it."}
       reassure="Editing changes your plan only. No hardware is touched."
       aside={placing ? "Cancel placement puts it back on the shelf." : dirty ? "Save changes is below the rack." : undefined}
       label={<><ProvenanceChip kind="saved" />Everything you change here is your plan. Nobody has checked it against the machines.</>} />}
@@ -306,18 +339,24 @@ export function RackPlanner({ profileId, profileName = "Standalone Windows kit",
       const now = steps.find(step => step.state === "now");
       const index = now ? steps.indexOf(now) : -1;
       const chosen = selected ? evidenceFor(selected) : undefined;
+      const waitingSwitch = now?.path === "/setup/connect" ? studio?.devices.find(item => item.kind === "switch" && item.deviceId && !item.proven) : undefined;
       return <Guide
-        eyebrow={now ? <>Your guide · <b>Step {index + 1} of 7</b> · {now.name}</> : <>Your guide · <b>My Rack</b></>}
-        say={steps.every(step => step.state === "done") ? <>Your kit is built: every step is recorded as done, from firmware to Windows running.</>
-          : chosen?.proven ? <><em>{chosen.name}</em> answered a read-only check at {shortTime(chosen.answeredAt)}{now ? <>, so the next step is {now.name.toLowerCase()}.</> : "."}</>
-          : now ? <>Your rack is drawn from your saved plan; the next step is <em>{now.name.toLowerCase()}</em>.</>
-          : <>This is your rack as saved in your plan. Continue setup to add, connect and prepare equipment.</>}
-        reassure="This page never contacts equipment. Edit rack changes your saved plan only."
-        primary={steps.every(step => step.state === "done") ? <a className="sd-primary" href="/simple?report=1">Review build report</a> : <a className="sd-primary" href={now?.path ?? "/setup/guide"}>Continue setup</a>}
+        eyebrow={now ? <><b>Step {index + 1} of 7</b></> : <><b>My Rack</b></>}
+        say={steps.every(step => step.state === "done") ? "Your kit is built."
+          : waitingSwitch ? <>Set up <em>{waitingSwitch.name}</em>.</>
+          : now ? <>{now.name}.</>
+          : "Continue setup."}
+        reassure="Opening this page contacts nothing. Check connections only reads; Edit rack changes your saved plan only."
+        primary={steps.every(step => step.state === "done") ? <a className="sd-primary" href="/simple?report=1">Review build report</a>
+          : waitingSwitch ? <a className="sd-primary" href={`/setup/connect?device=${encodeURIComponent(waitingSwitch.deviceId!)}`}>Set up {waitingSwitch.name}</a>
+          : <a className="sd-primary" href={now?.path ?? "/setup/guide"}>{now ? `Go to ${now.name}` : "Continue setup"}</a>}
         aside={now ? now.note : undefined} />;
     })()}
+    {mode === "rack" && !editing && <ResumeCard />}
     <header className="rack-plan-toolbar">
       <div><h1>{mode === "equipment" ? "Choose equipment & rack layout" : mode === "checklist" ? "Equipment checklist" : "My Rack"}</h1><span>{profileName}</span></div>
+      {!editing && mode === "rack" && <div className="rack-tools"><CheckConnections equipment={plan.equipment} /><PreflightButton profileId={profileId} /></div>}
+      {!editing && mode === "rack" && selected?.kind === "server" && selected.device_id && <IdentifyButton key={selected.device_id} deviceId={selected.device_id} />}
       {!editing && <button type="button" className={mode === "rack" ? "rack-edit-start" : undefined} disabled={!loaded} onClick={() => { setEditing(true); setTab("equipment"); }}>{mode === "rack" ? <><Move size={16} />Edit rack</> : "Edit equipment"}</button>}
       <div className="rack-edit-controls" hidden={!editing}>
       <label>Rack height (U)<input aria-label="Rack height" type="number" min="4" max="60" value={rackHeightInput} disabled={busy || !loaded} onChange={(e) => setRackHeightInput(e.target.value)} onBlur={event => {
@@ -329,12 +368,20 @@ export function RackPlanner({ profileId, profileName = "Standalone Windows kit",
     </header>
     {(error || invalid) && <p role="alert">{error || invalid}</p>}
     {message && <p role="status">{message}</p>}
-    {editing && <><fieldset className="hardware-picker drag-palette" disabled={busy || !loaded}><legend>Choose hardware</legend>{hardwareCatalog.map(preset => <button type="button" key={preset.key} aria-label={`Place ${preset.label}`} onPointerDown={event => beginDrag(event, newEquipment(preset.kind, undefined, preset), false)} onClick={() => { if (suppressClick.current) return; setPlacing(newEquipment(preset.kind, undefined, preset)); setView("rack"); }}><HardwareThumbnail item={presetPreview(preset)} /><span className="hw-catalog-label"><strong>{preset.label}</strong><small>{preset.detail}</small></span></button>)}</fieldset>
+    {editing && !plan.equipment.length && loaded && <div className="rack-starter">
+      <button type="button" className="primary-action" disabled={busy} onClick={startKit}>Start with an HPE DL360 server and a Cisco switch</button>
+      <span>Or pick hardware below.</span>
+    </div>}
+    {editing && mode === "equipment" && plan.equipment.length > 0 && !showShelf && !placing && <div className="rack-shelf-toggle">
+      <button type="button" className="secondary-action" disabled={busy || !loaded} onClick={() => setShowShelf(true)}><Plus size={16} />Add equipment</button>
+    </div>}
+    {editing && (mode !== "equipment" || !plan.equipment.length || showShelf || !!placing) && <><fieldset className="hardware-picker drag-palette" disabled={busy || !loaded}><legend>Choose hardware</legend>{hardwareCatalog.map(preset => <button type="button" key={preset.key} aria-label={`Place ${preset.label}`} onPointerDown={event => { setShowShelf(true); beginDrag(event, newEquipment(preset.kind, undefined, preset), false); }} onClick={() => { setShowShelf(true); if (suppressClick.current) return; setPlacing(newEquipment(preset.kind, undefined, preset)); setView("rack"); }}><HardwareThumbnail item={presetPreview(preset)} /><span className="hw-catalog-label"><strong>{preset.label}</strong><small>{preset.detail}</small></span></button>)}</fieldset>
       <div className="rack-placement-bar" aria-live="polite">{placing ? <><strong>{placing.name} / {placing.height}U</strong><button type="button" onClick={() => { setPlacing(null); setDropSlot(null); }}>Cancel placement</button></> : <span>Drag hardware to a rack slot, or select an image and then a slot.</span>}</div>
-      <button ref={removeZoneRef} type="button" className={`rack-remove-zone ${overRemove ? "is-over" : ""}`} aria-label="Remove from rack" disabled={busy || !loaded} onDragOver={event => { if (placing && plan.equipment.some(item => item.id === placing.id)) { event.preventDefault(); setDropSlot(null); } }} onDrop={event => { event.preventDefault(); if (placing) removeItem(placing); }} onClick={() => { if (placing) removeItem(placing); }}><Trash2 size={20} />Remove from rack<span>Drop equipment here; saved connections are kept</span></button>
+      {/* Shown only while a rack item is being dragged; the equipment panel has its own Remove. */}
+      <button ref={removeZoneRef} type="button" hidden={!(dragging && placing && plan.equipment.some(item => item.id === placing.id))} className={`rack-remove-zone ${overRemove ? "is-over" : ""}`} aria-label="Remove from rack" disabled={busy || !loaded} onDragOver={event => { if (placing && plan.equipment.some(item => item.id === placing.id)) { event.preventDefault(); setDropSlot(null); } }} onDrop={event => { event.preventDefault(); if (placing) removeItem(placing); }} onClick={() => { if (placing) removeItem(placing); }}><Trash2 size={20} />Remove from rack<span>Drop equipment here; saved connections are kept</span></button>
     </>}
     {!failedLoad && <>
-    <p className="workbench-plan-note">{dirty ? "Draft kept in this browser; not yet saved to the server" : "Rack layout saved to server"} / Hardware not verified</p>
+    {dirty && <p className="workbench-plan-note">Draft kept in this browser; not saved yet.</p>}
     <div className="workbench-view-bar"><h2>Your equipment <span>{plan.equipment.length}</span></h2><div role="group" aria-label="Equipment view"><button type="button" aria-pressed={view === "rack"} onClick={() => setView("rack")}><Server size={16} />Rack</button><button type="button" aria-pressed={view === "list"} onClick={() => setView("list")}><List size={16} />List</button></div></div>
     <div className="rack-plan-workspace">
       {view === "list" ? <EquipmentChecklist readOnly={mode === "rack" && !editing} items={plan.equipment} selectedId={selectedId} onSelect={(id) => { select(id); setTab("overview"); }} /> : <div className="rack-plan-scroll" aria-label="Planned rack elevation">
@@ -366,8 +413,9 @@ export function RackPlanner({ profileId, profileName = "Standalone Windows kit",
             return <span key={item.id} className={`sd-callout ${selectedId === item.id ? "sel" : ""}`} style={{ top: (plan.rack_units - item.position - item.height + 1) * unitHeight, height: item.height * unitHeight }} onClick={() => select(item.id)}>
               <b>{item.name}</b>
               <small>{editing ? (selectedId === item.id ? "Selected · editing" : `${span} · ${item.kind}`)
-                : evidence?.proven ? <ProvenanceChip kind="proven" time={evidence.answeredAt}>answered</ProvenanceChip>
-                : <><i className="sd-pill-key" />{item.kind === "server" ? (item.device_id ? "never answered" : "draft, not saved") : `${item.kind} · no check`}</>}</small>
+                : evidence?.proven ? <ProvenanceChip kind="proven" time={evidence.answeredAt}>verified</ProvenanceChip>
+                : <><i className="sd-pill-key" />{!item.device_id ? "draft, not saved" : evidence?.attention === "failed" ? "last check failed" : evidence?.attention === "stale" ? "check is old" : item.kind === "server" || item.kind === "switch" ? "not checked yet" : `${item.kind} · nothing to check`}</>}</small>
+              {!editing && item.kind === "server" && item.device_id && <HealthLine health={health[item.device_id]} />}
             </span>;
           })}
           {!editing && (() => {
@@ -379,7 +427,8 @@ export function RackPlanner({ profileId, profileName = "Standalone Windows kit",
           })()}
         </div>
         </div>
-        {mode === "rack" && <div className="sd-legend"><span><i className="sd-led ok" />answered, shown with its time</span><span><i className="sd-pill-key" />not answered or no check</span><span>Drive bays drawn are your saved plan, not a drive read.</span></div>}
+        {mode === "rack" && <div className="sd-legend"><span><i className="sd-led ok" />connection verified, with its time</span><span><i className="sd-pill-key" />not answered or no check</span><span>Drive bays drawn are your saved plan, not a drive read.</span></div>}
+        {mode === "rack" && !editing && <CableMap profileId={profileId} />}
       </div>}
       <aside className="rack-plan-inspector">
         {!selected ? <><h2>Equipment plan</h2><p>{plan.equipment.length ? "No equipment selected." : "No equipment in this plan yet."}</p><p>Inventory and credentials remain separate.</p></> : <>
@@ -399,7 +448,7 @@ export function RackPlanner({ profileId, profileName = "Standalone Windows kit",
           <label>Model<input aria-label="Equipment model" readOnly={selected.kind === "server"} list="rack-models" maxLength={120} value={selected.model} onChange={(e) => { const family = selected.kind === "server" ? serverFamily(e.target.value) : null; update({ model: e.target.value, ...(family ? { height: family.height } : {}) }); }} /></label>
           {selected.kind === "server" && !/Gen\d+/i.test(selected.model) && <p>Generation pending connection check.</p>}
           <datalist id="rack-models">{(selected.kind === "server" ? [] : selected.kind === "switch" ? ["Catalyst 9300"] : selected.kind === "ups" ? ["Rackmount UPS", "Eaton 5P 1550"] : selected.kind === "storage" ? ["NetApp 24 SFF"] : []).map((model) => <option key={model} value={model} />)}</datalist>
-          <div className="rack-plan-pair"><label>Bottom slot (U)<input aria-label="Bottom slot" type="number" min="1" max={plan.rack_units} value={selected.position} onChange={(e) => update({ position: Number(e.target.value) })} /></label><label>Height (U)<input aria-label="Equipment height" type="number" min="1" max="12" value={selected.height} onChange={(e) => update({ height: Number(e.target.value) })} /></label></div>
+          <div className="rack-plan-pair"><label>Starting position (U)<input aria-label="Bottom slot" type="number" min="1" max={plan.rack_units} value={selected.position} onChange={(e) => update({ position: Number(e.target.value) })} /></label><label>Height (U)<input aria-label="Equipment height" type="number" min="1" max="12" value={selected.height} onChange={(e) => update({ height: Number(e.target.value) })} /></label></div>
           {selected.kind === "pdu" && <label>Mount<select aria-label="PDU mount" value={selected.mount} onChange={(e) => update({ mount: e.target.value as PlannedEquipment["mount"] })}><option value="rack">Rack units</option><option value="left">Left side (0U)</option><option value="right">Right side (0U)</option></select></label>}
           {selected.kind === "switch" && <label>Ports<select aria-label="Switch ports" value={selected.ports} onChange={(e) => update({ ports: Number(e.target.value) as 24 | 48 })}><option value="24">24 ports</option><option value="48">48 ports</option></select></label>}
           {selected.kind === "switch" && <label>SFP uplink slots<select aria-label="SFP uplink slots" value={selected.uplink_ports || 0} onChange={(e) => update({ uplink_ports: Number(e.target.value) as 0 | 4 })}><option value="0">Blank module</option><option value="4">4 SFP slots</option></select></label>}
@@ -407,9 +456,10 @@ export function RackPlanner({ profileId, profileName = "Standalone Windows kit",
           {selectedHasDrives && tab === "drives" && <>
             <label>Drive bay capacity<input aria-label="Drive bay capacity" type="number" min="0" max={selected.kind === "server" ? serverFamily(selected.model)?.maxBays || 24 : 24} value={selected.bay_count} onChange={(e) => update({ bay_count: Number(e.target.value) })} /></label>
             <h3>{selected.occupied_bays.length} drives / {selected.bay_count} bays</h3>
-            <div className="rack-plan-bay-editor">{Array.from({ length: Math.max(0, Math.min(24, selected.bay_count || 0)) }, (_, index) => { const bay = index + 1; const installed = selected.occupied_bays.includes(bay); return <button type="button" key={bay} aria-label={`Bay ${bay}`} aria-pressed={installed} onClick={() => update({ occupied_bays: installed ? selected.occupied_bays.filter((value) => value !== bay) : [...selected.occupied_bays, bay].sort((a, b) => a - b) })}><span>{bay}</span><small>{installed ? "Drive" : "Empty"}</small></button>; })}</div>
+            <div className="rack-plan-bay-editor">{Array.from({ length: Math.max(0, Math.min(24, Math.max(selected.bay_count || 0, ...(readBays?.bays ?? [])))) }, (_, index) => { const bay = index + 1; const installed = selected.occupied_bays.includes(bay); const found = readBays ? readBays.bays.includes(bay) : null; const note = found === null ? (installed ? "Drive" : "Empty") : installed && found ? "Drive" : installed ? "Not found" : found ? "Found" : "Empty"; return <button type="button" key={bay} className={found === null || installed === found ? undefined : found ? "is-found" : "is-missing"} aria-label={`Bay ${bay}${found === null ? "" : installed === found ? "" : found ? ", drive found but not planned" : ", planned but no drive found"}`} aria-pressed={installed} onClick={() => update({ occupied_bays: installed ? selected.occupied_bays.filter((value) => value !== bay) : [...selected.occupied_bays, bay].sort((a, b) => a - b) })}><span>{bay}</span><small>{note}</small></button>; })}</div>
+            {readBays && <ReadBaysNote planned={selected.occupied_bays} read={readBays} onMatch={() => update({ occupied_bays: readBays.bays, bay_count: Math.max(selected.bay_count || 0, ...readBays.bays) })} />}
             {selected.occupied_bays.some((bay) => bay > selected.bay_count) && <button type="button" onClick={() => update({ occupied_bays: selected.occupied_bays.filter((bay) => bay <= selected.bay_count) })}>Remove drives outside capacity</button>}
-            <p>{selected.kind === "server" ? "Occupancy is planned, not detected. Boot-mirror roles remain in the server drive plan." : "Drive occupancy is planned, not detected."}</p>
+            {!readBays && <p>{selected.kind === "server" ? "Occupancy is planned until the server answers a connection check; then the drives it reports show here too." : "Drive occupancy is planned, not detected."}</p>}
           </>}
           <button type="button" className="rack-plan-remove" onClick={() => { if (window.confirm(`Remove ${selected.name} from the rack? Existing connection records will be retained.`)) { setPlan({ ...plan, equipment: plan.equipment.filter((item) => item.id !== selected.id) }); select(""); } }}><Trash2 size={16} /> Remove equipment</button>
           </fieldset>
@@ -424,4 +474,18 @@ export function RackPlanner({ profileId, profileName = "Standalone Windows kit",
       {mode === "equipment" && (dirty || !plan.equipment.length) && <p className="journey-next">Save your rack layout to continue to network settings.</p>}
     </footer>}
   </section>;
+}
+
+/** Planned bays against the bays the server reported: extra drives and missing ones, with one tap to match. */
+function ReadBaysNote({ planned, read, onMatch }: { planned: number[]; read: { bays: number[]; checkedAt: string | null }; onMatch: () => void }) {
+  const extra = read.bays.filter(bay => !planned.includes(bay));
+  const missing = planned.filter(bay => !read.bays.includes(bay));
+  const list = (bays: number[]) => bays.length === 1 ? `bay ${bays[0]}` : `bays ${bays.slice(0, -1).join(", ")} and ${bays[bays.length - 1]}`;
+  return <div className="rack-read-bays" role="note">
+    <p><ProvenanceChip kind="proven" time={read.checkedAt || undefined} />The server reported {read.bays.length} drive{read.bays.length === 1 ? "" : "s"}{read.checkedAt ? ` at ${shortTime(read.checkedAt)}` : ""}.
+      {!extra.length && !missing.length && " That matches the plan."}</p>
+    {extra.length > 0 && <p className="is-found">Found a drive the plan doesn't have in {list(extra)}.</p>}
+    {missing.length > 0 && <p className="is-missing">No drive reported in planned {list(missing)}.</p>}
+    {(extra.length > 0 || missing.length > 0) && <button type="button" className="connection-secondary" onClick={onMatch}>Match the plan to the server</button>}
+  </div>;
 }

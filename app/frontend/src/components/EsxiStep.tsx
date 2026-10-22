@@ -238,6 +238,13 @@ function InstallStep({ settings, build, status, onOpen }: { settings: EsxiSettin
   </>;
 }
 
+/** "VMware-ESXi-8.0.3-24859861-HPE-803.0.0.12.2.0.9-oct2025.iso" reads as "HPE ESXi 8.0.3 installer". */
+function friendlyIso(name: string) {
+  const version = /ESXi[-_ ]?(\d+\.\d+(?:\.\d+)?)/i.exec(name)?.[1];
+  if (!version) return name;
+  return `${/HPE/i.test(name) ? "HPE " : ""}ESXi ${version} installer`;
+}
+
 export function EsxiStep({ labProfileState, onReloadLabProfile }: { labProfileState?: LabProfileState | null; onReloadLabProfile?: () => Promise<void> }) {
   const profile = activeProfile(labProfileState);
   const profileId = profile?.id;
@@ -281,11 +288,10 @@ export function EsxiStep({ labProfileState, onReloadLabProfile }: { labProfileSt
     {servers && servers.length > 1 && <label className="ex-server-pick">Server<select aria-label="Server for ESXi" value={server?.deviceId} onChange={e => navigate("/setup/prepare-esxi?device=" + encodeURIComponent(e.target.value))}>{servers.map(item => <option key={item.deviceId} value={item.deviceId}>{item.name}</option>)}</select></label>}
     {server && <article className="ex-card" aria-label={server.name}>
       <header className="ex-card-head"><Server size={20} aria-hidden="true" /><div><strong>{server.name}</strong><small>{server.model}</small></div>
-        {status?.state === "verified" && <span className="fw-pill fw-pill-ok">ESXi running</span>}
         {status?.active && <span className="fw-pill fw-pill-up">Installing</span>}</header>
       {!settings ? <p className="dr-loading" role="status">Loading…</p> : <div className="ex-steps">
         <Step n={1} title="Installer media" icon={<Disc3 size={18} />} done={mediaDone}
-          summary={media?.selected?.present ? <>Using <b>{media.selected.name}</b></> : "Choose the ESXi ISO to install."}>
+          summary={media?.selected?.present ? <>Using <b title={media.selected.name}>{friendlyIso(media.selected.name)}</b></> : "Choose the ESXi ISO to install."}>
           <MediaStep profileId={profileId} deviceId={server.deviceId} media={media} onChanged={next => { setMedia(next); void api.esxiInstaller(profileId, server.deviceId).then(setBuild); }} />
         </Step>
         <Step n={2} title="Host settings" icon={<Network size={18} />} done={settingsDone}
@@ -294,7 +300,7 @@ export function EsxiStep({ labProfileState, onReloadLabProfile }: { labProfileSt
             onSaved={async next => { setSettings(next); await onReloadLabProfile?.(); await load(); }} />}
         </Step>
         <Step n={3} title="Install ESXi" icon={<Rocket size={18} />} done={status?.state === "verified"} keepOpen
-          summary={status?.state === "verified" ? "Installed and answering." : "Unattended install onto the boot mirror."}>
+          summary={status?.state === "verified" ? undefined : "Unattended install onto the boot mirror."}>
           <InstallStep settings={settings} build={build} status={status} onOpen={() => setInstaller(true)} />
         </Step>
       </div>}

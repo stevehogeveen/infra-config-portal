@@ -236,3 +236,30 @@ def import_vm(ip: str, password: str, *, path: str, datastore: str, name: str, n
 
 def power_on(ip: str, password: str, name: str) -> None:
     run(ip, password, "vm.power", "-on", name)
+
+
+def guest_run(ip: str, password: str, name: str, login: str, program: str, *args: str, timeout: int = 120) -> tuple[int, str]:
+    """Run one fixed program inside a Windows VM through VMware Tools; returns (exit code, output).
+
+    The guest sign-in travels in GOVC_GUEST_LOGIN, never on the command line, and is scrubbed
+    from any error text.
+    """
+    binary = shutil.which("govc")
+    if not binary:
+        raise GovcError("govc is not installed.")
+    env = _env(ip, password)
+    env["GOVC_GUEST_LOGIN"] = login
+    try:
+        result = subprocess.run([binary, "guest.run", "-vm", name, program, *args], env=env, capture_output=True,
+                                text=True, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired:
+        raise GovcError("The command inside the VM did not finish in time.") from None
+    output = _scrub(_scrub((result.stdout or "") + (result.stderr or ""), password), login.split(":", 1)[-1])
+    if "invalid user name or password" in output.lower() or "failed to authenticate" in output.lower():
+        raise GovcError("Windows refused the saved administrator sign-in.")
+    return result.returncode, output[-4000:]
+
+
+def guest_reboot(ip: str, password: str, name: str) -> None:
+    """Ask Windows to restart itself through VMware Tools (a clean restart, not a power cut)."""
+    run(ip, password, "vm.power", "-r", name)

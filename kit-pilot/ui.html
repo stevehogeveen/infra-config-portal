@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kit Pilot</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header><h1>Kit Pilot</h1><small id="kit"></small><span style="flex:1"></span><a class="quiet" href="/briefing" style="text-decoration:none;padding:6px 12px;border:1px solid var(--line);border-radius:8px;color:var(--dim)">Briefing</a><a class="quiet" href="/setup" style="text-decoration:none;padding:6px 12px;border:1px solid var(--line);border-radius:8px;color:var(--dim);margin-left:8px">Flight plan</a><button class="quiet" id="pause" hidden>Pause</button></header>
+<main>
+  <div class="deck">
+    <div class="say calm" id="say">Starting…</div>
+    <button class="big" id="big" disabled>…</button>
+  </div>
+  <div class="check" id="check" hidden><ul id="items"></ul></div>
+  <div class="approve" id="approve" hidden>
+    <h2>Every change, in order</h2>
+    <ol id="changes"></ol><h2>Check passed &mdash; what remains unknown</h2><ul id="unknowns"></ul>
+    <label><input type="checkbox" id="understood"> I understand these changes: the restarts, the server being forced off if it has not shut down after two minutes, and the loss of any data on the planned RAID disks.</label>
+  </div>
+  <div class="stage" id="stage">
+    <div class="rack" id="rack" aria-hidden="true"></div>
+    <div class="board" id="board"></div>
+  </div>
+  <section class="check" id="flight-log" hidden><h2>Flight log</h2><p id="freshness"></p><ol id="timeline"></ol></section>
+  <p class="warn" id="warning" hidden></p>
+  <iframe class="report" id="report" hidden title="Kit report"></iframe>
+</main>
+<script src="/rack.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let state = null, busy = false;
+async function post(action) { if (busy) return; busy = true; try { state = await (await fetch("/do", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) })).json(); render(); } finally { busy = false; } }
+async function refresh() { try { state = await (await fetch("/state")).json(); render(); } catch { $("say").textContent = "Kit Pilot's own server is not answering. Start it again with start-kit-pilot.cmd."; } }
+function render() {
+  const s = state; if (!s) return;
+  $("kit").textContent = s.kit ? `${s.kit} · ${s.equipment.map(e => e.name).join(", ")}` : "";
+  const lab = path => `${s.lab_builder}${path}`;
+  const big = $("big"), say = $("say");
+  const label = { idle: ["Check", "check"], blocked: ["Check again", "check"], checked: ["Build", "build"], approve: ["Approve and build", "approve"],
+                  flying: ["Building…", null], pausing: ["Pausing…", null], paused: ["Continue", "resume"], needs_you: ["Try again", "resume"], done: ["Open report", "report"] }[s.phase] || ["Check", "check"];
+  big.textContent = label[0]; big.disabled = !label[1] || (s.phase === "approve" && !$("understood").checked);
+  big.className = "big" + (s.phase === "approve" || s.phase === "paused" || s.phase === "needs_you" ? " go" : s.phase === "done" ? " go" : "");
+  big.onclick = () => label[1] === "report" ? window.open("/report", "_blank") : post(label[1]);
+  $("pause").hidden = s.phase !== "flying";
+  say.className = "say " + (s.phase === "needs_you" || s.phase === "blocked" ? "bad" : s.phase === "flying" ? "" : "calm");
+  const text = s.phase === "flying" ? (s.now || "Working…") : s.message || (s.phase === "idle" ? "Press Check. Nothing is changed by a check." : "");
+  say.innerHTML = ""; say.append(text);
+  if (s.where && s.label && (s.phase === "needs_you" || s.phase === "blocked")) { say.append(" "); const a = document.createElement("a"); a.href = lab(s.where); a.target = "_blank"; a.textContent = s.label + " ↗"; say.append(a); }
+  $("check").hidden = !s.preflight || s.phase === "flying" || s.phase === "done" || s.phase === "paused" || s.phase === "needs_you";
+  if (s.preflight) $("items").innerHTML = s.preflight.items.map(i => `<li class="${i.state}"><b>${esc(i.name)}</b> ${esc(i.detail)}${i.state !== "ok" && i.fix ? ` — ${esc(i.fix)}` : ""}</li>`).join("");
+  $("approve").hidden = s.phase !== "approve";
+  if (s.phase === "approve") $("changes").innerHTML = s.legs.map(l => { const skip = (s.options?.skip || []).includes(l.id); return `<li class="${skip ? "skip" : ""}"><b>${esc(l.title)}${skip ? " · skipped this run" : l.id === "switch" && s.options?.replace_switch ? " · existing settings replaced" : ""}</b><span>${skip ? "Chosen in the briefing. Change it there." : esc(l.changes)}</span></li>`; }).join("");
+  $("unknowns").innerHTML = (s.unknowns || []).map(t => `<li>${esc(t)}</li>`).join("");
+  const age = t => t ? Math.max(0, Math.floor(Date.now()/1000-t)) : null;
+  const ago = t => { const n = age(t); return n === null ? "not yet" : n < 60 ? `${n}s ago` : `${Math.floor(n/60)}m ${n%60}s ago`; };
+  $("flight-log").hidden = !(s.events || []).length;
+  $("freshness").textContent = `Last checked ${ago(s.last_checked)} | last progress ${ago(s.last_progress)}`;
+  $("timeline").innerHTML = (s.events || []).map(v => `<li class="${esc(v.kind)}"><time>+${Math.floor(v.elapsed/60)}m ${Math.floor(v.elapsed%60)}s | ${esc(v.at.slice(11,19))}</time> ${esc(v.text)}</li>`).join("");
+  $("stage").hidden = s.phase === "idle" || s.phase === "approve";
+  $("rack").innerHTML = drawRack(s);
+  $("board").innerHTML = s.legs.map(l => `<div class="leg ${l.state}" data-reason="${esc(l.reason || "")}"><span class="lamp"></span><span>${esc(l.title)}${l.note ? `<small>${esc(l.note)}</small>` : ""}</span><span class="t">${l.at || ""}</span></div>`).join("");
+  $("warning").hidden = !s.warning; $("warning").textContent = s.warning || "";
+  $("report").hidden = s.phase !== "done"; if (s.phase === "done" && !$("report").src) $("report").src = "/report";
+}
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+$("understood").onchange = render;
+$("pause").onclick = () => post("pause");
+refresh(); setInterval(refresh, 2000);
+</script>
+</body>
+</html>

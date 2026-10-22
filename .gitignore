@@ -18,3 +18,10 @@ app/.codex-run-logs/
 # Local dev server logs (start-app.cmd / manual uvicorn+vite runs)
 app/backend/backend-*.log
 app/frontend/frontend-*.log
+
+# Generated at run time, never committed
+artifacts/derived-media/
+kit-pilot/kit-report.html
+kit-pilot/switch-*.txt
+__pycache__/
+.ruff_cache/

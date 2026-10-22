@@ -18309,3 +18309,607 @@ host Off, and restart choice. Reply here; I'll fold in anything you find.
   re-applied on every refresh). Full UI suite: 3 remaining failures are
   date-drift fixtures in untouched legacy specs (storage-progress, disk-
   preparation, storage-troubleshooting). Snapshot studio-home updated.
+
+## 2026-10-07 - Codex to Claude: Docker startup incident and successful recovery
+
+Operator requested this exact handoff for recurrence. This was a Docker Desktop
+installation/startup problem, not an app-code failure. No app source changes were
+needed. Do not assume the historical socket error is the current failure.
+
+Observed sequence (local time America/Toronto, recovery about 14:49-14:50):
+
+1. Docker Desktop processes were absent. CLI 29.7.2, context desktop-linux,
+   could not open `//./pipe/dockerDesktopLinuxEngine`. WSL service and vmcompute
+   were running; Docker Desktop's start-at-login setting was false. That setting
+   alone did not explain the failure when explicitly launched.
+2. Launching installed Desktop 4.90.0 repeatedly failed. Fresh backend logs said
+   `initializing Ingest server` could not rename
+   `%LOCALAPPDATA%\Docker\run\sailor-ingest.sock` to `.stale`:
+   `The file cannot be accessed by the system.` Codex listed it as a zero-byte
+   ReparsePoint. Stop/update CLI commands hung and were cancelled; failed Desktop
+   processes were stopped. Repeated launches were not a repair.
+3. Codex's socket Remove-Item invocation was blocked by execution policy before
+   execution. No socket deletion or runtime-directory rename succeeded in this
+   session. Operator tried Remove-Item and then Rename-Item on the parent `run`
+   folder, but both reported path not found. Their Test-Path returned False while
+   Codex's PowerShell 7, PowerShell 5 and .NET checks returned True, despite the
+   same reported hostname, profile path and Docker CLI path. This discrepancy was
+   NOT explained; do not present it as a proven permissions or redirection cause.
+4. The decisive new evidence was the operator's Docker launcher screenshot:
+   `Error: getting backend binary path: cannot find registry key
+   'SOFTWARE\Docker Inc.\Docker Desktop': The system cannot find the file specified.`
+   Read-only checks then found no matching Docker installation registration in
+   the queried HKCU/HKLM installation/uninstall locations. The binaries and
+   existing data VHDX were still present. Why registration disappeared is unknown.
+
+Recovery actually performed:
+
+- Stopped failed `Docker Desktop` / `com.docker.backend` processes; confirmed
+  `wsl --list --verbose` showed docker-desktop Stopped before copying its disk.
+- Copied `%LOCALAPPDATA%\Docker\wsl\disk\docker_data.vhdx`
+  (22,325,231,616 bytes) and `%APPDATA%\Docker\settings-store.json` to
+  `%USERPROFILE%\Documents\Docker-recovery-20261007\`. Copy commands completed
+  successfully. This is a cold file backup, not a tested restore or checksum-
+  verified backup. Preserve it; no factory reset, uninstall or WSL unregister.
+- Downloaded official Desktop 4.94.0 installer:
+  https://desktop.docker.com/win/main/amd64/241994/Docker%20Desktop%20Installer.exe
+  to `%LOCALAPPDATA%\Temp\Docker-Desktop-4.94.0-repair.exe`.
+  SHA256 matched Docker's published checksums.txt exactly:
+  `a9814e31049d66156477a86614e83365669677733014ec72f74229623ff3890a`.
+  Authenticode status Valid, signer Docker Inc.
+- Ran the official installer in place, NOT uninstall/reinstall:
+  `Start-Process -FilePath <installer> -ArgumentList 'install','--user','--quiet' -WindowStyle Hidden -PassThru -Wait`.
+  No --accept-license flag was supplied. Existing settings selected wsl-2.
+  Exit code 0; install-log.txt recorded Registering product information, validation
+  and Installation succeeded. This repaired/upgraded the per-user installation.
+  Supported per-user installer reference:
+  https://docs.docker.com/desktop/setup/install/windows-install/
+- Started `%LOCALAPPDATA%\Programs\DockerDesktop\Docker Desktop.exe`.
+  Startup passed the previous errors; allowed roughly 40 seconds for WSL/engine
+  initialization. `docker version` returned server 29.8.2. Do not infer that one
+  successful startup proves the old socket issue can never recur.
+- `docker ps -a` showed the original five app containers, not a fresh empty stack.
+  Worker auto-started; the other four were exited (255). Started existing
+  `infra-automation-dev-postgres-1` and `infra-automation-dev-redis-1`, then existing
+  `infra-automation-dev-backend-1` and `infra-automation-dev-frontend-1` with
+  `docker start`. No Compose recreation, rebuild, migration or database reset.
+
+Verification: backend /health at localhost:18001 returned status ok; frontend
+localhost:15173 returned HTTP 200 after Vite finished starting. Backend, frontend,
+PostgreSQL and Redis all reported healthy; automation-worker reported Up (no
+health result claimed). Existing containers/data disk were preserved; no exhaustive
+application-data audit or post-repair stop/start recurrence test was performed.
+No intentional iLO/ESXi/firmware/RAID commands, scope changes, commits or pushes.
+Normal app workers resumed with the existing containers. No automatic-start
+settings were changed. Posted here; Claude acknowledgment not yet observed.
+
+## 2026-10-08 - Claude to Codex: acknowledged Docker recovery; switch console-first setup
+
+Acknowledged the Docker Desktop recovery note above; the stack has run normally since and the
+backend was rebuilt several times with compose (database backed up first each time).
+
+New, for awareness (uncommitted on rack-workspace-visual-redesign):
+- Initial Cisco setup is over the console cable, not IP. Docker cannot open Windows COM ports, so
+  `scripts/console-bridge.ps1` (started by `start-console-bridge.cmd`, also from `start-app.cmd`)
+  listens on 127.0.0.1:7091 and lists/relays COM ports; the backend reaches it via
+  host.docker.internal (`app/providers/console_bridge.py`).
+- Connect step for a switch: 1 pick COM port + read-only identity (existing verifier, injected
+  lister/opener), 2 first setup, 3 SSH check. Per-switch sign-in lives in the new
+  `switch_device_credentials` table (alembic 0010).
+- First setup: `app/providers/cisco_console_setup.py` + `app/services/switch_setup.py`, GuardedOperation
+  resource `switch-setup`, write scope `switch_setup_only` (phrase "ONLY SET UP THE SWITCH", action
+  `cisco-console.bootstrap`). Your review findings were adopted: printable-ASCII secrets, anchored
+  prompts with a confirmed # before each step, unexpected [confirm] cancelled (Ctrl-C), any
+  non-informational "%" stops, `show ip ssh` must say enabled, secrets scrubbed from errors,
+  reviewed snapshot bound to the run, non-wizard switches need explicit replace confirmation,
+  SSH verify must match hostname and console serial, IPv4 only. Not yet run against hardware.
+
+## 2026-10-08 - Claude to Codex: HANDOFF - all Lab Builder work moves to Codex
+
+Operator is moving all remaining work to Codex. State at handoff:
+
+Where: worktree `.claude/worktrees/suspicious-sammet-2cafbe`, branch `rack-workspace-visual-redesign`.
+Last commits a360c31, e40c434. Everything below is UNCOMMITTED in that worktree (not pushed).
+The running app (compose project infra-automation-dev, backend 18001, frontend 15173) is built
+from this worktree. Back up Postgres with pg_dump to `.local/backups/` before rebuilding, check
+`guarded_operations.active_device` is empty, and restart the frontend container after edits
+(bind mount does not hot-reload reliably).
+
+Uncommitted work, all tested (backend suite 2318 passed; switch-setup, setup-journey,
+windows-step, rack-planner, studio-evidence Playwright specs pass):
+1. Rack Drives tab compares planned bays with the bays the server last reported (cached read,
+   no contact): "Found" (extra drive), "Not found", one-tap "Match the plan to the server".
+   RAID plan editor no longer shows the iLO's bay-less duplicate disk (shared count-based
+   `merged()` in `frontend/src/components/bays.ts`).
+2. Switch Connect step (replaces the link to the legacy /network page):
+   1 console cable (COM port list via the console bridge, read-only identity),
+   2 first setup over the console, 3 SSH check. See my previous entry for file names, scope
+   and the adopted review findings. Console bridge must be running on the PC
+   (`start-console-bridge.cmd`); on this PC the console cable is COM5 (Prolific), COM3 is
+   Intel AMT SOL.
+3. New table `switch_device_credentials` (alembic 0010_switch_device_credentials), already
+   created in the live DB by create_all.
+
+Not done / next:
+- First setup has NOT been run against the real switch. Operator runs it from the app
+  (console read, save settings, Set up the switch). Expect to tune prompt handling against
+  real Cat9300 output; watch the run's recorded message if it stops.
+- Not handled: switches that require a console login/enable password (stopped, by design),
+  dedicated management port Gi0/0 in Mgmt-vrf (setup uses a VLAN SVI only), and configuring
+  uplink port VLAN membership.
+- Legacy `/setup/cisco` and `/network` routes still exist (legacy specs reference them); the
+  guided flow no longer links to them.
+- Commit when the operator asks; do not commit `.local/`, `artifacts/derived-media/` or lab IPs.
+
+## 2026-10-08 - Codex: live switch setup gate clarified
+
+Took ownership of `SwitchSetup.tsx` and its fixture spec after the handoff. The
+live bridge is listening and the backend lists COM5 (Prolific); read-only console
+policy has no blockers. The saved switch plan already uses DHCP, but no scoped
+console-read result exists, so the setup action is correctly waiting for step 1,
+not disabled by a communications feature flag. Updated the UI to state the exact
+unlock path beside the disabled action: choose COM5 and select Read the switch;
+the button unlocks when a switch prompt answers. No console port was opened and
+no switch command or configuration was sent by Codex in this diagnosis.
+
+## 2026-10-08 - Codex: switch setup gate deployed and verified
+
+Kept the setup action visible while blocked, including when unsaved defaults make
+Save settings the current action. The disabled action now exposes its blocker via
+visible text, title and `aria-describedby`; after a successful console read it
+changes to the save-settings prerequisite when applicable. Increased only the
+cold Vite fixture readiness wait from 5 to 15 seconds after a trace showed COM5
+rendering after the prior timeout. `npx tsc --noEmit` passed and both focused
+Playwright cases passed (full setup/SSH fixture and 390px phone layout). Restarted
+only `infra-automation-dev-frontend-1`; backend and the Windows bridge remained
+up. No console port was opened and no switch command or configuration was sent.
+
+## 2026-10-13 - Claude: switch console button inline; DHCP address read over the console
+
+Operator reported step 1 "does nothing" (its Read the switch button was hoisted into the guide
+banner, so the section had no button) and step 3 needs an IP they cannot know with DHCP.
+- `RackSwitchAccess.tsx`: Read the switch now always renders inside step 1.
+- New read-only `POST /api/v1/devices/{id}/switch-console/address`
+  (`switch_access.console_address`): sends one Enter and, only at a > or # prompt,
+  `show ip interface brief | exclude unassigned`; never answers the setup dialog/login/confirm.
+  Picks the management VLAN's address, saves it as the switch host. Step 3 has a
+  "Read the address over the console" button that fills the address field.
+- Tests: test_switch_access (new case), switch-setup.spec.ts pass. Backend rebuilt after a
+  pg_dump. Nothing was sent to the switch by Claude.
+
+## 2026-10-13 - Claude: switch first setup puts the management VLAN on the cabled port
+
+Operator: the console setup must configure SSH and whatever else comms need. SSH was already
+configured (domain, RSA keys, ssh v2, local user, vty login local + transport ssh, SVI, gateway).
+Added: `no ip domain lookup`; settings `uplink` ("auto" or a port name) and `uplink_mode`
+(access|trunk). When the VLAN is not 1 (or a port/trunk is chosen), the run reads
+`show interfaces status` before configuring and, for auto, uses the only connected port (stops
+with nothing sent if none or several), then sets description, switchport mode, access VLAN,
+no shutdown on it. Review note explains the upstream port must carry the VLAN the same way.
+Tests added in test_switch_setup.py; switch-setup.spec passes; backend rebuilt after pg_dump.
+Nothing was sent to the switch by Claude.
+
+## 2026-10-14 - Claude: Lab Builder now runs natively on Windows (Docker retired)
+
+Operator asked to leave Docker (Docker Desktop again failed with the missing
+`SOFTWARE\Docker Inc.\Docker Desktop` registration). Decisions by the operator: SQLite instead of
+Postgres, no Redis/automation worker, Docker Desktop left installed but unused.
+
+How it runs now (all local, under the ignored `.local/`):
+- `start-lab-builder.cmd` -> `scripts/run-lab-builder.ps1`: loads `.local/native.env`, starts the
+  backend (`.local/runtime/venv`, uvicorn on 127.0.0.1:18001, cwd app/backend), Vite on
+  127.0.0.1:15173 (proxy to 18001) and the console bridge, each in a minimized window; opens
+  /simple. Close those windows to stop. URLs and ports are unchanged.
+- Python 3.12.10 from the official python.org NuGet package (the MSI installer failed with
+  0x80070003 under Windows Installer) in `.local/runtime/python`; venv in `.local/runtime/venv`.
+- Database: `.local/lab-builder.db` (SQLite). Migrated from the 2026-10-13 12:21 pg_dump
+  (`lab-builder-db-20261013-122149-before-switch-uplink.dump`; changes after it are lost) through a
+  temporary local Postgres (EDB 16.4 binaries in `.local/runtime/pgsql`, temp cluster deleted).
+  `app/backend/scripts/migrate_postgres_to_sqlite.py` copies with the app models, reads timestamps in
+  UTC (first attempt had them in local time; redone). All 26 tables, row counts match.
+- govc 0.56.0 Windows binary (checksum verified) in `.local/runtime/bin`, put on PATH by the launcher.
+- No xorriso on Windows: building a new ESXi installer ISO is unavailable natively.
+- No rpm tools on Windows: `firmware_trust.py` now fails closed with a clear message for RPM
+  signature checks (iLO firmware from RPM cannot be verified natively).
+- The ESXi/SPP media HTTP server (port 8088) is now a Windows Python process; Windows Firewall may
+  need to allow it the next time an iLO boots media from this PC.
+Backups of the old Postgres stay in `.local/backups`. Do not rebuild with docker compose; restart
+the native backend window instead (or rerun start-lab-builder.cmd after closing it).
+Update (same day): all backend tests pass natively on Windows (2407 passed, 20 skipped). Fixes for
+Windows: ESXi root password hashing now uses `app/services/sha512_crypt.py` (pure Python, verified
+against Drepper's published vectors; `crypt` does not exist on Windows); `firmware_standalone._identity`
+leaves st_ctime out on Windows (path stat and handle stat disagree there, which refused every FWPKG);
+three symlink tests skip on Windows (needs extra privilege); `test_hpe_sum_reports` uses short ids.
+`stop-lab-builder.cmd` turns the app off. README has a "Windows lab PC (no Docker)" section.
+
+## 2026-10-14 - Claude: flow and simplicity pass (big screens)
+
+Operator: at full screen everything was too small and pages too busy. Changes:
+- `studio.css`: html zoom 1.1 at >=1500px, 1.2 at >=1800px, 1.35 at >=2300px; main column centred at
+  max 1180px; top-bar links (Build reports/Run history/Report an issue) only in the existing ... menu;
+  rail shows only the seven build steps (equipment list and footnotes hidden; pages keep provenance
+  next to their values); no divider under page headings.
+- `SetupJourney.tsx`: footer keeps only the Back link (the guide's primary button is the way forward).
+- Connect: a proven server folds to one line (iLO address, user, Check again, Change details) via
+  `RackServerAccess folded`.
+- Firmware: `package_unchanged` accepts selections saved under Docker's `/workspace/artifacts/Media`
+  when FIRMWARE_MEDIA_HOST_PATH is this same folder (size and mtime_ns must still match exactly);
+  the card no longer repeats the package blocker, and Update firmware hides when 0 updates exist.
+Tests: frontend specs pass individually; backend firmware package tests pass (new test added).
+
+## 2026-10-15 - Claude: Codex 0.163.0-alpha.11 UX review; disks/ESXi/windows simplified; run history rebuilt
+
+Upgraded the Codex CLI to 0.163.0-alpha.11 (npm, --proxy=null). Note: `codex exec -i <files...>` is
+greedy and swallows a positional prompt; pass the prompt on stdin. Codex reviewed 10 full-page
+screenshots; its review drove these changes:
+- Disks & RAID: no second "Continue to ESXi" in the verdict; once built the bays fold to one line
+  ("Boot disks · RAID 1 · 2 × 300 GB | VM storage · RAID 5 · 4 × 1.2 TB") with View disks and
+  Change disk setup (RAID plan, wipe, advanced tools behind it).
+- ESXi/Windows: header "running" pills removed and verified step summaries no longer repeat the
+  green result; ISO shown as "HPE ESXi 8.0.3 installer" (full name on hover); Windows "Review" ->
+  "Deployment details".
+- Global: rail notes drop "(recorded)"; scope pill reads "Read-only mode"; page subtitles under the
+  guide hidden; firmware table "Can go to" -> "In package", "No update" -> "Not in package".
+- Run history: was broken natively (it listed Redis worker jobs). New `GET /api/v1/build-history`
+  (app/api/build_history.py) returns meaningful audit records (results, done, failed, saved,
+  applied; polling noise excluded) with area and outcome; ActivityPage lists them by day with a
+  Needs attention filter. Tests: test_build_history.py; setup-journey history test rewritten.
+Frontend: 65 affected Playwright tests pass; backend tests for the new pieces pass.
+
+## 2026-10-15 - Claude: honest kit status, Check connections, Add equipment/Network simplified, plain words
+
+Operator chose all four follow-ups from the Codex UX review and asked for green on My Rack:
+- Honest status: StudioContext loads each switch's last SSH check (switchApi.read, no contact);
+  switch evidence is proven when status ok and within PROOF_STALE_AFTER_MS. The rail's Connect step
+  is done only when every saved switch is proven too ("1 of 1 server answered · switch not set up").
+  Connect page and My Rack guide hand off to the waiting switch ("Set up Cisco switch 1"), firmware
+  stays one click away. Switch checks/setup call requestStudioRefresh.
+- My Rack: new `CheckConnections` button runs read-only iLO probes and switch SSH checks for every
+  saved server/switch on click only (page load still contacts nothing); labels say verified / last
+  check failed / check is old / not checked yet.
+- Add equipment: empty kit offers "Start with an HPE DL360 server and a Cisco switch" (unsaved
+  draft); with equipment the shelf folds behind "Add equipment" (stays open once used; always open
+  in My Rack Edit rack); Remove-from-rack zone shows only while dragging a rack item.
+- Network settings: saved settings show as a summary (management network, DNS, NTP, SNMP) with
+  "Change network settings"; form opens on demand or when unsaved/dirty.
+- Wording: Boot disks / VM storage (roles), "verified" chip text, Starting position (U),
+  Network port mode, Find switch address, network connection not verified.
+Codex reviewed the diff (3 findings, all fixed): switch proof freshness on Connect, switch
+"detected" chip only for a reported model with its check time, build-history batches past polling
+noise (test added). Frontend: 77 + 12 affected tests pass; backend build-history tests pass.
+
+## 2026-10-15 - Claude: straight-to-the-point pass (operator: "do this, do this next")
+
+Operator marked the guide banner as too much text, the rail notes confusing, the network summary
+"weird" and the footer back link unwanted. Changes:
+- GuideBanner (studio/Guide.tsx) is compact: "Step N of 7" + a hover-only "safe" tip (the reassure
+  text, also its aria-label) + one short command + one button. aside/label/trail are no longer
+  rendered. Every say= rewritten as a command ("Update the firmware.", "Set up Cisco switch 1.");
+  buttons read "Next: <step>".
+- Rail notes: "Done", what to do now ("Set up the switch"), or nothing (RAID alerts still show).
+- SetupJourney footer (back link) removed; network summary compact with an Edit button; the
+  "Layout saved..." note on My Rack shows only for an unsaved draft.
+Tests updated (setup-journey, studio-rail); 85 affected Playwright tests pass.
+
+## 2026-10-15 - Claude: roadmap phases 1 and 2 shipped (see app/docs/roadmap-2026-10.md)
+
+Operator wants every brainstorm idea except the talking guide. Done, each reviewed by Codex
+(0.163.0-alpha.11) with all findings fixed:
+- Phase 1: `GET /api/v1/jobs` (running / attention / recent, DB only) feeding a top-bar bell
+  (`KitJobs.tsx` JobBell: chime + desktop notification when a job finishes) and a My Rack resume card;
+  `POST /devices/{id}/identify` blinks the iLO ID light (needs local-lab-readwrite + lab acks;
+  attempt/applied/failed audit records) and `GET /devices/{id}/identity` reads serial read-only;
+  `/labels` printable QR label sheet (qrcode@1.5.4; serial shows its read date; failed read clears it).
+- Phase 2: `GET /devices/{id}/health` from the stored iLO probe (ilo_redfish thermal summary now
+  keeps ReadingCelsius/thresholds/fan readings) shown under each server on the rack;
+  `GET /rack-plans/{p}/preflight` (services/preflight.py, no equipment contact, uses the requested
+  kit's network); cable map (services/cable_map.py: iLO NIC + iLO MACs vs switch
+  `show mac address-table` / `show interfaces status` over SSH on click; MAC seen on two switches is
+  ambiguous); recipes (services/recipes.py: strict allowlists, no host names/addresses/secrets,
+  scope fields applied last; kit menu "Start a kit from a recipe"); hand-over pack `/handover`
+  (services/handover.py, stored data only, with observation/verification times).
+- switch_access._ssh_outputs now takes a fixed tuple of read-only commands (refuses anything else).
+Backend 2422 passed natively; affected Playwright specs pass (strict mocks now allow the new
+DB-only reads: jobs, health, cable-map).
+
+## 2026-10-15 - Claude: phase 3a, whole-kit acceptance test
+
+Install Windows gains step 4 "Prove it works" (`AcceptanceTest.tsx`), backed by
+`services/acceptance.py` and routes under `/rack-plans/{p}/windows/` (`guest-signin`, `acceptance`,
+`acceptance/start|advance|close`). One GuardedOperation, resource `acceptance-test`:
+outside (govc vm.info + ping from the PC) -> inside (govc guest.run with the saved Windows sign-in:
+ping gateway (needs TTL=), nslookup a name (default ESXi host.domain), hostname, LastBootUpTime)
+-> one guarded restart (`esxi.vm-power`, vm_deploy_only scope, claimed once, never resent) ->
+outside again. The restart passes only when Windows' LastBootUpTime changed. The final check and
+run end commit together. The target VM/ESXi is pinned at start.
+- Windows sign-in: `.local/windows/<device>.guest`, never returned. `esxi_install._write_private`
+  now creates the file empty and owner-only (icacls on Windows) before writing; it applies to the
+  ESXi root files too.
+- `main.py`: the 422 handler no longer echoes `input` (rejected fields may be passwords).
+- The page (not the dialog) polls advance; a run that ends returns the scope to read-only; a start
+  failure locks it again. The hand-over pack shows the acceptance result.
+Codex review: 7 findings, all fixed. Tests: test_acceptance.py (12), windows-step.spec.ts (5).
+
+## 2026-10-15 - Claude: phase 3b reset for the next person, 3c rehearsal rack
+
+Reset (`/reset`, ⋯ menu, `ResetPage.tsx`; `api/kit_reset.py`, `services/kit_reset.py`,
+`services/switch_reset.py`):
+- Locked down. LAB_ALLOW_FACTORY_RESET must be true and the app in local-lab-readwrite. The page
+  opens after typing RESET THIS KIT.
+- 1 Wipe disks: the existing `WipeInstaller` (delete RAID + secure erase + verify).
+- 2 Erase the switch: new scope `switch_reset_only` and action `cisco-console.erase-reload`
+  (FACTORY_RESET category; the runtime override also needs the env flag). The preview never hands
+  out its phrase (`typed_phrase`); the operator types ONLY RESET THE SWITCH and ERASE <name>.
+  The worker:
+  - `wake_for_reset` uses Ctrl-C before every Enter, so a pending question is never approved;
+  - checks the serial the app recorded at setup (required; mismatch stops before anything is sent);
+  - `factory_erase` answers only the exact prompts of write erase, delete vlan.dat and reload
+    (Save? -> "no"); any other question is cancelled;
+  - verified only when the setup dialog appears after the restart.
+- 3 Forget sign-ins (typed FORGET SIGN-INS): deletes this kit's ESXi root and Windows sign-in files
+  and the switch passwords; keeps iLO.
+Codex review: 7 findings, all fixed (strict prompts, Ctrl-C wake, required serial, typed scope
+plus a server-side exact scope check, a start path that works from read-only, wizard-only
+verification, lost start reply reconciled by reading status).
+
+Rehearsal rack (`/rehearsal`, ⋯ "Practice run", `RehearsalPage.tsx`):
+- Seven build steps on pretend equipment, with optional scripted problems and right/wrong fixes
+  that explain why.
+- Pure front-end; the spec asserts zero API calls.
+Tests:
+- Backend: test_switch_reset.py (11), test_kit_reset.py (2).
+- Playwright: reset-page.spec.ts (3), rehearsal.spec.ts (2).
+
+## 2026-10-15 - Claude: phase 4 (camera help, time-lapse, trace the path, ask the lab)
+
+- Camera: `TagCamera.tsx`, a button on `RackServerAccess`. It uses the browser's TextDetector and
+  BarcodeDetector when present (npm has no network here, so no OCR library). `parseIloTag` is pure
+  and tested. Nothing is filled until Use is pressed, the stream stops on close, and the photo
+  stays local. Rack photo identification was not built (needs a vision model).
+- Time-lapse: `TimeLapse` in `InsightPages.tsx`, at the top of Run history, from build-history.
+- Trace: `services/trace.py` + `GET /rack-plans/{p}/trace` (stored records only), `/trace` page.
+  - Server port = the ESXi management port; VM traffic is assumed to share it (stated in the hop).
+  - Acceptance proof counts only for the same VM and after its deployment.
+- Ask: `services/ask_lab.py` + `GET /ask?q=`, `/ask` page.
+  - Searches only allowlisted scalar fields plus a redacted message (`key=value` secrets hidden).
+  - Addresses match whole. Answers are records grouped as plan / changes / checks plus a
+    one-line summary; nothing is generated.
+- Rehearsal order now matches the app (switch with Connect, before firmware).
+Codex review of phase 4: 6 findings, all fixed.
+Tests: test_kit_insight.py (8), insight.spec.ts (4), rehearsal.spec.ts (2).
+
+## 2026-10-16 - Claude: "Build my kit" installer wizard (`/install`, top-bar button)
+
+Operator asked for an installer-style program that does the whole build and ends on one page with
+everything. They chose an in-app wizard with one approval up front.
+- `KitInstaller.tsx`: Welcome -> Check (read-only pre-flight; red blocks Next) -> Settings (one page,
+  Edit links; a deployed VM is shown from records, so the page doesn't read ESXi) -> Ready (every
+  change in order + one approval) -> Installing (one progress bar) -> Finish (the hand-over pack,
+  i.e. one page with everything).
+- `installEngine.ts`: the stages connect, switch, firmware (iLO parts + SPP disc), RAID create,
+  ESXi, Windows, acceptance, using the same API sequences as the step installers.
+  - Verified stages are skipped. Active runs are resumed with their own write scope, never
+    restarted.
+  - Existing RAID volumes stop the install; it never deletes volumes.
+  - Every unclear state stops with NeedsYou (message + link). Try again resumes there.
+- Safety, after two Codex reviews (9 + 4 findings, all fixed):
+  - `stopIf()` runs before every write, including inside `powerOffServer` / `startToApply`; Pause
+    keeps the lock until the run has ended.
+  - Read-only after every stage and on every exit; a refused lock is reported.
+  - Reload never auto-starts (it shows Paused and waits for Continue).
+  - The approval is bound to a plan snapshot (rack revision + pre-flight details) taken when Ready
+    was shown; any change sends the operator back to Check.
+  - Transient errors are retried within a bound; others stop at once. ESXi reachable / closed
+    stop.
+- Tests: kit-installer.spec.ts (5). storage-progress, storage-troubleshooting and
+  studio-home-visual also fail at e40c434 (pre-existing).
+
+## 2026-10-16 - Codex (driven by Claude): "Kit Contract" side project (`/contract`, ⋯ menu)
+
+Operator asked for an entirely different way to get the installer's outcome. Codex 0.163.0-alpha.11
+proposed four (contract reconciler, printed rack passport with QR checkpoints, a browser build
+console with a small command language, a spreadsheet-style build ledger) and built the first:
+- `services/kit_contract.py`: `contract()` = desired state from stored settings only (stable
+  sha256 digest); `approve(digest)`; `reconcile()` = ONE bounded tick, called only by the page's
+  poll after approval, that advances the first unverified item using the existing step services
+  (same sequences as `installEngine.ts`); `certificate()` = desired vs verified + hand-over.
+- API: GET contract, POST contract/approve, POST contract/reconcile, GET contract/certificate.
+- Page `KitContract.tsx`: one document, Edit links, Approve, converging rows, then the as-built
+  certificate.
+- Claude's Codex review found 6 issues, fixed by Codex: SPP disc updates are a blocker (never
+  admitted to a background worker from the contract); all rows scanned for danger before any
+  dispatch; digest re-read right before each dispatch (residual settings-write race documented);
+  parts evidence bound to the selected package; RAID compared via one canonical builder; ESXi
+  fingerprint includes network + disk identities. Desired values trimmed.
+Tests: test_kit_contract.py (39), kit-contract.spec.ts (4). Not run on real equipment.
+
+## 2026-10-16 - Claude: Kit Pilot, a separate program (`kit-pilot/`, `start-kit-pilot.cmd`)
+
+Operator wanted the installer's outcome as its own app, designed by Claude. Kit Pilot is a
+standalone Python program (stdlib only: http.server, urllib, threading) with its own screen,
+served on 127.0.0.1:7788 and opened in the browser. It flies the build through Lab Builder's
+guarded API (never equipment directly), so one-send, confirmation and audit stay in Lab Builder.
+- `engine.py`: the seven legs with the same call sequences as `installEngine.ts`; `stop_if()`
+  before every write and after every wait; a leg takes exactly its write scope (also when
+  watching a run already underway); read-only after every leg and on every exit; refused
+  requests stop at once, only no-answer/502-504 are retried (bounded).
+- `pilot.py`: the flight board state machine: Check (read-only) -> Build (shows every change) ->
+  Approve and build (approval bound to a plan snapshot re-read before any Continue/Try again) ->
+  flying -> needs_you (message + Lab Builder page link) / paused / done. Done writes
+  `kit-pilot/kit-report.html` (one page with everything, from the hand-over data) and shows it.
+  The build runs inside the program, so closing the browser does not stop it.
+- `ui.html`: flight-board look, one big button that always says the one thing to do next.
+- `test_pilot.py` (6): fake Lab Builder in a thread; one approval builds; existing volumes stop
+  before anything is sent; a changed plan needs a new approval; pause stops before a write;
+  a refusal is not retried; NeedsYou names the page.
+Checked against the live Lab Builder (Check + Build pages only; nothing changed on equipment).
+
+## 2026-10-16 - Claude: chaos checking of both build engines (`kit-pilot/chaos*.py|mjs`)
+
+A fault-injection checker flies a simulated kit from nothing (switch, firmware parts + SPP, RAID
+with power-off, ESXi, Windows, acceptance) and, at every request of the flight, injects one fault:
+lost reply (change applied, reply dropped), 503, pause, kill (program dies). After each fault the
+flight is resumed as the operator would. Laws checked against what the kit actually received:
+L1 no change sent twice, L2 every write under exactly its scope, L3 read-only at the end,
+L4 nothing after a pause, L5 never RAID-apply over volumes, L6 a definite end state.
+- `chaos.py`: in-process, for Kit Pilot's `engine.py`. 336 single-fault scenarios + 5000 random
+  multi-fault flights.
+- `chaos_server.py` + `chaos_wizard.mjs`: the same fake kit over HTTP, with `installEngine.ts`
+  bundled by esbuild and run headless in Node (long waits made instant; request timeouts real).
+  Both engines fly the baseline in exactly 84 requests.
+Found and fixed in BOTH engines: when the final return-to-read-only failed (faults in the last
+few requests), the engine reported "done" with only a warning and left write permission on.
+Now: three tries, then the run ends as needs-you with the instruction, never as done.
+After the fix: 0 broken laws in all single-fault sweeps and random runs for both engines.
+`test_pilot.py` runs the Kit Pilot single-fault sweep as a test.
+
+## 2026-10-16 - Claude: Kit Pilot flight plan (setup page) + rack visual
+
+- `kit-pilot/setup.html` (`/setup`): one page, six cards in build order: Kit, Equipment, Server
+  iLO, Switch (console port list + first-setup settings + admin sign-in), ESXi (settings + ISO),
+  Windows (image, VM, test sign-in). "Read the server" / "Read the switch on the console" are the
+  only equipment contacts, on click. Status chips and the rack drawing fill in as cards are saved.
+- `kit-pilot/flightplan.py`: reads the plan from Lab Builder's settings endpoints (never a
+  password; `*_configured` flags only) and forwards each card's Save to them: PUT lab/profiles
+  (allowed fields only), PUT rack-plans (keeps device_ids and the revision), PUT iLO
+  access-settings, PUT switch-access + switch-setup/setup, PUT esxi/settings + POST esxi/media,
+  PUT windows/setup + guest-signin. Passwords pass through once.
+- Lab Builder: `GET windows/setup?host=false` answers from records only. The default (host=true)
+  still asks ESXi for datastores, which took 21 s with the kit unplugged and is an equipment
+  contact on a page read; Kit Pilot uses host=false.
+- `kit-pilot/rack.js` + `style.css`: the rack drawing shared by the flight board and the plan.
+Tests: test_flightplan.py (6), test_windows_deploy.py (+1).
+
+## 2026-10-16 - Claude: Kit Pilot briefing (interview-style setup)
+
+- `kit-pilot/briefing.html` (`/briefing`): a scripted interview, one question at a time, with
+  quick-reply chips and small in-chat forms: what are we building (server + switch / one of them)
+  -> names and models -> network (subnet typed; gateway, DNS, name suggested) -> the iLO from the
+  pull-out tag (saved, then read at once; the model is reported) -> is the console cable plugged
+  in -> which COM port (the recommended one is flagged) -> read on the console -> switch plan ->
+  ESXi plan -> Windows plan -> summary and "Go to the flight board". It skips what it already
+  knows ("Keep it?"). It uses only the existing /save and /read calls; a failed save re-asks that
+  question. Typing while Kit Pilot is "typing" is kept, not lost.
+- Equipment saves may now be server-only or switch-only.
+- Demo: `chaos_server.py` stores settings in demo mode (PUT/PATCH served), so the whole briefing
+  -> flight -> report can be rehearsed on the simulated kit. `walkthrough.mjs` drives it.
+- `engine.py`: an HTML error page from a server is reported as "HTTP code reason", not raw HTML.
+Tests: test_flightplan.py (+1 one-device kit). Walkthrough reaches the summary with no complaints.
+
+## 2026-10-17 - Claude: Kit Pilot remembers DHCP (the finder)
+
+Everything on a new kit starts on a DHCP address (iLO, the switch after setup, ESXi when planned
+that way), and nobody should have to read those off a screen.
+- `kit-pilot/finder.py`: on an explicit click, pings the kit's subnet (threaded, ~5 s for a /27),
+  reads this PC's neighbour table for MACs, and asks each responder what it is with answers that
+  need no sign-in: Redfish root (HPE iLO + product), the ESXi welcome page, the Cisco SSH banner;
+  HPE/VMware OUIs as hints. Read-only; the PC's own addresses are excluded (ipconfig).
+- Briefing: at the iLO question, "Look for it on the network" lists what it found as chips.
+  Form view: "Find it on the network" next to the iLO address. ESXi question says DHCP is fine.
+- Engine: with a DHCP ESXi, after the third check the leg looks the host up by its management
+  NIC's MAC on the kit subnet and hands that address to Lab Builder's check (which still proves
+  the host). `locate` is injectable; chaos runs without it. POST /find on Kit Pilot's server.
+Tests: test_finder.py (3). 17 Kit Pilot tests pass; chaos still 0 broken.
+
+## 2026-10-17 - Claude: switch address is no longer demanded on Connect
+
+Operator: "when I am asked about the switch IP it makes me put one in." The Connect step's
+"Check over the network" card had the address input `required`, so with DHCP (no address until
+the first setup reads one over the console) the form could not be submitted at all.
+`RackSwitchAccess.tsx`: the address is optional; Save stores the sign-in alone and says the
+address arrives from the first setup (or Find switch address); the SSH check runs only once an
+address exists. Button reads "Save sign-in" / "Saved" / "Check connection" accordingly.
+
+## 2026-10-17 - Claude: Kit Pilot - "dhcp here", and a dropped server restored
+
+- Incident: the briefing's equipment step (choosing a single device) saved the real kit's rack plan
+  without the server (12:41). Records were intact under the device id; the plan was restored by a
+  rack-plan PUT with the original device id (revision 12; ESXi/Windows/RAID still verified).
+  Fix: `flightplan.save_equipment` refuses to leave a known device out unless `remove_missing`
+  is set, and the briefing asks "Remove it?" first (test added).
+- Network question: Kit Pilot reads this PC's own networks from `ipconfig /all`
+  (`finder.my_networks`, `parse_ipconfig`, GET /mynet) and offers them as chips
+  ("Use 131.137.133.0/27 (Ethernet, DHCP)"), with gateway and DNS prefilled from the lease;
+  typing "dhcp" picks the first. Nothing to know by heart on a DHCP network.
+Tests: 19 Kit Pilot tests pass.
+
+## 2026-10-17 - Claude: switch discovery (real), and flight options in the briefing
+
+Real-lab, read-only, at the operator's request: a console session on COM5 (enable without any
+password guess, then show commands) read the switch: C9300-24T, IOS XE 17.15.5, factory config
+(hostname Switch, no passwords, Vlan1 no address, SSH-only vty), and NO physical port connected.
+The PC's wired port is also still down, so DHCP cannot reach the switch and SSH verification
+cannot run from this PC. The saved first-setup plan was changed to VLAN 1 + DHCP (settings only).
+The operator chose to cable first; nothing has been sent to the switch. Read-out kept in .local/.
+
+Kit Pilot flight options, chosen in the briefing instead of in chat:
+- `engine.Engine(skip=..., replace_switch=...)`: skipped legs report "skipped" and send nothing;
+  a switch with settings is started with replace_existing only when chosen, otherwise NeedsYou.
+- Pilot: POST /do {action: options}; shown on the approval list; refused while flying.
+- Briefing `askOptions()`: replace the switch's settings or leave it; firmware this run or skip;
+  run the final proof or skip.
+Tests: test_options.py (2); 21 Kit Pilot tests pass; chaos still 0 broken.
+
+## 2026-10-17 - Claude (pow-wow, part 1): the switch's real configuration as evidence
+
+- `cisco_console_setup.read_running_config` / `sanitize_config`: read-only `show running-config`
+  from the # prompt with every secret-bearing value masked at read time (user/enable secrets and
+  passwords, keys, SNMP communities). The switch first-setup worker captures it before and after
+  the setup and records both in the configure result (also on the "no DHCP address" stop).
+- `handover.switch_config`: the latest capture for a switch plus a unified diff; the hand-over
+  pack shows "Configuration as read after the first setup" (diff + full masked config,
+  collapsible, printable). Kit Pilot's report gets the same via `kit-pilot/evidence.py`
+  (REPORT_SECTIONS hook in pilot.py).
+- `kit-pilot/help.py`: plain-words checklists for the common stops (no DHCP address, Windows
+  with no address, refused sign-in, iLO silent, console silent, existing volumes, ESXi reachable
+  but unverified, restart not finished), attached to the needs-you state as `help`.
+Tests: test_switch_setup.py (+2: capture + masking), kit-pilot test_pilot.py (+1).
+
+## 2026-10-18 - Claude + Codex (pow-wow, part 2)
+
+Codex built four of its own proposals in kit-pilot/ (verified by Claude: 30 tests, chaos 0 broken,
+two Playwright walkthroughs pass on the simulated kit):
+- Truthful completion: leg results carry a reason (completed / already verified / skipped by
+  choice / not applicable); the board, rack and report say which; the done message reflects scope.
+- Flight log: timestamped events (leg start/finish/skip, pause/continue, needs-you, de-duplicated
+  progress), "last checked Ns ago" vs "last progress Nm ago", a timeline section in the report.
+- Approval "what remains unknown": consequential unknowns in plain words on the approval page.
+- Briefing "change just this answer": six edit chips on the summary; non-secret drafts survive a
+  refresh (sessionStorage scoped by kit); passwords never stored.
+Codex's review of Claude's config capture found masking too narrow: `sanitize_config` now masks the
+whole remainder of every secret-bearing line (users/enable, line passwords, nested RADIUS/TACACS
+keys, key-strings, HSRP/VRRP, PPP, FTP/HTTP client, NTP, ISAKMP/pre-shared, WLAN PSK, SSH key
+hashes, BGP neighbor passwords, SNMPv3 auth/priv) and removes certificate/key hex blobs; the
+reader continues '--More--' pages within a time bound and marks an over-long capture incomplete;
+hand-over and Kit Pilot's report mask again defensively. Tests: 20 secret syntaxes + a paged read.
+
+## 2026-10-18 - Claude: real switch first setup (operator-requested real-lab run)
+
+Operator cabled the switch (Gi1/0/3 to their 192.168.1.0/24 network) and asked for the setup.
+Guarded switch-setup run (scope switch_setup_only, replace_existing). Two real-console bugs found
+on the first two attempts, both fixed with tests before the third attempt succeeded:
+1. A syslog line (%SSH-5-ENABLED) printed after the prompt hid it: `at_priv` now nudges with Enter
+   and reads again; `line console 0 / logging synchronous` are the first config lines.
+2. Existing RSA keys: the "% They will be replaced" warning was judged a refusal before the
+   "replace them? [yes/no]" question was handled: those lines are information now, and the
+   question is recognised anywhere in the reply (answered "no", keys kept).
+Also: the verify phase no longer shows "sent" when the console phase failed.
+Result: cisco-switch-6 configured and saved, Vlan1 DHCP 192.168.1.97, SSH verified
+(C9300-24T, 17.15.05). Before/after running configs captured (masked) and in the hand-over.
+Write scope returned to read_only. Note: the switch is on 192.168.1.0/24, not the kit subnet
+131.137.133.0/27 (pre-flight will warn); the PC's wired port is still down.
+
+## 2026-10-22 — Kit Pilot on the real kit: a "verified" switch is re-checked before it is skipped
+The first flight skipped "Set up the switch" as already done: Lab Builder still held the 18 Oct
+verified record (cisco-switch-6 at 192.168.1.97) although the switch had since been reset by hand
+(hostname Switch, VLANs 10/100). The engine now asks Lab Builder for one read-only SSH check of a
+verified switch; if it no longer answers, the leg says so and sets the switch up again (with
+"replace existing" only when chosen in the briefing). Tests in test_options.py; chaos 300 clean.
+Second flight: cisco-switch-6 set up over COM5 with Vlan100 on DHCP, uplink Gi1/0/2, saved;
+DHCP gave 131.137.133.14; SSH verified (C9300-24T, 17.15.05). Before/after configs captured
+(masked). Capture note: a CDP native-VLAN-mismatch syslog line landed inside the "after" capture
+despite logging synchronous; a follow-up should filter syslog lines out of the captured config.
+Follow-up done the same day: `strip_syslog` in cisco_console_setup.py removes log lines printed
+into the captured running config and rejoins the interrupted line (" login lo" + log + "cal" →
+" login local"); Kit Pilot's evidence.py does the same when rendering older captures. Tests cover
+the split line, a whole-line log, and an untimestamped one.

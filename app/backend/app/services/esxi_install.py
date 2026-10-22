@@ -18,7 +18,6 @@ import secrets
 import shutil
 import socket
 import time
-import warnings
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -284,20 +283,39 @@ def _root_password(device_id: str) -> str | None:
     return path.read_text(encoding="utf-8").rstrip("\n") if path.is_file() else None
 
 
+def _owner_only(path: Path) -> None:
+    """Restrict a file to the account running the app (on Windows chmod does not touch the ACL)."""
+    if os.name != "nt":
+        os.chmod(path, 0o600)
+        return
+    import subprocess
+
+    user = os.environ.get("USERNAME") or ""
+    domain = os.environ.get("USERDOMAIN")
+    account = domain + "\\" + user if domain else user
+    done = subprocess.run(["icacls", str(path), "/inheritance:r", "/grant:r", f"{account}:F"], capture_output=True, check=False)
+    if not user or done.returncode != 0:
+        path.unlink(missing_ok=True)
+        raise OSError("The private file could not be restricted to this Windows user.")
+
+
 def _write_private(path: Path, text: str) -> None:
+    """Create the file empty, owner-only, before any secret is written into it; then swap it in."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".partial")
-    temporary.write_text(text, encoding="utf-8")
-    os.chmod(temporary, 0o600)
+    temporary.unlink(missing_ok=True)
+    os.close(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+    _owner_only(temporary)
+    with open(temporary, "w", encoding="utf-8") as handle:
+        handle.write(text)
     os.replace(temporary, path)
 
 
 def _hash_password(password: str) -> str:
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        import crypt
+    # Pure Python: the crypt module does not exist on Windows.
+    from app.services.sha512_crypt import sha512_crypt
 
-        return crypt.crypt(password, crypt.mksalt(crypt.METHOD_SHA512))
+    return sha512_crypt(password)
 
 
 def _password_problem(password: str) -> str | None:

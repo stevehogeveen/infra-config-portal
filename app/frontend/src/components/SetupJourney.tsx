@@ -20,40 +20,39 @@ function viewingIndex(step: JourneyStep) {
 }
 
 export function stepEyebrow(index: number, extra?: ReactNode) {
-  return <>Your guide · <b>Step {index + 1} of {setupSteps.length}</b> · {setupSteps[index].name}{extra}</>;
+  return <><b>Step {index + 1} of {setupSteps.length}</b>{extra}</>;
 }
 
 function nextPrimary(activeStep: number, query: string, done: boolean): ReactNode {
   if (!done) return undefined;
   if (activeStep >= setupSteps.length - 1) return <Link className="sd-primary" to="/simple?report=1">Review build report<ArrowRight size={17} /></Link>;
   const next = setupSteps[activeStep + 1];
-  const label: Record<string, string> = { "/setup/disks": "Continue to disks & RAID", "/setup/prepare-esxi": "Continue to ESXi", "/setup/install-windows": "Continue to Windows" };
-  return <Link className="sd-primary" to={next.path + query}>{label[next.path] ?? `Continue to ${next.name.toLowerCase()}`}<ArrowRight size={17} /></Link>;
+  return <Link className="sd-primary" to={next.path + query}>Next: {next.name}<ArrowRight size={17} /></Link>;
 }
 
 function defaultGuide(activeStep: number, query: string, done = false): ReactNode {
-  if (activeStep < 0) return <GuideBanner eyebrow={<>Your guide · <b>Run history</b></>}
-    say="Run history lists every read and every confirmed write for this kit, newest first."
+  if (activeStep < 0) return <GuideBanner eyebrow={<><b>Run history</b></>}
+    say="Everything the app did, newest first."
     reassure="Looking at history reads records only. Nothing is sent to hardware." />;
   switch (activeStep) {
     case 1: return <GuideBanner eyebrow={stepEyebrow(1)}
-      say={<>Check the shared network settings, save them in your plan, then carry on to connecting the equipment.</>}
+      say="Check the network settings, then save."
       reassure="Saving writes your plan only. Nothing on the network is changed."
-      primary={<Link className="sd-primary" to={"/setup/connect" + query}>Continue to connections<ArrowRight size={17} /></Link>} />;
+      primary={<Link className="sd-primary" to={"/setup/connect" + query}>Next: Connect equipment<ArrowRight size={17} /></Link>} />;
     case 3: return <GuideBanner eyebrow={stepEyebrow(3)}
-      say={done ? <>Every server's firmware update is verified. Carry on to the disks and RAID.</> : <>Compare each server with the selected HPE firmware package, then update it with one button.</>}
+      say={done ? "Firmware is up to date." : "Update the firmware."}
       reassure="Checking only reads. Updating asks for one confirmation, then installs and reads every part back."
       primary={nextPrimary(3, query, done)} aside={done ? undefined : "Choose the package and run the comparison below."} />;
     case 4: return <GuideBanner eyebrow={stepEyebrow(4)}
-      say={done ? <>The RAID is built as planned on every server. Carry on to installing ESXi.</> : <>Look at each server's drive bays: what's in them now and what your plan will make them. Follow the one button on each server.</>}
+      say={done ? "RAID is built." : "Build the RAID."}
       reassure="Reading disks changes nothing. Erasing and building RAID each show what happens and need your click."
       primary={nextPrimary(4, query, done)} aside={done ? undefined : "Erased disks? The re-enable guide walks you through it."} />;
     case 5: return <GuideBanner eyebrow={stepEyebrow(5)}
-      say={done ? <>ESXi is installed and verified. Carry on to deploying Windows.</> : <>Install ESXi in three steps: choose the installer ISO, set the host name and address, then install. The app does the rest and watches until ESXi answers.</>}
+      say={done ? "ESXi is installed." : "Install ESXi."}
       reassure="Steps 1 and 2 only save your plan. Installing asks for one confirmation, then attaches, boots and checks by itself."
       primary={nextPrimary(5, query, done)} aside={done ? undefined : "ESXi installs onto the RAID 1 boot mirror."} />;
     case 6: return <GuideBanner eyebrow={stepEyebrow(6)}
-      say={done ? <>Windows is running. Your kit is built; the build report lists every verified step.</> : <>Deploy Windows in three steps: choose the OVA or OVF, name the VM, then deploy. The app imports it onto ESXi, starts it and waits until Windows reports its address.</>}
+      say={done ? "Windows is running. Your kit is built." : "Deploy Windows."}
       reassure="Steps 1 and 2 only save your plan. Deploying asks for one confirmation; nothing else on the server changes."
       primary={nextPrimary(6, query, done)} aside={done ? undefined : "Needs ESXi installed and verified (Prepare ESXi) and VMware Tools in the image."} />;
     default: return <GuideBanner eyebrow={stepEyebrow(Math.max(0, activeStep))} say={setupSteps[Math.max(0, activeStep)].detail + "."} />;
@@ -67,12 +66,9 @@ export function SetupJourney({ step, children }: { step: JourneyStep; children: 
   const activeStep = viewingIndex(step);
   const studio = useStudio();
   const done = activeStep >= 0 && computeSteps(studio)[activeStep]?.state === "done";
-  const next = activeStep >= 0 && activeStep < setupSteps.length - 1 ? setupSteps[activeStep + 1] : null;
   return <StudioFrame viewing={activeStep >= 0 ? activeStep : null} defaultGuide={defaultGuide(activeStep, query, done)}>
     <div className="setup-body sd-setup-body">{children}
-      <footer className="setup-footer">{activeStep > 0 ? <Link to={setupSteps[activeStep - 1].path + query}><ArrowLeft size={16} />{setupSteps[activeStep - 1].name}</Link> : <Link to="/simple"><ArrowLeft size={16} />My Rack</Link>}
-        <span>Hardware changes require review and approval</span>
-        {next && <Link className="setup-footer-next" to={next.path + query}>Next: {next.name}<ArrowRight size={16} /></Link>}</footer>
+
     </div>
   </StudioFrame>;
 }

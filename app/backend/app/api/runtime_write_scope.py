@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/v1/runtime/write-scope", tags=["Runtime write sc
 
 class ScopePreview(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    target_scope: Literal["read_only", "firmware_only", "storage_only", "esxi_install_only", "vm_deploy_only"]
+    target_scope: Literal["read_only", "firmware_only", "storage_only", "esxi_install_only", "vm_deploy_only", "switch_setup_only", "switch_reset_only"]
 
 
 class ScopeApply(BaseModel):

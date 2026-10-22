@@ -286,7 +286,96 @@ export type WindowsStatus = { state: "not_started" | "running" | "needs_attentio
   network?: string; image?: string; esxi_address?: string; started_at?: string; address?: string | null; hostname?: string | null; guest_os?: string | null;
   last_check?: { checked_at: string; power: string | null; tools: string | null; address: string | null } | null;
   phases: Array<{ phase: "import" | "power" | "verify"; label: string; state: "todo" | "sent" | "ok" | "failed" | "uncertain"; message: string | null }> };
+export type AcceptanceCheck = { name: string; ok: boolean; detail?: string | null };
+export type AcceptanceStatus = { state: "not_started" | "running" | "needs_attention" | "verified" | "failed"; active: boolean; message: string; run_id?: string; vm?: string; lookup?: string;
+  started_at?: string; finished_at?: string; default_lookup?: string | null; signin: { username: string | null; password_saved: boolean };
+  phases: Array<{ phase: "outside" | "inside" | "reboot" | "after"; label: string; state: "todo" | "running" | "ok" | "failed" | "uncertain"; message: string | null; checks: AcceptanceCheck[] }> };
 const winPath = (id: string, device: string, action: string) => `/api/v1/rack-plans/${encodeURIComponent(id)}/windows/${action}?device_id=${encodeURIComponent(device)}`;
+export type SwitchCheck = { status: "ok" | "unreachable" | "sign_in_failed" | "blocked" | "failed"; message: string; host: string | null; hostname: string | null; model: string | null; version: string | null; serial: string | null; port_count: number | null; uptime: string | null; checked_at: string | null };
+export type SwitchAccess = { device_id: string; host: string | null; username: string | null; username_configured: boolean; password_configured: boolean; enable_password_configured: boolean; updated_at: string | null; last_check: SwitchCheck | null; console?: { port: string | null; baud: number | null; last: SwitchConsoleRead | null } };
+export type SwitchConsolePort = { port: string; candidate_fingerprint: string; description: string; manufacturer: string; usb: boolean; hint: string; recommended: boolean; recommended_bauds: number[] };
+export type SwitchConsolePorts = { helper_running: boolean; ports: SwitchConsolePort[]; bauds?: number[]; saved_port: string | null; saved_baud: number | null; problem: string | null };
+export type SwitchConsoleRead = { port: string; baud: number; answered: boolean; identity_verified: boolean; prompt_state: string; state_text: string | null; model: string | null; version: string | null; message: string | null; detail?: string | null; checked_at: string };
+const swPath = (device: string) => `/api/v1/devices/${encodeURIComponent(device)}/switch-access`;
+export type KitJob = { id: string; resource: string; label: string; device_id: string; device_name: string; state: "running" | "needs_attention" | "done" | "stopped"; status: string; started_at: string; updated_at: string; path: string };
+export type KitJobs = { running: KitJob[]; attention: KitJob[]; recent: KitJob[]; now: string };
+export type DeviceIdentity = { indicator: string | null; serial: string | null; model: string | null; ilo_host?: string | null };
+export type DeviceHealth = { overall: string | null; checked_at: string | null; inlet_c?: number | null; hottest?: { name: string; c: number } | null; fans_ok?: number; fans?: number; psu_ok?: number; psus?: number; problems: string[] };
+export type PreflightItem = { group: string; name: string; state: "ok" | "warn" | "fail"; detail: string; fix: string | null };
+export type PreflightResult = { state: "ok" | "warn" | "fail"; checked_at: string; items: PreflightItem[] };
+export type CableRow = { server_id: string; server: string; server_port: string; mac: string; switch_id: string; switch: string; switch_port: string; vlan: string };
+export type CableMapResult = { state: string; checked_at?: string; problems?: string[]; message?: string; cables: CableRow[];
+  unmatched_server_ports: Array<{ server: string; server_port: string; note: string }>; other_switch_ports: Array<{ switch: string; switch_port: string; vlan: string; note: string }> };
+export type Handover = { kit: string; generated_at: string; network: { subnet: string | null; gateway: string | null; dns: string[] | null; domain: string | null };
+  servers: Array<{ name: string; model: string; observed_at?: string | null; ilo: { address: string | null; firmware: string | null; bios: string | null; checked_at: string | null }; health: DeviceHealth | null;
+    boot_disks: { bays: string[]; capacity_bytes: number } | null; data_disks: { raid: string | null; bays: string[]; capacity_bytes: number } | null;
+    esxi: { state: string; host_name: string | null; address: string | null; datastore: { name: string } | null; verified_at: string | null };
+    windows: { state: string; vm: string | null; address: string | null; computer: string | null; os: string | null; verified_at?: string | null };
+    acceptance?: { state: string; finished_at?: string | null; lookup?: string | null } }>;
+  switches: Array<{ name: string; address: string | null; username: string | null; model: string; software: string | null; serial: string | null; checked_at: string | null; check_status: string | null; console: string | null;
+    config?: { before: string | null; after: string | null; diff: string[]; at: string; outcome: string | null } | null }>;
+  cables: CableMapResult | null; verified: BuildHistoryEntry[] };
+export type SwitchResetStatus = { state: "not_started" | "running" | "needs_attention" | "verified" | "failed"; active: boolean; message: string; run_id?: string; name: string;
+  console_port?: string; step?: string | null; phases: Array<{ phase: "erase" | "restart"; label: string; state: "todo" | "sent" | "ok" | "failed" | "uncertain"; message: string | null }> };
+export type SwitchResetReview = { ready: boolean; blockers: string[]; permission: string[]; name: string; phrase: string; console_port: string | null; baud: number | null;
+  model: string | null; serial: string | null; prompt_state: string | null; erases: string[] };
+export type KitReset = { enabled: boolean; forget_phrase: string; removed?: string[];
+  servers: Array<{ device_id: string; name: string; model: string; erases: string[]; signins: string[] }>;
+  switches: Array<{ device_id: string; name: string; model: string; console_port: string | null; erases: string[]; reset: SwitchResetStatus; signins: string[] }> };
+const resetPath = (id: string, action: string, device?: string) => `/api/v1/rack-plans/${encodeURIComponent(id)}/${action}${device ? `?device_id=${encodeURIComponent(device)}` : ""}`;
+export const resetApi = {
+  summary: (id: string) => apiRequest<KitReset>(resetPath(id, "reset")),
+  forget: (id: string, confirmation: string) => apiRequest<KitReset>(resetPath(id, "reset/forget-signins"), { method: "POST", body: { confirmation } }),
+  switchReview: (id: string, device: string) => apiRequest<SwitchResetReview>(resetPath(id, "switch-reset/review", device), { method: "POST", timeoutMs: 60000 }),
+  switchStatus: (id: string, device: string) => apiRequest<SwitchResetStatus>(resetPath(id, "switch-reset/status", device)),
+  switchStart: (id: string, device: string, confirmation: string) => apiRequest<SwitchResetStatus>(resetPath(id, "switch-reset/start", device), { method: "POST", body: { confirmation }, timeoutMs: 60000 }),
+  switchAdvance: (id: string, device: string) => apiRequest<SwitchResetStatus>(resetPath(id, "switch-reset/advance", device), { method: "POST" }),
+  switchClose: (id: string, device: string) => apiRequest<SwitchResetStatus>(resetPath(id, "switch-reset/close", device), { method: "POST" }),
+};
+export type TraceHop = { name: string; detail: string | null; state: "proven" | "saved" | "unknown"; source: string; at: string | null; prove: string | null };
+export type TracePath = { device_id: string; name: string; hops: TraceHop[]; stops_at: number | null };
+export type AskRow = { where: string; at: string | null; message: string; outcome?: string | null };
+export type AskAnswer = { question: string; terms: string[]; plan: AskRow[]; changes: AskRow[]; checks: AskRow[]; summary: string };
+export const insightApi = {
+  trace: (id: string) => apiRequest<{ servers: TracePath[]; cables_read_at: string | null }>(`/api/v1/rack-plans/${encodeURIComponent(id)}/trace`),
+  ask: (q: string) => apiRequest<AskAnswer>(`/api/v1/ask?q=${encodeURIComponent(q)}`),
+};
+export const jobsApi = {
+  handover: (profileId: string) => apiRequest<Handover>(`/api/v1/rack-plans/${encodeURIComponent(profileId)}/handover`, { timeoutMs: 60000 }),
+  recipe: (profileId: string) => apiRequest<Record<string, unknown>>(`/api/v1/rack-plans/${encodeURIComponent(profileId)}/recipe`),
+  applyRecipe: (name: string, recipe: Record<string, unknown>) => apiRequest<{ kit: { id: string; name: string }; todo: string[] }>("/api/v1/recipes/apply", { method: "POST", body: { name, recipe }, timeoutMs: 60000 }),
+  cableMap: (profileId: string) => apiRequest<CableMapResult>(`/api/v1/rack-plans/${encodeURIComponent(profileId)}/cable-map`),
+  readCableMap: (profileId: string) => apiRequest<CableMapResult>(`/api/v1/rack-plans/${encodeURIComponent(profileId)}/cable-map/read`, { method: "POST", timeoutMs: 120000 }),
+  preflight: (profileId: string) => apiRequest<PreflightResult>(`/api/v1/rack-plans/${encodeURIComponent(profileId)}/preflight`, { timeoutMs: 120000 }),
+  health: (device: string) => apiRequest<DeviceHealth>(`/api/v1/devices/${encodeURIComponent(device)}/health`),
+  list: () => apiRequest<KitJobs>("/api/v1/jobs"),
+  identity: (device: string) => apiRequest<DeviceIdentity>(`/api/v1/devices/${encodeURIComponent(device)}/identity`, { timeoutMs: 30000 }),
+  identify: (device: string, on: boolean) => apiRequest<DeviceIdentity>(`/api/v1/devices/${encodeURIComponent(device)}/identify`, { method: "POST", body: { on }, timeoutMs: 30000 }),
+};
+export type BuildHistoryEntry = { id: string; at: string; area: string; message: string; outcome: "ok" | "failed" | "attention" | "info"; actor: string };
+export type SwitchSetupSettings = { hostname: string; domain: string; vlan: number; mode: "dhcp" | "static"; address: string | null; prefix: number | null; gateway: string | null; save: boolean; uplink?: string; uplink_mode?: "access" | "trunk" };
+export type SwitchSetup = { settings: SwitchSetupSettings | null; defaults: SwitchSetupSettings & { username: string }; username: string | null; password_configured: boolean; enable_password_configured: boolean; console: { port: string | null; baud: number | null; last: SwitchConsoleRead | null } };
+export type SwitchSetupReview = { ready: boolean; blockers: string[]; permission: string[]; notes?: string[]; replace_needed?: boolean; console_port?: string | null; baud?: number | null; prompt_state?: string | null; hostname?: string; vlan?: number; mode?: string; address?: string | null; prefix?: number | null; gateway?: string | null; username?: string; save?: boolean; preview?: string[] };
+export type SwitchSetupStatus = { state: "not_started" | "running" | "needs_attention" | "verified" | "failed"; active: boolean; message: string; run_id?: string; hostname?: string; console_port?: string; address?: string | null; saved?: boolean | null; sent?: string[] | null; step?: string | null; model?: string | null; version?: string | null; phases: Array<{ phase: string; label: string; state: string; message: string | null }> };
+const swSetupPath = (id: string, device: string, action: string) => `/api/v1/rack-plans/${encodeURIComponent(id)}/switch-setup/${action}?device_id=${encodeURIComponent(device)}`;
+export const switchSetupApi = {
+  setup: (id: string, device: string) => apiRequest<SwitchSetup>(swSetupPath(id, device, "setup")),
+  save: (id: string, device: string, body: SwitchSetupSettings & { username: string; password?: string; enable_password?: string }) => apiRequest<SwitchSetup>(swSetupPath(id, device, "setup"), { method: "PUT", body }),
+  review: (id: string, device: string) => apiRequest<SwitchSetupReview>(swSetupPath(id, device, "review"), { method: "POST", timeoutMs: 60000 }),
+  status: (id: string, device: string) => apiRequest<SwitchSetupStatus>(swSetupPath(id, device, "status")),
+  start: (id: string, device: string, replaceExisting = false) => apiRequest<SwitchSetupStatus>(swSetupPath(id, device, "start"), { method: "POST", body: { replace_existing: replaceExisting }, timeoutMs: 60000 }),
+  advance: (id: string, device: string) => apiRequest<SwitchSetupStatus>(swSetupPath(id, device, "advance"), { method: "POST", timeoutMs: 120000 }),
+  close: (id: string, device: string) => apiRequest<SwitchSetupStatus>(swSetupPath(id, device, "close"), { method: "POST" }),
+};
+export const switchApi = {
+  read: (device: string) => apiRequest<SwitchAccess>(swPath(device)),
+  save: (device: string, body: { host?: string; username?: string; password?: string; enable_password?: string }) => apiRequest<SwitchAccess>(swPath(device), { method: "PUT", body }),
+  check: (device: string) => apiRequest<SwitchCheck>(`${swPath(device)}/check`, { method: "POST", timeoutMs: 120000 }),
+  consolePorts: (device: string) => apiRequest<SwitchConsolePorts>(`/api/v1/devices/${encodeURIComponent(device)}/switch-console/ports`, { timeoutMs: 30000 }),
+  address: (device: string) => apiRequest<{ state: string; message: string; address: string | null; addresses: Array<{ interface: string; address: string; method: string | null; status: string | null }> }>(`/api/v1/devices/${encodeURIComponent(device)}/switch-console/address`, { method: "POST", timeoutMs: 90000 }),
+  identify: (device: string, body: { port: string; baud: number; candidate_fingerprint: string }) => apiRequest<SwitchConsoleRead>(`/api/v1/devices/${encodeURIComponent(device)}/switch-console/identify`, { method: "POST", body, timeoutMs: 120000 }),
+};
+
 export const windowsApi = {
   setup: (id: string, device: string) => apiRequest<WindowsSetup>(winPath(id, device, "setup"), { timeoutMs: 60000 }),
   save: (id: string, device: string, body: { image: string; vm_name: string; datastore: string; network: string }) => apiRequest<WindowsSetup>(winPath(id, device, "setup"), { method: "PUT", body, timeoutMs: 60000 }),
@@ -295,6 +384,12 @@ export const windowsApi = {
   start: (id: string, device: string) => apiRequest<WindowsStatus>(winPath(id, device, "start"), { method: "POST", timeoutMs: 120000 }),
   advance: (id: string, device: string) => apiRequest<WindowsStatus>(winPath(id, device, "advance"), { method: "POST", timeoutMs: 120000 }),
   close: (id: string, device: string) => apiRequest<WindowsStatus>(winPath(id, device, "close"), { method: "POST" }),
+  signin: (id: string, device: string) => apiRequest<{ username: string | null; password_saved: boolean }>(winPath(id, device, "guest-signin")),
+  saveSignin: (id: string, device: string, body: { username: string; password: string }) => apiRequest<{ username: string | null; password_saved: boolean }>(winPath(id, device, "guest-signin"), { method: "PUT", body }),
+  test: (id: string, device: string) => apiRequest<AcceptanceStatus>(winPath(id, device, "acceptance")),
+  testStart: (id: string, device: string, name: string) => apiRequest<AcceptanceStatus>(winPath(id, device, "acceptance/start"), { method: "POST", body: { name: name || null }, timeoutMs: 60000 }),
+  testAdvance: (id: string, device: string) => apiRequest<AcceptanceStatus>(winPath(id, device, "acceptance/advance"), { method: "POST", timeoutMs: 180000 }),
+  testClose: (id: string, device: string) => apiRequest<AcceptanceStatus>(winPath(id, device, "acceptance/close"), { method: "POST" }),
 };
 export type PartsUpdatePart = { id: string; component: string; item?: string; from: string; to: string; file: string; method: "ilo" | "bios"; reset?: boolean; minutes?: number; rom?: boolean; state?: "waiting" | "installing" | "installed" | "done" | "failed" };
 export type PartsUpdatePlan = { review_id: string; digest: string; package: string; parts: PartsUpdatePart[]; elsewhere: Array<{ component: string; from: string; to: string; reason: string }>;
@@ -488,6 +583,7 @@ export const api = {
   workflowRunArtifacts: (id: string) =>
     apiRequest<ArtifactRecord[]>(`/api/v1/workflow-runs/${id}/artifacts`),
   auditEvents: (timeoutMs?: number) => apiRequest<AuditEvent[]>("/api/v1/audit-events", { timeoutMs }),
+  buildHistory: (limit = 100) => apiRequest<BuildHistoryEntry[]>(`/api/v1/build-history?limit=${limit}`),
   mediaInventory: () => apiRequest<MediaInventory>("/api/v1/media-inventory"),
   iloUpgradeReadiness: (deviceId: string) =>
     apiRequest<IloUpgradeReadiness>(`/api/v1/providers/ilo-redfish/upgrade-readiness?device_id=${encodeURIComponent(deviceId)}`),
@@ -1024,6 +1120,6 @@ async function writeScopeRequest<T>(path: string, body?: unknown): Promise<T> {
 
 export const writeScopeApi = {
   get: () => writeScopeRequest<WriteScopeState>(""),
-  preview: (targetScope: "firmware_only" | "storage_only" | "esxi_install_only" | "vm_deploy_only" | "read_only") => writeScopeRequest<WriteScopePreview>("/preview", { target_scope: targetScope }),
+  preview: (targetScope: "firmware_only" | "storage_only" | "esxi_install_only" | "vm_deploy_only" | "switch_setup_only" | "switch_reset_only" | "read_only") => writeScopeRequest<WriteScopePreview>("/preview", { target_scope: targetScope }),
   apply: (body: { review_token: string; confirmation_phrase: string }) => writeScopeRequest<WriteScopeState>("/apply", body),
 };

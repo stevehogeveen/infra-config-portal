@@ -64,18 +64,18 @@ test("disks & raid: each server shows its bays and one decision: ready, erased, 
   const card=(name:string)=>page.getByRole("article",{name});
   await expect(card("Test server")).toContainText("Ready to build RAID");
   await expect(card("Test server").getByRole("button",{name:"Build RAID"})).toBeVisible();
-  await expect(card("Test server").getByRole("listitem",{name:"Bay 1: Ready, planned Boot mirror"})).toBeVisible();
+  await expect(card("Test server").getByRole("listitem",{name:"Bay 1: Ready, planned Boot disks"})).toBeVisible();
   await expect(card("Test server").getByRole("listitem",{name:"Bay 6: Ready, planned Spare"})).toBeVisible();
   await expect(card("Test server")).toContainText("can't look inside a disk that isn't in RAID");
   await expect(card("Second server")).toContainText("2 disks were securely erased");
   await expect(card("Second server").getByRole("button",{name:"Start re-enable guide"})).toBeVisible();
-  await expect(card("Second server").getByRole("listitem",{name:"Bay 1: Erased, planned Boot mirror"})).toBeVisible();
+  await expect(card("Second server").getByRole("listitem",{name:"Bay 1: Erased, planned Boot disks"})).toBeVisible();
   await expect(card("Third server")).toContainText("already have RAID on them");
   await expect(card("Third server").getByRole("button",{name:"Wipe disks"})).toBeVisible();
-  await expect(card("Third server").getByRole("listitem",{name:"Bay 4: In RAID (RAID0), planned Datastore"})).toBeVisible();
+  await expect(card("Third server").getByRole("listitem",{name:"Bay 4: In RAID (RAID0), planned VM storage"})).toBeVisible();
   await expect(card("Third server")).toContainText("Treat it as holding data");
   await expect(card("Fourth server")).toContainText("RAID is built as planned");
-  await expect(card("Fourth server").getByRole("link",{name:"Continue to ESXi"})).toBeVisible();
+  await expect(card("Fourth server").getByRole("button",{name:"View disks"})).toBeVisible();
   await expect(card("Fourth server")).toContainText("last read");
   await expect(page.getByText("1 of 4 servers have RAID built")).toBeVisible();
   for(const width of [1440,390]){
@@ -111,17 +111,17 @@ test("disks & raid: the RAID plan editor shows the current setup, paints bays wi
   await expect(editor.getByRole("region",{name:"Current setup"})).toContainText("No plan saved yet.");
   await expect(editor.getByRole("button",{name:"No changes"})).toBeDisabled();
   await editor.getByRole("button",{name:"Use recommended"}).click();
-  await expect(editor.getByRole("button",{name:/^Bay 1: 300 GB HDD, Boot mirror/})).toBeVisible();
+  await expect(editor.getByRole("button",{name:/^Bay 1: 300 GB HDD, Boot disks/})).toBeVisible();
   await expect(editor.getByRole("button",{name:/^Bay 8: 1.2 TB HDD, Spare/})).toBeVisible();
   await expect(editor).toContainText("3 disks · about 2.4 TB usable");
   // Repaint: take the spare off bay 8 and make it a datastore disk, then choose RAID 6.
-  await editor.getByRole("radio",{name:/Datastore/}).click();
+  await editor.getByRole("radio",{name:/VM storage/}).click();
   await editor.getByRole("button",{name:/^Bay 8:/}).click();
-  await expect(editor.getByRole("button",{name:/^Bay 8: 1.2 TB HDD, Datastore/})).toBeVisible();
+  await expect(editor.getByRole("button",{name:/^Bay 8: 1.2 TB HDD, VM storage/})).toBeVisible();
   await editor.getByLabel("Datastore RAID level").selectOption("RAID6");
   await expect(editor).toContainText("4 disks · about 2.4 TB usable");
   // A broken plan explains itself and can't be saved.
-  await editor.getByRole("radio",{name:/Boot mirror/}).click();
+  await editor.getByRole("radio",{name:/Boot disks/}).click();
   await editor.getByRole("button",{name:/^Bay 1:/}).click();
   await expect(editor.getByRole("alert")).toContainText("Pick exactly 2 disks for the boot mirror (1 picked).");
   await expect(editor.getByRole("button",{name:"Save plan"})).toBeDisabled();
@@ -134,7 +134,7 @@ test("disks & raid: the RAID plan editor shows the current setup, paints bays wi
   // Reading the disks is the only other request; nothing else is sent.
   expect(sent.filter(path=>path!=="probe")).toEqual(["disk-preparation"]);
   await card.getByRole("button",{name:"Change the RAID plan"}).click();
-  await expect(page.getByRole("dialog",{name:"RAID plan on Test server"}).getByRole("region",{name:"Current setup"})).toContainText("Datastore RAID 6 bay 5, 6, 7, 8");
+  await expect(page.getByRole("dialog",{name:"RAID plan on Test server"}).getByRole("region",{name:"Current setup"})).toContainText("VM storage RAID 6 bay 5, 6, 7, 8");
 });
 
 test("disks & raid: Read disks is a read-only check that redraws the bays", async ({ page }) => {
@@ -226,7 +226,7 @@ for (const power of ["Off", "On"] as const) test(`raid: Build RAID is one click 
   await page.getByRole("button", { name: "Build RAID" }).click();
   const box = page.getByRole("dialog", { name: "Build RAID on Test server" });
   await expect(box.getByRole("heading", { name: "Ready to build" })).toBeVisible();
-  await expect(box).toContainText("Boot mirror (ESXi)");
+  await expect(box).toContainText("Boot disks (RAID 1, ESXi)");
   await expect(box).toContainText("Spare: 2I:1:8");
   await expect(box).not.toContainText("Can't build yet");
   await expect(box.getByRole("textbox")).toHaveCount(0);

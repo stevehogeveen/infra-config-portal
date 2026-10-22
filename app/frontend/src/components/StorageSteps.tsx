@@ -8,7 +8,7 @@ import { DiskReenableGuide, erasedBays } from "./DiskReenableGuide";
 import { RaidInstaller } from "./RaidInstaller";
 import { WipeInstaller } from "./WipeInstaller";
 import { RaidPlanEditor } from "./RaidPlanEditor";
-import { bayNumber, bayOrder, gapBays, size } from "./bays";
+import { bayNumber, bayOrder, gapBays, merged, size } from "./bays";
 import { ProvenanceChip } from "./studio/ProvenanceChip";
 import { useStudio } from "./studio/StudioContext";
 
@@ -72,16 +72,6 @@ export function shownRead(view: Inventory) {
   return { ...merged(view.last_read.drives, view.last_read.volumes), checkedAt: view.last_read.checked_at, stale: true };
 }
 
-/* The iLO reports each disk and logical drive twice: once through HPE's storage view (with the bay)
-   and once through standard Redfish (without it). Show one of each, preferring the one with a bay. */
-function merged<D extends { location: string; model?: string | null }, V extends { name: string; raid: string; bays?: string[] | null }>(drives: D[], volumes: V[]) {
-  const located = new Set(drives.filter(drive => drive.location && drive.location !== "Unknown bay").map(drive => drive.model ?? ""));
-  const withBays = new Set(volumes.filter(volume => volume.bays?.length).map(volume => volume.name + "|" + volume.raid));
-  return {
-    drives: drives.filter(drive => (drive.location && drive.location !== "Unknown bay") || !located.has(drive.model ?? "")),
-    volumes: volumes.filter(volume => volume.bays?.length || !withBays.has(volume.name + "|" + volume.raid)),
-  };
-}
 
 
 /** Erased bays in the drives being shown (the fresh read, or the last one). */
@@ -108,7 +98,7 @@ function bayState(drive: Drive | undefined, erased: string[], inRaid: Set<string
   return drive.eligible ? "ready" : "other";
 }
 const stateText: Record<BayState, string> = { ready: "Ready", raid: "In RAID", erased: "Erased", failed: "Failed", empty: "Empty", other: "Check" };
-const roleText: Record<Role, string> = { boot: "Boot mirror", data: "Datastore", spare: "Spare" };
+const roleText: Record<Role, string> = { boot: "Boot disks", data: "VM storage", spare: "Spare" };
 
 
 function sameBays(a: string[], b: string[]) {
@@ -140,7 +130,7 @@ export function diskRaidVerdict(view: Inventory, createVerified: boolean, runnin
   const erased = erasedIn(view);
   if (erased.length) return { tone: "up", title: `${erased.length} disk${erased.length === 1 ? " was" : "s were"} securely erased`, detail: "They're empty and safe, but the controller keeps them switched off until you turn them back on. The guide shows you where to click.", action: "guide", label: "Start re-enable guide" };
   // A recorded build only counts while its volumes are still on the disks.
-  if (volumes.length && (createVerified || raidMatchesPlan(view, volumes))) return { tone: "ok", title: "RAID is built as planned", detail: "The boot mirror and datastore are on the disks. Next, install ESXi.", action: "esxi", label: "Continue to ESXi" };
+  if (volumes.length && (createVerified || raidMatchesPlan(view, volumes))) return { tone: "ok", title: "RAID is built as planned", detail: "The boot disks and VM storage are on the disks. Next, install ESXi.", action: "esxi", label: "Continue to ESXi" };
   if (volumes.length) return { tone: "up", title: "These disks already have RAID on them", detail: "It doesn't match your plan and may hold someone's data. Wiping deletes the RAID and securely erases every disk, so nothing old is left before you build.", action: "wipe", label: "Wipe disks" };
   if (!view.saved_intent.volumes.length) return { tone: "none", title: "No RAID plan yet", detail: "Pick the two boot disks and the datastore disks. It takes a minute and changes nothing on the server.", action: "tools-raid", label: "Plan RAID" };
   const byBay = new Map(drives.map(drive => [drive.location, drive]));
@@ -230,8 +220,19 @@ function Legend() {
   return <div className="dr-legend" aria-hidden="true">
     <span><i className="dr-sw dr-ready" />Ready</span><span><i className="dr-sw dr-raid" />In RAID</span><span><i className="dr-sw dr-erased" />Erased</span>
     <span><i className="dr-sw dr-failed" />Failed</span><span><i className="dr-sw dr-empty" />Empty</span>
-    <span className="dr-legend-sep" /><span><i className="dr-rs dr-role-boot" />Boot mirror</span><span><i className="dr-rs dr-role-data" />Datastore</span><span><i className="dr-rs dr-role-spare" />Spare</span>
+    <span className="dr-legend-sep" /><span><i className="dr-rs dr-role-boot" />Boot disks</span><span><i className="dr-rs dr-role-data" />VM storage</span><span><i className="dr-rs dr-role-spare" />Spare</span>
   </div>;
+}
+
+/** "Boot disks · RAID 1 · 2 × 300 GB  |  VM storage · RAID 5 · 4 × 1.2 TB" from the shown read. */
+function raidSummary(drives: Array<{ location: string; capacity_bytes: number }>, volumes: Array<{ name: string; raid: string; bays?: string[] | null }>) {
+  const sizeOf = new Map(drives.map(drive => [drive.location, drive.capacity_bytes]));
+  return volumes.filter(volume => volume.bays?.length).map(volume => {
+    const bays = volume.bays!;
+    const level = volume.raid.replace(/^RAID/i, "RAID ");
+    const role = /^RAID ?1$/i.test(volume.raid) && bays.length === 2 ? "Boot disks" : "VM storage";
+    return `${role} · ${level} · ${bays.length} × ${size(sizeOf.get(bays[0]) ?? 0)}`;
+  }).join("   |   ");
 }
 
 function ServerCard({ server, read, op, erasedRecorded, onRead, reading, onAction }: {
@@ -242,6 +243,16 @@ function ServerCard({ server, read, op, erasedRecorded, onRead, reading, onActio
   const verdict = view ? diskRaidVerdict(view, isCreateVerified(op), op) : null;
   const shown = view ? shownRead(view) : null;
   const controller = view?.controllers?.[0];
+  // Once the RAID is built, the bays fold to one line; changes sit behind "Change disk setup".
+  const built = verdict?.tone === "ok";
+  const [showBays, setShowBays] = useState(false);
+  const [showChanges, setShowChanges] = useState(false);
+  const layout = built && shown ? raidSummary(shown.drives, shown.volumes) : "";
+  const changeLinks = view && verdict && <>
+    {verdict.action !== "tools-raid" && <button type="button" className="fw-link" onClick={() => onAction("tools-raid", view)}>{view.saved_intent.volumes.length ? "Change the RAID plan" : "Plan RAID"}</button>}
+    {verdict.action !== "wipe" && <button type="button" className="fw-link" onClick={() => onAction("wipe", view)}>Wipe disks</button>}
+    <button type="button" className="fw-link dr-quiet" onClick={() => onAction("tools-disks", view)}>Advanced disk tools</button>
+  </>;
   return <article className={`dr-card dr-tone-${verdict?.tone ?? "none"}`} aria-label={server.name}>
     <header className="dr-head">
       <span className="st-server"><Server size={20} aria-hidden="true" /><span><strong>{server.name}</strong><small>{server.model}{controller ? ` · ${controller.model}` : ""}</small></span></span>
@@ -256,19 +267,24 @@ function ServerCard({ server, read, op, erasedRecorded, onRead, reading, onActio
       : <>
         <div className="dr-verdict" role="status">
           <div><strong>{verdict.title}</strong><p>{verdict.detail}</p></div>
-          {verdict.action === "esxi" ? <Link className="secondary-action" to="/setup/prepare-esxi">{verdict.label}<ArrowRight size={16} /></Link>
+          {verdict.action === "esxi" ? null
             : verdict.action === "read" ? <button type="button" className="primary-action" disabled={reading} onClick={onRead}>{reading ? "Reading…" : verdict.label}</button>
             : verdict.action ? <button type="button" className="primary-action" onClick={() => onAction(verdict.action!, view)}>{verdict.label}</button> : null}
         </div>
-        {shown && shown.drives.length > 0 && <div className="dr-body">
+        {shown && shown.drives.length > 0 && built && <div className="dr-body dr-folded">
+          {layout && <p className="dr-layout">{layout}</p>}
+          <p className="dr-more">
+            <button type="button" className="fw-link" aria-expanded={showBays} onClick={() => setShowBays(value => !value)}>{showBays ? "Hide disks" : "View disks"}</button>
+            <button type="button" className="fw-link dr-quiet" aria-expanded={showChanges} onClick={() => setShowChanges(value => !value)}>Change disk setup</button>
+          </p>
+          {showChanges && <p className="dr-more dr-changes">{changeLinks}</p>}
+          {showBays && <><div className="dr-chassis"><BayCage view={view} /></div><Legend /></>}
+        </div>}
+        {shown && shown.drives.length > 0 && !built && <div className="dr-body">
           <div className="dr-chassis"><BayCage view={view} /></div>
           <Legend />
-          <DataFacts view={view} erasedRecorded={erasedRecorded} built={verdict?.tone === "ok"} />
-          <p className="dr-more">
-            {verdict.action !== "tools-raid" && <button type="button" className="fw-link" onClick={() => onAction("tools-raid", view)}>{view.saved_intent.volumes.length ? "Change the RAID plan" : "Plan RAID"}</button>}
-            {verdict.action !== "wipe" && <button type="button" className="fw-link" onClick={() => onAction("wipe", view)}>Wipe disks</button>}
-            <button type="button" className="fw-link dr-quiet" onClick={() => onAction("tools-disks", view)}>Advanced disk tools</button>
-          </p>
+          <DataFacts view={view} erasedRecorded={erasedRecorded} built={false} />
+          <p className="dr-more">{changeLinks}</p>
         </div>}
       </>}
   </article>;

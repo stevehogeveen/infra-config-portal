@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { HardDrive, RotateCcw, Sparkles, X } from "lucide-react";
 import { api, type DiskPreparation as Inventory } from "../api";
-import { bayNumber, bayOrder, gapBays, size } from "./bays";
+import { bayNumber, bayOrder, gapBays, merged, size } from "./bays";
 
 /*
  * RAID plan editor: shows what is on the disks now and the saved plan, then lets the operator
@@ -14,8 +14,8 @@ type Role = "boot" | "data" | "spare" | "none";
 type Level = "RAID5" | "RAID6" | "RAID10" | "RAID1";
 type Drive = Inventory["drives"][number];
 const ROLES: Array<{ id: Role; label: string; hint: string }> = [
-  { id: "boot", label: "Boot mirror", hint: "2 matching disks · ESXi" },
-  { id: "data", label: "Datastore", hint: "your VMs" },
+  { id: "boot", label: "Boot disks", hint: "2 matching disks · RAID 1 · ESXi" },
+  { id: "data", label: "VM storage", hint: "where your VMs live" },
   { id: "spare", label: "Spare", hint: "1 disk · takes over on failure" },
   { id: "none", label: "Not used", hint: "left empty" },
 ];
@@ -93,7 +93,7 @@ function describeVolumes(view: Inventory) {
 function describePlan(view: Inventory) {
   const volumes = view.saved_intent.volumes;
   if (!volumes.length) return "No plan saved yet.";
-  return volumes.map(volume => `${volume.bootable ? "Boot mirror" : `Datastore ${volume.raid_level.replace(/^RAID/, "RAID ")}`} bay ${volume.drive_bays.map(bayNumber).join(", ")}${volume.spare_bays?.length ? ` + spare bay ${volume.spare_bays.map(bayNumber).join(", ")}` : ""}`).join(" · ");
+  return volumes.map(volume => `${volume.bootable ? "Boot disks" : `VM storage ${volume.raid_level.replace(/^RAID/, "RAID ")}`} bay ${volume.drive_bays.map(bayNumber).join(", ")}${volume.spare_bays?.length ? ` + spare bay ${volume.spare_bays.map(bayNumber).join(", ")}` : ""}`).join(" · ");
 }
 
 export function RaidPlanEditor({ profileId, deviceId, deviceName, onClose }: {
@@ -137,7 +137,7 @@ export function RaidPlanEditor({ profileId, deviceId, deviceName, onClose }: {
     finally { if (live.current) setBusy(""); }
   }
 
-  const drives = view ? (view.drives.length ? view.drives : view.last_read?.drives ?? []) : [];
+  const drives = view ? merged(view.drives.length ? view.drives : view.last_read?.drives ?? [], []).drives : [];
   const byBay = new Map(drives.map(drive => [drive.location, drive]));
   const bays = [...drives.map(drive => drive.location), ...gapBays(drives.map(drive => drive.location))].sort((a, b) => bayOrder(a) - bayOrder(b));
   const problems = view ? planProblems(drives, roles, level) : [];
@@ -241,8 +241,8 @@ export function RaidPlanEditor({ profileId, deviceId, deviceName, onClose }: {
         </div></div>
 
         <div className="rp-result">
-          <div className="rp-sum rp-boot"><span>Boot mirror</span><strong>{bootDrives.length === 2 ? `RAID 1 · ${size(bootDrives[0].capacity_bytes)}` : `${bootDrives.length} of 2 disks`}</strong></div>
-          <div className="rp-sum rp-data"><span>Datastore</span>
+          <div className="rp-sum rp-boot"><span>Boot disks</span><strong>{bootDrives.length === 2 ? `RAID 1 · ${size(bootDrives[0].capacity_bytes)}` : `${bootDrives.length} of 2 disks`}</strong></div>
+          <div className="rp-sum rp-data"><span>VM storage</span>
             {dataDrives.length ? <><label><span className="sr-only">Datastore RAID level</span><select aria-label="Datastore RAID level" value={level} disabled={!!busy} onChange={event => { setLevel(event.target.value as Level); }}>
               {LEVELS.map(item => <option key={item.id} value={item.id}>{item.label} — {item.min}</option>)}</select></label>
               <strong>{dataDrives.length} disks · about {size(usable(level, dataDrives))} usable</strong></> : <strong>None (optional)</strong>}</div>

@@ -16,7 +16,11 @@ test("photographic fronts preserve exact configuration and fit small screens", a
     { id: "unknown", device_id: "d8", name: "Unknown server", kind: "server", model: "", position: 1, height: 2, ports: 0, bay_count: 0, occupied_bays: [] }
   ].map(item => ({ mount: "rack", ...item })) };
   await page.route("**/api/**", route => {
-    expect(new URL(route.request().url()).pathname).toBe("/api/v1/rack-plans/art");
+    { const u = new URL(route.request().url()).pathname; if (/\/devices\/[^/]+\/health$|\/cable-map$|^\/api\/v1\/jobs$/.test(u)) return route.fulfill({ json: u.endsWith("/jobs") ? { running: [], attention: [], recent: [] } : u.endsWith("cable-map") ? { state: "not_read", cables: [], unmatched_server_ports: [], other_switch_ports: [] } : { overall: null, problems: [], checked_at: null } }); }
+    const path = new URL(route.request().url()).pathname;
+    // The Drives tab may read the server's last recorded disk read (no hardware contact); none here.
+    if (path === "/api/v1/rack-plans/art/disk-preparation") return route.fulfill({ status: 404, json: { detail: "Server is not in this kit." } });
+    expect(path).toBe("/api/v1/rack-plans/art");
     if (route.request().method() === "PUT") plan = { ...route.request().postDataJSON(), revision: plan.revision + 1 };
     return route.fulfill({ json: plan });
   });
@@ -36,6 +40,8 @@ test("photographic fronts preserve exact configuration and fit small screens", a
   await expect(page.getByTestId("bays-s2").locator(".hw-bay")).toHaveCount(24);
   await expect(page.getByTestId("bays-netapp").locator(".occupied")).toHaveCount(24);
   await expect(page.getByRole("button", { name: "Select Unknown server", exact: true }).locator(".hw-bay")).toHaveCount(0);
+  // A rack with equipment opens with the shelf folded behind "Add equipment".
+  await page.getByRole("button", { name: "Add equipment", exact: true }).click();
   await expect(page.getByRole("button", { name: "Place HPE DL380", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Place Eaton 1550", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Select DL360", exact: true }).click();

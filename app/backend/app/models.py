@@ -283,6 +283,23 @@ class IloDeviceCredential(Base):
     )
 
 
+class SwitchDeviceCredential(Base):
+    __tablename__ = "switch_device_credentials"
+
+    device_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("device_inventory.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    credentials_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+    )
+
+
 class HpeRaidIntent(Base):
     __tablename__ = "hpe_raid_intents"
 

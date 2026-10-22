@@ -31,10 +31,10 @@ export function RackFirmwareReview({ profileId }: { profileId?: string }) {
   const showPicker = changing || (source !== null && !selected);
   const firmwareDone = computeSteps(useStudio())[3]?.state === "done";
   return <GuideActionProvider value={actions.value}><section className="rack-firmware-review fw-page">
-    <Guide eyebrow={<>Your guide · <b>Step 4 of 7</b> · Check firmware</>}
-      say={firmwareDone ? <>Every server's firmware update is verified. Carry on to the disks and RAID.</> : <>Here's what each server runs and what your firmware package can take it to. Update it with one button.</>}
+    <Guide eyebrow={<><b>Step 4 of 7</b></>}
+      say={firmwareDone ? "Firmware is up to date." : "Check each server, then update the firmware."}
       reassure="Checking only reads. Updating asks for one confirmation, then installs and reads every part back."
-      primary={firmwareDone ? <Link className="sd-primary" to={"/setup/disks" + window.location.search}>Continue to disks &amp; RAID<ArrowRight size={17} /></Link> : undefined}
+      primary={firmwareDone ? <Link className="sd-primary" to={"/setup/disks" + window.location.search}>Next: Disks &amp; RAID<ArrowRight size={17} /></Link> : undefined}
       actionRef={actions.ref} />
     <header className="journey-heading"><h1>Check firmware</h1><p>What's installed, and what your package can take it to.</p></header>
     {error && <p role="alert">Could not load this rack. {error}</p>}

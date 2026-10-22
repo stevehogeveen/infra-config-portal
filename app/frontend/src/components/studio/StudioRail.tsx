@@ -49,11 +49,15 @@ export function computeSteps(data: StudioData | null): RailStep[] {
   // recorded storage activity and is done only with recorded evidence of a
   // verified RAID create on every server (the backend's readback matched the reviewed layout).
   const storage = storageSummary(data);
-  const connected = servers.length > 0 && answered === servers.length;
+  // A kit's switch counts too: Connect is done only when every saved switch also answers over the network.
+  const switches = data.devices.filter(item => item.kind === "switch" && item.deviceId);
+  const switchesUp = switches.filter(item => item.proven).length;
+  const connected = servers.length > 0 && answered === servers.length && switchesUp === switches.length;
   const raidVerified = servers.length > 0 && storage.createVerified === servers.length;
   const s3: StepState = connected ? "done" : "open";
   const answeredText = `${answered} of ${servers.length} server${servers.length === 1 ? "" : "s"} answered`;
-  const s3note = !servers.length ? "No saved server yet" : connected ? `Done · ${answeredText}` : answeredText;
+  const switchText = switches.length && switchesUp < switches.length ? ` · switch ${switchesUp ? "partly" : "not"} set up` : "";
+  const s3note = !servers.length ? "No saved server yet" : connected ? `Done · ${answeredText}` : answeredText + switchText;
   const storageNote = raidVerified ? "Done · RAID create verified (recorded)"
     : !servers.length ? "No saved server yet" : storage.unknown ? "storage status unknown"
     : storage.active ? "storage operation in progress" : storage.unresolved ? "storage needs attention"
@@ -74,7 +78,13 @@ export function computeSteps(data: StudioData | null): RailStep[] {
     states[current] = "now";
     if (current + 1 < 4 && states[current + 1] === "open") states[current + 1] = "next";
   }
-  return studioSteps.map((step, index) => ({ path: step.path, name: step.name, state: states[index], note: states[index] === "now" ? `Now · ${notes[index]}` : notes[index] }));
+  // Short notes: "Done", or what to do now. Storage problems still show on the RAID step.
+  const doNow = ["Add your equipment", "Save the network settings",
+    servers.length && answered === servers.length && switchesUp < switches.length ? "Set up the switch" : "Connect the server",
+    "Update the firmware", "Build the RAID", "Install ESXi", "Deploy Windows"];
+  const storageAlert = !raidVerified && (storage.active || storage.unresolved) ? storageNote : "";
+  return studioSteps.map((step, index) => ({ path: step.path, name: step.name, state: states[index],
+    note: states[index] === "done" ? "Done" : states[index] === "now" ? doNow[index] : index === 4 ? storageAlert : "" }));
 }
 
 function Dot({ state, index }: { state: StepState; index: number }) {
@@ -91,6 +101,9 @@ function deviceLight(item: DeviceEvidence) {
   if (item.kind !== "server") return { led: "", time: "no check", tone: "" };
   return { led: "", time: item.deviceId ? "never" : "draft", tone: "" };
 }
+
+/** Rail notes stay short: "(recorded)" is implied by a done step. */
+const plainNote = (note: string) => note.replace(/\s*\(recorded\)/g, "");
 
 export function StudioRail({ viewing }: { viewing: number | null }) {
   const studio = useStudio();
@@ -124,7 +137,7 @@ export function StudioRail({ viewing }: { viewing: number | null }) {
           <Link to={step.path + suffix} className={`sd-st ${step.state} ${viewing === index ? "viewing" : ""}`} aria-current={viewing === index ? "step" : undefined}
             title={step.state === "unassessed" ? "The rail cannot read this step's readiness. The page stays open; every change there is previewed and confirmed separately." : undefined}>
             <Dot state={step.state} index={index} />
-            <span><b>{step.name}</b>{" "}<small>{viewing === index ? `Viewing · ${step.note}` : step.note}</small>
+            <span><b>{step.name}</b>{" "}{step.note && <small>{plainNote(step.note)}</small>}
               {index === 2 && servers.length > 0 && <span className="sd-lights" aria-label={`${answered} of ${servers.length} answered`}>{servers.map(item => <i key={item.id} className={item.proven ? "ok" : item.attention === "failed" ? "bad" : ""} />)}</span>}
             </span>
           </Link>

@@ -19,7 +19,7 @@ async function mount(page: Page, storage: Record<string, unknown>) {
   await page.route("**/studio-rail-fixture", route => route.fulfill({ contentType: "text/html", body: html }));
   await page.goto("/studio-rail-fixture");
   const connect = page.getByRole("link", { name: /Connect equipment/ });
-  await expect(connect).toContainText("1 of 1 server answered");
+  await expect(connect).toContainText("Done");
   return connect;
 }
 
@@ -30,20 +30,21 @@ test("a current connection completes Connect; firmware is now and RAID is not bu
   // Firmware review does not wait for disks or RAID.
   await expect(page.getByRole("link", { name: /Check firmware/ })).toHaveClass(/\bnow\b/);
   const raid = page.getByRole("link", { name: /^\d*\s*Disks & RAID/ });
-  await expect(raid).toContainText("Not built yet");
+  await expect(raid).not.toContainText("Done");
   await expect(raid).not.toHaveClass(/\bdone\b/);
 });
 
 test("a verified erase is not RAID completion", async ({ page }) => {
   await mount(page, { status: "verified", active: false, operation: "sanitize", message: "Erased", verified_at: new Date().toISOString() });
   const raid = page.getByRole("link", { name: /^\d*\s*Disks & RAID/ });
-  await expect(raid).toContainText("Not built yet");
+  await expect(raid).not.toContainText("Done");
   await expect(raid).not.toHaveClass(/\bdone\b/);
 });
 
 test("a verified RAID create completes the RAID step", async ({ page }) => {
   await mount(page, { status: "verified", active: false, operation: "create", message: "Created", verified_at: new Date().toISOString() });
   const raid = page.getByRole("link", { name: /^\d*\s*Disks & RAID/ });
-  await expect(raid).toContainText("RAID create verified (recorded)");
+  await expect(raid).toContainText("Done");
+  await expect(raid).not.toContainText("(recorded)");
   await expect(raid).toHaveClass(/\bdone\b/);
 });

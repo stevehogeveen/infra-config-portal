@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { AlertTriangle, Check, Database, ExternalLink, HardDrive, Loader2, Monitor, Package, Rocket, Server, X } from "lucide-react";
+import { AlertTriangle, Check, Database, ExternalLink, HardDrive, Loader2, Monitor, Package, Rocket, Server, ShieldCheck, X } from "lucide-react";
 import { api, windowsApi, type WindowsReview, type WindowsSetup, type WindowsStatus } from "../api";
 import type { LabProfileList as LabProfileState } from "../types";
 import type { RackPlan } from "./RackPlanner";
 import { MediaDropZone } from "./MediaDropZone";
+import { AcceptancePanel } from "./AcceptanceTest";
 import { allowOnly, lockReadOnly } from "./storageInstall";
 import { size } from "./bays";
 
@@ -245,7 +246,6 @@ export function WindowsStep({ labProfileState }: { labProfileState?: LabProfileS
     {servers && servers.length > 1 && <label className="ex-server-pick">Server<select aria-label="Server for Windows" value={server?.deviceId} onChange={e => navigate("/setup/install-windows?device=" + encodeURIComponent(e.target.value))}>{servers.map(item => <option key={item.deviceId} value={item.deviceId}>{item.name}</option>)}</select></label>}
     {server && <article className="ex-card" aria-label={server.name}>
       <header className="ex-card-head"><Server size={20} aria-hidden="true" /><div><strong>{server.name}</strong><small>{host?.address ? `ESXi ${host.address}` : server.model}</small></div>
-        {status?.state === "verified" && <span className="fw-pill fw-pill-ok">Windows running</span>}
         {status?.active && <span className="fw-pill fw-pill-up">Deploying</span>}</header>
       {!setup ? <p className="dr-loading" role="status">Loading…</p> : host?.problem ? <div className="fw-stop" role="alert"><p>{host.problem}</p><p><Link to={`/setup/prepare-esxi?device=${encodeURIComponent(server.deviceId)}`}>Open Prepare ESXi</Link></p></div> : <div className="ex-steps">
         <Step n={1} title="Windows image" icon={<Package size={18} />} done={imageDone} summary={chosen ? <>Using <b>{chosen.name}</b></> : "Choose the Windows OVA or OVF to deploy."}>
@@ -269,15 +269,18 @@ export function WindowsStep({ labProfileState }: { labProfileState?: LabProfileS
         <Step n={2} title="VM settings" icon={<Database size={18} />} done={settingsDone} summary={settingsDone ? <>{setup.vm_name} · {setup.datastore} · {setup.network}</> : "Name, datastore and network."}>
           <SettingsForm key={setup.saved_at ?? "new"} profileId={profileId} deviceId={server.deviceId} setup={setup} image={image} onSaved={next => { setSetup(next); }} />
         </Step>
-        <Step n={3} title="Deploy Windows" icon={<Rocket size={18} />} done={status?.state === "verified"} keepOpen summary={status?.state === "verified" ? `Running at ${status.address}.` : "Import, power on and verify."}>
+        <Step n={3} title="Deploy Windows" icon={<Rocket size={18} />} done={status?.state === "verified"} keepOpen summary={status?.state === "verified" ? undefined : "Import, power on and verify."}>
           {status?.state === "verified" ? <div className="ex-done"><Check size={22} aria-hidden="true" />
             <div><strong>Windows is running</strong><p>{status.vm_name} at {status.address}{status.hostname ? ` · ${status.hostname}` : ""}</p></div>
-            <button type="button" className="secondary-action" onClick={() => setInstaller(true)}>Review</button></div>
+            <button type="button" className="secondary-action" onClick={() => setInstaller(true)}>Deployment details</button></div>
             : <>
               {!(imageDone && settingsDone) && <p className="ex-hint">Choose the image and save the VM settings first.</p>}
               <button type="button" className="primary-action ex-go" disabled={!(imageDone && settingsDone) && !status?.active} onClick={() => setInstaller(true)}><Rocket size={17} aria-hidden="true" />{status?.active ? "See progress" : "Deploy Windows"}</button>
             </>}
         </Step>
+        {status?.state === "verified" && <Step n={4} title="Prove it works" icon={<ShieldCheck size={18} />} done={false} keepOpen summary="Outside, inside, one restart, back again.">
+          <AcceptancePanel profileId={profileId} deviceId={server.deviceId} deviceName={server.name} />
+        </Step>}
       </div>}
     </article>}
     {installer && server && <WindowsInstaller profileId={profileId} deviceId={server.deviceId} deviceName={server.name} onClose={() => { setInstaller(false); void load(); }} />}

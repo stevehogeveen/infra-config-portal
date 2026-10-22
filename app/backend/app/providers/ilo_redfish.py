@@ -1975,6 +1975,12 @@ def _thermal_summary(payload):
         valid = isinstance(values, list) and 0 < len(values) <= 128 and all(isinstance(v, dict) for v in values)
         complete = complete and valid
         summary[key] = [_resource_summary(v) for v in values] if valid else []
+        # Readings for the rack's health view (temperatures and fan speeds; numbers only).
+        for row, raw in zip(summary[key], values if valid else []):
+            for field in ("ReadingCelsius", "UpperThresholdCritical", "UpperThresholdFatal", "PhysicalContext", "Reading", "ReadingUnits"):
+                value = raw.get(field)
+                if isinstance(value, (int, float, str)) and not isinstance(value, bool):
+                    row[field] = value
     summary["sensor_inventory_complete"] = complete
     return summary
 

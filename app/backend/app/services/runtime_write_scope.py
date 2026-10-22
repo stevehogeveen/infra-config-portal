@@ -36,14 +36,25 @@ ESXI_INSTALL_PHRASE = "ONLY INSTALL ESXI"
 # Windows: import the reviewed OVA/OVF onto the verified ESXi host and power that VM on.
 VM_DEPLOY_ACTIONS = frozenset({"esxi.vm-deploy", "esxi.vm-power"})
 VM_DEPLOY_PHRASE = "ONLY DEPLOY WINDOWS"
-TARGETS = {"read_only", "firmware_only", "storage_only", "esxi_install_only", "vm_deploy_only"}
+# Switch first setup: the reviewed configuration sent over the console cable.
+SWITCH_SETUP_ACTIONS = frozenset({"cisco-console.bootstrap"})
+SWITCH_SETUP_PHRASE = "ONLY SET UP THE SWITCH"
+# Reset for the next person: erase the switch's settings over the console and restart it.
+# Locked down: needs LAB_ALLOW_FACTORY_RESET=true, and its phrase is typed by the operator (never
+# handed out by the preview).
+SWITCH_RESET_ACTIONS = frozenset({"cisco-console.erase-reload"})
+SWITCH_RESET_PHRASE = "ONLY RESET THE SWITCH"
+TARGETS = {"read_only", "firmware_only", "storage_only", "esxi_install_only", "vm_deploy_only", "switch_setup_only", "switch_reset_only"}
 PHRASES = {"firmware_only": PHRASE, "storage_only": STORAGE_PHRASE, "esxi_install_only": ESXI_INSTALL_PHRASE,
-           "vm_deploy_only": VM_DEPLOY_PHRASE}
+           "vm_deploy_only": VM_DEPLOY_PHRASE, "switch_setup_only": SWITCH_SETUP_PHRASE, "switch_reset_only": SWITCH_RESET_PHRASE}
+TYPED = {"switch_reset_only"}
 EFFECTS = {
     "firmware_only": "Only firmware can be updated, through the iLO, including the restarts that apply it. Nothing else on the server can be changed.",
     "storage_only": "Only the server's disks and RAID can be changed (build, delete or wipe), including the restarts that apply it. Nothing else on the server can be changed.",
     "esxi_install_only": "Only the ESXi installer can be attached and booted, including the restart that starts it. Nothing else on the server can be changed.",
     "vm_deploy_only": "Only the reviewed Windows image can be imported onto ESXi and its VM powered on. Nothing else on the server can be changed.",
+    "switch_setup_only": "Only the reviewed first setup can be sent to the switch over its console cable. Nothing else can be changed.",
+    "switch_reset_only": "Only the reviewed switch erase (settings and VLANs, then a restart) can be sent over its console cable. Nothing else can be changed.",
     "read_only": "Nothing on the server can be changed.",
 }
 
@@ -213,6 +224,8 @@ def transition_blockers(session, target_scope):
     blockers = policy.readonly_blockers()
     if policy.provider_mode != "local-lab-readwrite":
         blockers.append("Firmware permission requires local-lab-readwrite mode.")
+    if target_scope in TYPED and not policy.allow_factory_reset:
+        blockers.append("Reset is turned off for this lab (LAB_ALLOW_FACTORY_RESET is not true).")
     blockers.extend(
         f"Resolve {item['resource']} operation {item['operation_id']} ({item['status']}) first."
         for item in active_operations(session)
@@ -246,7 +259,8 @@ def preview(session, actor, target_scope):
         "target_scope": target_scope,
         "blockers": blockers,
         "blocker_details": describe_blockers(blockers),
-        "confirmation_phrase": PHRASES.get(target_scope, ""),
+        "confirmation_phrase": "" if target_scope in TYPED else PHRASES.get(target_scope, ""),
+        "typed_phrase": target_scope in TYPED,
         # One plain sentence: what the app may still change. Reads are never restricted.
         "effects": [EFFECTS[target_scope]],
     }
@@ -306,6 +320,8 @@ def admit_dispatch(session, action_id, *, activity_only=False):
         or (row.scope == "storage_only" and action_id not in STORAGE_ACTIONS)
         or (row.scope == "esxi_install_only" and action_id not in ESXI_INSTALL_ACTIONS)
         or (row.scope == "vm_deploy_only" and action_id not in VM_DEPLOY_ACTIONS)
+        or (row.scope == "switch_setup_only" and action_id not in SWITCH_SETUP_ACTIONS)
+        or (row.scope == "switch_reset_only" and action_id not in SWITCH_RESET_ACTIONS)
     ):
         raise WriteScopeError("This hardware action is outside the operator-selected write scope.")
     lease = RuntimeDispatchLease(action_id=action_id)

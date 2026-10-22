@@ -18,6 +18,20 @@ def media_root():
     return Path(os.getenv("FIRMWARE_MEDIA_ROOT") or DEFAULT_MEDIA_ROOT).resolve()
 
 
+DOCKER_MEDIA_ROOT = "/workspace/artifacts/Media"
+
+
+def _same_media_roots() -> set[str]:
+    """Names for the current media folder. When the app ran in Docker, this same host folder
+    (FIRMWARE_MEDIA_HOST_PATH) was mounted at /workspace/artifacts/Media, so selections saved
+    there still name it; size and nanosecond modified time must still match exactly."""
+    roots = {str(media_root())}
+    host = os.getenv("FIRMWARE_MEDIA_HOST_PATH")
+    if host and Path(host).resolve() == media_root():
+        roots.add(DOCKER_MEDIA_ROOT)
+    return roots
+
+
 def media_path(relative: str) -> Path:
     root = media_root()
     requested = Path(relative)
@@ -107,7 +121,7 @@ def package_unchanged(package: dict):
     try:
         path = media_path(package["path"])
         stat = path.stat()
-        return (package.get("source_root") == str(media_root()) and stat.st_size == package["size_bytes"]
+        return (package.get("source_root") in _same_media_roots() and stat.st_size == package["size_bytes"]
                 and str(stat.st_mtime_ns) == package["modified_ns"])
     except (OSError, ValueError, KeyError):
         return False

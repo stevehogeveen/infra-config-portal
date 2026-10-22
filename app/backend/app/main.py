@@ -4,7 +4,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 import socket
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
@@ -18,6 +21,13 @@ from app.api.raid_rebuild import router as raid_rebuild_router
 from app.api.esxi_install import router as esxi_install_router
 from app.api.parts_update import router as parts_update_router
 from app.api.windows_deploy import router as windows_deploy_router
+from app.api.kit_contract import router as kit_contract_router
+from app.api.switch_access import router as switch_access_router
+from app.api.switch_setup import router as switch_setup_router
+from app.api.build_history import router as build_history_router
+from app.api.kit_jobs import router as kit_jobs_router
+from app.api.kit_reset import router as kit_reset_router
+from app.api.kit_insight import router as kit_insight_router
 from app.api.runtime_write_scope import router as runtime_write_scope_router
 from app.api.spp_update import router as spp_update_router
 from app.services.runtime_write_scope import WriteScopeActivityMiddleware
@@ -51,6 +61,13 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_without_input(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Like FastAPI's default 422, minus the echoed input: a rejected field may be a password."""
+    errors = [{key: value for key, value in error.items() if key not in {"input", "ctx", "url"}} for error in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
 app.add_middleware(WriteScopeActivityMiddleware)
 
 app.add_middleware(
@@ -111,5 +128,12 @@ app.include_router(raid_rebuild_router)
 app.include_router(esxi_install_router)
 app.include_router(parts_update_router)
 app.include_router(windows_deploy_router)
+app.include_router(kit_contract_router)
+app.include_router(switch_access_router)
+app.include_router(switch_setup_router)
+app.include_router(build_history_router)
+app.include_router(kit_jobs_router)
+app.include_router(kit_reset_router)
+app.include_router(kit_insight_router)
 app.include_router(runtime_write_scope_router)
 app.include_router(spp_update_router)

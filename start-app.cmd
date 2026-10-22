@@ -8,6 +8,9 @@ set "FRONTEND_PORT=5175"
 echo Starting Infra Config Portal backend on port %BACKEND_PORT% ...
 start "Infra Portal Backend" /D "%REPO_ROOT%app\backend" cmd /c "set PROVIDER_MODE=local-lab-readwrite&& .venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port %BACKEND_PORT%"
 
+echo Starting the console bridge for switch console cables ...
+call "%REPO_ROOT%start-console-bridge.cmd"
+
 echo Starting Infra Config Portal frontend on port %FRONTEND_PORT% ...
 start "Infra Portal Frontend" /D "%REPO_ROOT%app\frontend" cmd /c "set FRONTEND_PORT=%FRONTEND_PORT%&& set FRONTEND_HOST=127.0.0.1&& set APP_PROXY_TARGET=http://127.0.0.1:%BACKEND_PORT%&& npm run dev"
 

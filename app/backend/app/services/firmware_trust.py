@@ -95,19 +95,29 @@ def _signature_ok(result) -> bool:
     )
 
 
+NO_RPM_TOOLS = ("HPE's RPM signature check needs the Linux rpm tools, which this PC does not have, "
+                "so this package's signature was not verified and it cannot be used here.")
+
+
 def _run(args):
-    return subprocess.run(
-        args,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        timeout=30,
-        check=False,
-        env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
-    )
+    try:
+        return subprocess.run(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=30,
+            check=False,
+            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+        )
+    except FileNotFoundError:
+        # Fail closed: without the tool nothing is verified, so nothing is trusted.
+        raise FirmwarePackageError(NO_RPM_TOOLS) from None
 
 
 def _member_identity(rpm: Path, member: str, limit: int, capture: bool = False) -> dict:
     # Stream only the exact member; no archive filenames become filesystem paths.
+    if not Path("/usr/bin/bsdtar").exists():
+        raise FirmwarePackageError(NO_RPM_TOOLS)
     process = subprocess.Popen(
         ["/usr/bin/bsdtar", "-xOf", str(rpm), member],
         stdout=subprocess.PIPE,

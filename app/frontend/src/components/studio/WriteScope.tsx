@@ -12,7 +12,7 @@ import { BlockerGuidance } from "../BlockerGuidance";
  */
 export const WRITE_SCOPE_CHANGED = "studio:write-scope-changed";
 export const FIRMWARE_SCOPE_BLOCKER = /Exclusive firmware maintenance scope is required/i;
-const scopeLabel: Record<string, string> = { read_only: "read-only", firmware_only: "firmware only", storage_only: "disks & RAID only", esxi_install_only: "ESXi install only", vm_deploy_only: "Windows deploy only", storage: "storage only", power: "power only", mixed: "several kinds" };
+const scopeLabel: Record<string, string> = { read_only: "read-only", firmware_only: "firmware only", storage_only: "disks & RAID only", esxi_install_only: "ESXi install only", vm_deploy_only: "Windows deploy only", switch_setup_only: "switch setup only", storage: "storage only", power: "power only", mixed: "several kinds" };
 export const describeScope = (scope: string) => scopeLabel[scope] ?? scope;
 const operationText = (op: WriteScopeOperation) => typeof op === "string" ? op
   : [op.description || op.name || op.resource || op.kind || "operation", op.device_id ? `on ${op.device_id}` : "", op.status ? `(${op.status})` : "", op.operation_id ? `· ${op.operation_id}` : ""].filter(Boolean).join(" ");
@@ -44,7 +44,7 @@ export function WriteScopePill() {
   const { read, load } = useWriteScope();
   const location = useLocation();
   useEffect(() => { void load(); }, [location.pathname]);
-  const text = read.state === "ok" ? `Changes allowed: ${describeScope(read.data.scope)}` : read.state === "loading" ? "Changes allowed: reading…"
+  const text = read.state === "ok" ? (read.data.scope === "read_only" ? "Read-only mode" : `Changes allowed: ${describeScope(read.data.scope)}`) : read.state === "loading" ? "Changes allowed: reading…"
     : read.state === "unavailable" ? "Changes allowed: set by server configuration" : "Changes allowed: unknown";
   const tone = read.state === "ok" && read.data.scope !== "read_only" ? "grant" : "neutral";
   const title = read.state === "ok" ? `Reported by the server${read.data.source ? ` (source: ${read.data.source})` : ""}${read.data.changed_at ? `, changed ${shortTime(read.data.changed_at)}${read.data.changed_by ? ` by ${read.data.changed_by}` : ""}` : ""}.`

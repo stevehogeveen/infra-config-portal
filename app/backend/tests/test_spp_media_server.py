@@ -1,3 +1,5 @@
+import pytest
+import os
 from fastapi.testclient import TestClient
 
 from app.providers.spp_media_server import media_app
@@ -19,6 +21,7 @@ def test_iso_supports_head_and_random_byte_ranges(tmp_path):
     assert client.get("/fixture.iso", headers={"Range": "bytes=9999-"}).status_code == 416
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Creating symlinks needs extra Windows privileges; covered on Linux.")
 def test_media_service_exposes_no_directory_or_other_files(tmp_path):
     (tmp_path / "credentials.json").write_text("fixture secret")
     (tmp_path / "nested").mkdir()

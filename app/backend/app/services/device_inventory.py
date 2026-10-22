@@ -12,6 +12,7 @@ from app.models import (
     DeviceInventoryState,
     HpeRaidIntent,
     IloDeviceCredential,
+    SwitchDeviceCredential,
     IloSetupIntent,
 )
 
@@ -82,7 +83,7 @@ def delete_device(session: Session, device_id: str) -> None:
     # SQLite does not enforce ON DELETE CASCADE unless a connection-level
     # pragma is enabled. Delete sensitive/device-scoped rows explicitly so
     # the normal local runtime cannot leave credentials or intents orphaned.
-    for model in (IloDeviceCredential, IloSetupIntent, HpeRaidIntent):
+    for model in (IloDeviceCredential, SwitchDeviceCredential, IloSetupIntent, HpeRaidIntent):
         session.execute(delete(model).where(model.device_id == device_id))
     session.delete(device)
     session.commit()

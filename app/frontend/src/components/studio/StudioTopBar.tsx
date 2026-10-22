@@ -1,4 +1,5 @@
 import { WriteScopePill } from "./WriteScope";
+import { JobBell } from "../KitJobs";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useStudio } from "./StudioContext";
@@ -49,6 +50,7 @@ export function StudioTopBar({ kitMenu }: { kitMenu?: ReactNode }) {
     <span className="sd-grow" />
     {studio && <button type="button" className="sd-cmdk" onClick={() => studio.setPaletteOpen(true)} aria-label="Search or run a command">{icons.search}<span>Search or run…</span><kbd>Ctrl K</kbd></button>}
     <span className="sd-sep" aria-hidden="true" />
+    <button type="button" className="sd-install" title="The whole build, installer style" onClick={() => navigate("/install")}>Build my kit</button>
     <button type="button" className="sd-lnk" aria-label="Build reports" title="Build reports" onClick={() => openKitDialog("reports")}>{icons.doc}<span className="l">Build reports</span></button>
     <button type="button" className="sd-lnk" aria-label="Run history" title="Run history" onClick={() => navigate("/setup/history")}>{icons.clock}<span className="l">Run history</span></button>
     <button type="button" className="sd-lnk" aria-label="Report an issue" title="Report an issue" onClick={openIssueReporter}>{icons.flag}<span className="l">Report an issue</span></button>
@@ -57,9 +59,17 @@ export function StudioTopBar({ kitMenu }: { kitMenu?: ReactNode }) {
       {more && <div className="sd-menu sd-menu-right" role="menu">
         <button type="button" role="menuitem" onClick={() => { setMore(false); openKitDialog("reports"); }}>{icons.doc}Build reports</button>
         <button type="button" role="menuitem" onClick={() => { setMore(false); navigate("/setup/history"); }}>{icons.clock}Run history</button>
+        <button type="button" role="menuitem" onClick={() => { setMore(false); navigate("/handover"); }}>{icons.doc}Hand-over pack</button>
+        <button type="button" role="menuitem" onClick={() => { setMore(false); navigate("/labels"); }}>{icons.doc}Print equipment labels</button>
+        <button type="button" role="menuitem" onClick={() => { setMore(false); navigate("/ask"); }}>{icons.search}Ask the lab</button>
+        <button type="button" role="menuitem" onClick={() => { setMore(false); navigate("/contract"); }}>{icons.doc}Kit contract</button>
+        <button type="button" role="menuitem" onClick={() => { setMore(false); navigate("/trace"); }}>{icons.doc}Trace the path</button>
+        <button type="button" role="menuitem" onClick={() => { setMore(false); navigate("/rehearsal"); }}>{icons.clock}Practice run (rehearsal rack)</button>
+        <button type="button" role="menuitem" onClick={() => { setMore(false); navigate("/reset"); }}>{icons.flag}Reset for the next person</button>
         <button type="button" role="menuitem" onClick={() => { setMore(false); openIssueReporter(); }}>{icons.flag}Report an issue</button>
       </div>}
     </div>
+    <JobBell />
     <WriteScopePill />
     <ThemeButton />
   </header>;

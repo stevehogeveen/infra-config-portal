@@ -1,3 +1,4 @@
+import os
 import io
 
 import pycdlib
@@ -38,6 +39,7 @@ def test_traversal_rejected(media, path):
         browse_packages(path)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Creating symlinks needs extra Windows privileges; covered on Linux.")
 def test_symlink_escape_rejected(media, tmp_path):
     outside = tmp_path.parent / "outside-iso-fixture"
     outside.mkdir(exist_ok=True)
@@ -66,3 +68,16 @@ def test_selection_per_kit_and_changes_detected(client, media):
     iso_file(media / "other.iso", baseline=False)
     assert client.post(endpoint,json={"path":"other.iso"}).status_code == 422
     assert client.get(endpoint).json()["selected"]["file_name"] == "fixture.iso"
+
+
+def test_a_selection_saved_under_docker_still_matches_the_same_file(media, monkeypatch):
+    from app.services import firmware_packages as packages
+
+    file = media / "spp.iso"
+    file.write_bytes(b"iso-fixture")
+    stat = file.stat()
+    saved = {"path": "spp.iso", "source_root": packages.DOCKER_MEDIA_ROOT, "size_bytes": stat.st_size, "modified_ns": str(stat.st_mtime_ns)}
+    assert not packages.package_unchanged(saved)  # no host mapping: an unknown folder
+    monkeypatch.setenv("FIRMWARE_MEDIA_HOST_PATH", str(media))
+    assert packages.package_unchanged(saved)
+    assert not packages.package_unchanged({**saved, "modified_ns": str(stat.st_mtime_ns + 1)})

@@ -18,7 +18,15 @@ async function open(page: Page) {
 }
 
 function mockApi(page: Page, opts: { importFails?: boolean; noImages?: boolean } = {}) {
-  const state = { saved: null as any, step: -1, scope: "read_only", sent: [] as string[] };
+  const state = { saved: null as any, step: -1, scope: "read_only", sent: [] as string[], signin: null as any, ac: -1, acBody: null as any };
+  const acPhases = ["Windows answers from outside", "Windows works from inside", "Windows restarts cleanly", "Windows is back after the restart"];
+  const acceptance = () => {
+    const signin = { username: state.signin?.username ?? null, password_saved: !!state.signin };
+    if (state.ac < 0) return { state: "not_started", active: false, phases: [], message: "", signin, default_lookup: "esx01.lab.test" };
+    const list = acPhases.map((label, i) => ({ phase: ["outside", "inside", "reboot", "after"][i], label, state: i < state.ac ? "ok" : i === state.ac ? "running" : "todo", message: null, checks: [] }));
+    if (state.ac >= 4) return { state: "verified", active: false, phases: list, message: "Acceptance test passed.", signin, lookup: "esx01.lab.test", finished_at: new Date().toISOString() };
+    return { state: "running", active: true, phases: list, message: "Testing…", signin, lookup: "esx01.lab.test" };
+  };
   const run = () => {
     if (state.step < 0) return { state: "not_started", active: false, phases: [], message: "" };
     if (opts.importFails && state.step >= 1) return { state: "needs_attention", active: true, phases: phases(["failed", "todo", "todo"]), message: "The import stopped: Disk upload failed", vm_name: "windows01" };
@@ -38,6 +46,10 @@ function mockApi(page: Page, opts: { importFails?: boolean; noImages?: boolean }
     }
     if (path.endsWith("/windows/review")) return route.fulfill({ json: { ready: true, blockers: [], permission: [], image: "win2022.ova", size_bytes: 9e9, vm_name: "windows01",
       datastore: "VMdata", network: "VM Network", address: "192.0.2.20", free_bytes: 3.59e12 } });
+    if (path.endsWith("/windows/guest-signin")) { state.signin = req.postDataJSON(); return route.fulfill({ json: { username: state.signin.username, password_saved: true } }); }
+    if (path.endsWith("/windows/acceptance")) return route.fulfill({ json: acceptance() });
+    if (path.endsWith("/windows/acceptance/start")) { state.ac = 0; state.acBody = req.postDataJSON(); return route.fulfill({ json: acceptance() }); }
+    if (path.endsWith("/windows/acceptance/advance")) { state.ac += 1; return route.fulfill({ json: acceptance() }); }
     if (path.endsWith("/windows/status")) return route.fulfill({ json: run() });
     if (path.endsWith("/windows/start")) { state.step = 0; return route.fulfill({ json: run() }); }
     if (path.endsWith("/windows/advance")) { state.step += 1; return route.fulfill({ json: run() }); }
@@ -113,4 +125,31 @@ test("no image yet: the page says so and offers the OVA/OVF upload", async ({ pa
     await page.setViewportSize({ width, height: 950 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   }
+});
+
+test("acceptance test: save the Windows sign-in once, run outside/inside/restart, Done locks read-only", async ({ page }) => {
+  test.setTimeout(120000);
+  const state = await mockApi(page);
+  state.saved = { image: "win2022.ova", vm_name: "windows01", datastore: "VMdata", network: "VM Network", saved_at: new Date().toISOString() };
+  state.step = 3;
+  await open(page);
+  const step = page.getByRole("region", { name: "Prove it works" });
+  await step.getByLabel("Windows administrator password").fill("Fixture-Guest-1");
+  await step.getByRole("button", { name: "Save sign-in" }).click();
+  await expect(step).toContainText("Signs in as Administrator");
+  await expect(step.getByLabel("Windows administrator password")).toHaveCount(0);
+  await expect(step.getByLabel("Name for Windows to look up")).toHaveValue("esx01.lab.test");
+  await step.getByRole("button", { name: "Run the test" }).click();
+  const box = page.getByRole("dialog", { name: "Acceptance test on HPE DL360 3" });
+  await expect(box.getByRole("button", { name: "Run the test" })).toBeDisabled();
+  await box.getByRole("checkbox").check();
+  await box.getByRole("button", { name: "Run the test" }).click();
+  await expect.poll(() => state.scope).toBe("vm_deploy_only");
+  await expect(box.getByRole("heading", { name: "Passed" })).toBeVisible({ timeout: 90000 });
+  await box.getByRole("button", { name: "Done" }).click();
+  await expect(box).toHaveCount(0);
+  expect(state.scope).toBe("read_only");
+  expect(state.acBody).toEqual({ name: "esx01.lab.test" });
+  expect(state.sent.filter(s => s.endsWith("acceptance/start"))).toHaveLength(1);
+  await expect(step).toContainText("Passed");
 });

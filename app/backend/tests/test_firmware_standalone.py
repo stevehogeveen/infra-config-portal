@@ -1,3 +1,4 @@
+import os
 import hashlib
 import json
 from zipfile import ZipFile
@@ -72,6 +73,7 @@ def test_invalid_path(media, path):
         inspect_standalone(path)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Creating symlinks needs extra Windows privileges; covered on Linux.")
 def test_symlink_and_parent_symlink_rejected(media):
     link = media.parent / "link.fwpkg"
     link.symlink_to(media)

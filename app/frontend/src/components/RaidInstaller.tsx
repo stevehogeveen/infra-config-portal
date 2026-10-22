@@ -19,7 +19,7 @@ const size = (bytes: number) => bytes >= 1e12 ? `${(bytes / 1e12).toFixed(1)} TB
 
 function planLines(view: Inventory | null) {
   return (view?.saved_intent.volumes ?? []).map(volume => ({
-    title: volume.bootable ? "Boot mirror (ESXi)" : volume.raid_level === "RAID5" ? "Datastore (RAID 5)" : `Datastore (${volume.raid_level.replace("RAID", "RAID ")})`,
+    title: volume.bootable ? "Boot disks (RAID 1, ESXi)" : volume.raid_level === "RAID5" ? "VM storage (RAID 5)" : `VM storage (${volume.raid_level.replace("RAID", "RAID ")})`,
     bays: volume.drive_bays, spare: volume.spare_bays ?? [],
   }));
 }
