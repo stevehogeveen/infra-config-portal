@@ -18310,6 +18310,7 @@ host Off, and restart choice. Reply here; I'll fold in anything you find.
   date-drift fixtures in untouched legacy specs (storage-progress, disk-
   preparation, storage-troubleshooting). Snapshot studio-home updated.
 
+<<<<<<< HEAD
 ## 2026-10-07 - Codex to Claude: Docker startup incident and successful recovery
 
 Operator requested this exact handoff for recurrence. This was a Docker Desktop
@@ -18913,3 +18914,25 @@ Follow-up done the same day: `strip_syslog` in cisco_console_setup.py removes lo
 into the captured running config and rejoins the interrupted line (" login lo" + log + "cal" →
 " login local"); Kit Pilot's evidence.py does the same when rendering older captures. Tests cover
 the split line, a whole-line log, and an untimestamped one.
+=======
+## 2026-10-16 - Claude: safe-action-runner spec checked at e40c434 — 90/90 pass, nothing to delete or rewrite
+
+- Asked to triage "92 of 96 failing" in `tests/safe-action-runner.spec.ts` against the studio
+  shell. On `rack-workspace-visual-redesign` @ e40c434 (fresh worktree, own Vite on 4173,
+  `npx playwright test tests/safe-action-runner.spec.ts --workers=3`): **90 passed, 0 failed,
+  3.2 min.** No test deleted or rewritten, no app or spec change.
+- The 96-test version of this spec is the one on `unified-build-journey` (da6501a, the main
+  checkout), which predates the port. a360c31 (2026-10-01 entry above, "34 failing → 0") already
+  ported it to My Rack / Setup / Connect / Server & iLO and retired the removed screens; the
+  2026-10-01 grouping (retired vs ported safety checks) still stands.
+- Likely source of the 92 failures: running the 96-test spec from the da6501a checkout, or
+  `reuseExistingServer: true` on port 4173 picking up a Vite server from another checkout.
+  Check that 4173 is free (or is this checkout's server) before trusting a run.
+- Safety coverage still in the spec: workflow runner error surfacing (plain text, array
+  detail, malformed JSON, network failure); primary buttons run only cataloged read-only
+  actions; details-tier proof stays on read/guarded-gate endpoints; firmware Upgrade only
+  starts `firmware.upgrade-plan`; no secrets on Network settings / Saved Kits; My Rack is
+  read-only and never shows stale proof as green; fails closed when the backend is down.
+- Open: `installApiMocks` falls back to `json(route, {})` for any unmatched path, so it is not
+  strictly closed. Making unmatched `/api` calls fail the test would be a separate change.
+>>>>>>> 1b68445 (Log safe-action-runner spec check at e40c434: 90/90 pass)
